@@ -24,6 +24,7 @@ import {
 } from './types.js';
 import { WorkflowConfigParser, DependencyGraph } from './workflow-config-parser.js';
 import { StateManager } from './state-manager.js';
+import { RoleManager } from './role-manager.js';
 
 /**
  * Интерфейс движка рабочих процессов
@@ -94,6 +95,9 @@ export interface WorkflowEngineConfig {
 
   /** Логгер */
   logger: Logger;
+  
+  /** Менеджер ролей (опционально) */
+  roleManager?: RoleManager;
 }
 
 /**
@@ -107,6 +111,7 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
   private templateEngine: TemplateEngine;
   private artifactManager: ArtifactManager;
   private logger: Logger;
+  private roleManager?: RoleManager;
 
   constructor(config: WorkflowEngineConfig) {
     this.configParser = config.configParser;
@@ -116,6 +121,7 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
     this.templateEngine = config.templateEngine;
     this.artifactManager = config.artifactManager;
     this.logger = config.logger;
+    this.roleManager = config.roleManager;
   }
 
   /**
@@ -190,6 +196,13 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
   ): Promise<WorkflowState> {
     this.logger.info(`Начало выполнения процесса: ${config.name} v${config.version}`);
 
+    // Загрузка ролей, если они определены
+    if (config.roles && this.roleManager) {
+      this.logger.info('Загрузка определений ролей...');
+      this.roleManager.loadRoles(config.roles);
+      this.logger.info(`Загружено ролей: ${Object.keys(config.roles).length}`);
+    }
+
     // Определение порядка выполнения шагов
     const executionOrder = this.determineExecutionOrder(config.steps);
     this.logger.info(`Порядок выполнения: ${executionOrder.join(' -> ')}`);
@@ -224,6 +237,13 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
    */
   async resume(sessionId: string, config: WorkflowConfig): Promise<WorkflowState> {
     this.logger.info(`Возобновление процесса для сессии ${sessionId}`);
+
+    // Загрузка ролей, если они определены
+    if (config.roles && this.roleManager) {
+      this.logger.info('Загрузка определений ролей...');
+      this.roleManager.loadRoles(config.roles);
+      this.logger.info(`Загружено ролей: ${Object.keys(config.roles).length}`);
+    }
 
     // Загрузка состояния
     const state = await this.stateManager.loadState(sessionId);

@@ -21,6 +21,7 @@ import {
   WorkflowErrorClass,
   AdapterRequest
 } from './types.js';
+import { RoleManager } from './role-manager.js';
 
 /**
  * Конфигурация исполнителя шагов
@@ -34,15 +35,20 @@ export interface StepExecutorConfig {
   
   /** Shell для выполнения скриптов */
   defaultShell?: string;
+  
+  /** Менеджер ролей */
+  roleManager?: RoleManager;
 }
 
 /**
  * Реализация исполнителя шагов по умолчанию
  */
 export class DefaultStepExecutor implements StepExecutor {
-  private config: Required<StepExecutorConfig>;
+  private config: Required<Omit<StepExecutorConfig, 'roleManager'>>;
+  private roleManager?: RoleManager;
 
   constructor(config: StepExecutorConfig = {}) {
+    this.roleManager = config.roleManager;
     this.config = {
       defaultRetryConfig: config.defaultRetryConfig || {
         maxRetries: 3,
@@ -285,7 +291,15 @@ export class DefaultStepExecutor implements StepExecutor {
     context: ExecutionContext
   ): Promise<StepResult> {
     // Определяем адаптер для использования
-    const adapterName = step.adapter || context.state.context.default_adapter as string;
+    let adapterName: string;
+    
+    // Если указана роль, получаем адаптер из роли
+    if (step.role && this.roleManager) {
+      adapterName = this.roleManager.getAdapterForRole(step.role);
+    } else {
+      // Иначе используем адаптер из шага или по умолчанию
+      adapterName = step.adapter || context.state.context.default_adapter as string;
+    }
     
     if (!adapterName) {
       throw new WorkflowErrorClass({
@@ -297,6 +311,7 @@ export class DefaultStepExecutor implements StepExecutor {
         recoverable: false,
         suggestions: [
           'Укажите адаптер в конфигурации шага',
+          'Укажите роль с определенным адаптером',
           'Установите default_adapter в настройках рабочего процесса'
         ]
       });
@@ -323,13 +338,27 @@ export class DefaultStepExecutor implements StepExecutor {
     // Подготовка промпта
     const prompt = await this.preparePrompt(step, context);
     
-    // Подготовка запроса
-    const request: AdapterRequest = {
+    // Определяем модель
+    let model = step.model;
+    if (step.role && this.roleManager) {
+      model = this.roleManager.getModelForRole(step.role) || model;
+    }
+    
+    // Подготовка базового запроса
+    let request: AdapterRequest = {
       prompt,
-      model: step.model,
+      model,
       systemPrompt: step.system_prompt,
       timeout: step.timeout || this.config.defaultTimeout
     };
+    
+    // Если указана роль, обогащаем запрос инструкциями роли
+    if (step.role && this.roleManager) {
+      request = this.roleManager.enrichRequestWithRole(step.role, request);
+      
+      // Проверяем разрешения роли
+      this.checkRolePermissions(step.role, step, context);
+    }
     
     // Выполнение запроса к модели
     const response = await adapter.execute(request);
@@ -367,6 +396,50 @@ export class DefaultStepExecutor implements StepExecutor {
       artifacts,
       executionTime: response.executionTime
     };
+  }
+  
+  /**
+   * Проверка разрешений роли для выполнения шага
+   */
+  private checkRolePermissions(
+    roleName: string,
+    step: WorkflowStep,
+    context: ExecutionContext
+  ): void {
+    if (!this.roleManager) {
+      return;
+    }
+    
+    // Проверяем разрешения на редактирование файлов
+    if (step.outputs) {
+      for (const outputPath of Object.values(step.outputs)) {
+        // Рендерим путь для проверки
+        const renderedPath = context.templateEngine.render(
+          outputPath,
+          this.createTemplateContext(context)
+        );
+        
+        if (!this.roleManager.canEditFile(roleName, renderedPath)) {
+          throw new WorkflowErrorClass({
+            code: 'ROLE_PERMISSION_DENIED',
+            category: 'execution',
+            severity: 'error',
+            message: `Роль "${roleName}" не имеет разрешения на редактирование файла: ${renderedPath}`,
+            context: {
+              roleName,
+              filePath: renderedPath,
+              stepId: step.id
+            },
+            recoverable: false,
+            suggestions: [
+              'Добавьте разрешение "edit" или "edit:regex" в конфигурацию роли',
+              'Используйте другую роль с необходимыми разрешениями',
+              'Измените путь к выходному файлу'
+            ]
+          });
+        }
+      }
+    }
   }
 
   /**
