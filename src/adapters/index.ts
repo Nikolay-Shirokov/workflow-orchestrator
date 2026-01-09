@@ -3,5 +3,6 @@
  * Здесь будут размещены CLI-адаптеры для различных AI-моделей
  */
 
-// Экспорты будут добавлены по мере реализации адаптеров
-export {};
+export { AdapterRegistry } from './adapter-registry.js';
+export { BaseCLIAdapter } from './base-cli-adapter.js';
+export { MockCLIAdapter, type MockResponse } from './mock-cli-adapter.js';
