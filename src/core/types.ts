@@ -76,6 +76,10 @@ export interface WorkflowStep {
   script?: string;
   shell?: string;
   
+  // Для type: 'conditional'
+  thenStep?: WorkflowStep;
+  elseStep?: WorkflowStep;
+  
   // Для type: 'parallel'
   steps?: WorkflowStep[];
   

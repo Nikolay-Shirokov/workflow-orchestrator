@@ -8,3 +8,4 @@ export * from './workflow-config-parser.js';
 export { DefaultTemplateEngine, createTemplateContext } from './template-engine.js';
 export * from './state-manager.js';
 export * from './artifact-manager.js';
+export * from './step-executor.js';
