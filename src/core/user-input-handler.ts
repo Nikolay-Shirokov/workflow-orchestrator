@@ -62,20 +62,20 @@ export interface UserAnswers {
 }
 
 /**
- * Результат валидации ответа
+ * Результат валидации пользовательского ввода
  */
-export interface ValidationResult {
+export interface UserInputValidationResult {
   /** Валиден ли ответ */
   valid: boolean;
   
   /** Список ошибок валидации */
-  errors: ValidationError[];
+  errors: UserInputValidationError[];
 }
 
 /**
- * Ошибка валидации
+ * Ошибка валидации пользовательского ввода
  */
-export interface ValidationError {
+export interface UserInputValidationError {
   /** Поле с ошибкой */
   field: string;
   
@@ -223,8 +223,8 @@ export class UserInputHandler {
    * @param rules - Правила валидации
    * @returns ValidationResult - Результат валидации
    */
-  validateInput(data: unknown, rules: ValidationRule[]): ValidationResult {
-    const errors: ValidationError[] = [];
+  validateInput(data: unknown, rules: ValidationRule[]): UserInputValidationResult {
+    const errors: UserInputValidationError[] = [];
     
     // Преобразуем данные в объект для валидации
     const dataObj = typeof data === 'object' && data !== null ? data as Record<string, unknown> : { value: data };
