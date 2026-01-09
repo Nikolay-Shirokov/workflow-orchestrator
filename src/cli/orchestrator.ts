@@ -256,15 +256,30 @@ export class WorkflowOrchestrator {
 
     } catch (error) {
       // Обработка ошибок загрузки/валидации
+      const errorMessage = (error as Error).message;
       errors.push({
-        message: (error as Error).message,
+        message: errorMessage,
         suggestions: ['Проверьте синтаксис конфигурации', 'Убедитесь, что файл существует']
       });
 
+      // Попытка извлечь имя и версию из файла, если возможно
+      let workflowName = 'unknown';
+      let workflowVersion = 'unknown';
+      
+      try {
+        const fs = await import('fs/promises');
+        const content = await fs.readFile(configPath, 'utf-8');
+        const parsed = JSON.parse(content);
+        if (parsed.name) workflowName = parsed.name;
+        if (parsed.version) workflowVersion = parsed.version;
+      } catch {
+        // Игнорируем ошибки парсинга
+      }
+
       return {
         valid: false,
-        workflowName: 'unknown',
-        workflowVersion: 'unknown',
+        workflowName,
+        workflowVersion,
         totalSteps: 0,
         errors,
         warnings
