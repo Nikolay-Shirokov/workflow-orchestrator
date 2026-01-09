@@ -4,6 +4,10 @@
   "description": "Настраиваемая система оркестрации многошаговых рабочих процессов с использованием AI-моделей через CLI-адаптеры",
   "main": "dist/index.js",
   "type": "module",
+  "bin": {
+    "workflow-orchestrator": "./dist/cli/cli.js",
+    "wo": "./dist/cli/cli.js"
+  },
   "scripts": {
     "build": "tsc",
     "test": "jest",
