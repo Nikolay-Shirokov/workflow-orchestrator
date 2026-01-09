@@ -1,1 +1,36 @@
 old/
+
+# Зависимости
+node_modules/
+package-lock.json
+yarn.lock
+
+# Скомпилированный код
+dist/
+*.js
+*.js.map
+*.d.ts
+!jest.config.js
+
+# Тесты
+coverage/
+.nyc_output/
+
+# Логи
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Временные файлы
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Артефакты рабочих процессов
+artifacts/
+*.state.json
