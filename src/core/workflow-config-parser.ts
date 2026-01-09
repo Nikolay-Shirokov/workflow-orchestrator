@@ -187,7 +187,7 @@ export class WorkflowConfigParser {
           });
         } else {
           // Проверка валидности типа
-          const validTypes = ['model', 'script', 'conditional', 'parallel', 'user_input'];
+          const validTypes = ['model', 'script', 'conditional', 'parallel', 'loop', 'user_input'];
           if (!validTypes.includes(step.type)) {
             errors.push({
               message: `${stepPrefix}: Невалидный тип шага "${step.type}". Допустимые: ${validTypes.join(', ')}`,
@@ -214,6 +214,30 @@ export class WorkflowConfigParser {
             errors.push({
               message: `${stepPrefix}: Шаг типа "parallel" должен содержать вложенные шаги`,
               code: 'PARALLEL_NO_STEPS'
+            });
+          }
+        }
+        
+        // Валидация шагов типа loop
+        if (step.type === 'loop') {
+          if (!step.loop_body) {
+            errors.push({
+              message: `${stepPrefix}: Шаг типа "loop" должен содержать loop_body`,
+              code: 'LOOP_NO_BODY'
+            });
+          }
+          
+          if (step.loop_iterations === undefined && step.loop_items === undefined) {
+            errors.push({
+              message: `${stepPrefix}: Шаг типа "loop" должен содержать loop_iterations или loop_items`,
+              code: 'LOOP_NO_CONFIGURATION'
+            });
+          }
+          
+          if (step.loop_iterations !== undefined && step.loop_iterations < 0) {
+            errors.push({
+              message: `${stepPrefix}: loop_iterations должно быть неотрицательным числом`,
+              code: 'LOOP_INVALID_ITERATIONS'
             });
           }
         }

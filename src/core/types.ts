@@ -83,6 +83,12 @@ export interface WorkflowStep {
   // Для type: 'parallel'
   steps?: WorkflowStep[];
   
+  // Для type: 'loop'
+  loop_iterations?: number;
+  loop_variable?: string;
+  loop_items?: unknown[];
+  loop_body?: WorkflowStep;
+  
   // Для type: 'user_input'
   input_format?: string;
   prompt_message?: string;
@@ -101,7 +107,7 @@ export interface WorkflowStep {
 /**
  * Тип шага
  */
-export type StepType = 'model' | 'script' | 'conditional' | 'parallel' | 'user_input';
+export type StepType = 'model' | 'script' | 'conditional' | 'parallel' | 'loop' | 'user_input';
 
 /**
  * Правило валидации

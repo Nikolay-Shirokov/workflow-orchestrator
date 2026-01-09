@@ -11,6 +11,7 @@
  */
 
 import { spawn } from 'child_process';
+import { readFileSync } from 'fs';
 import {
   StepExecutor,
   WorkflowStep,
@@ -103,6 +104,10 @@ export class DefaultStepExecutor implements StepExecutor {
           result = await this.executeParallelSteps(step, context);
           break;
           
+        case 'loop':
+          result = await this.executeLoopStep(step, context);
+          break;
+          
         case 'user_input':
           result = await this.executeUserInputStep(step, context);
           break;
@@ -117,7 +122,7 @@ export class DefaultStepExecutor implements StepExecutor {
             recoverable: false,
             suggestions: [
               'Проверьте правильность типа шага в конфигурации',
-              'Поддерживаемые типы: model, script, conditional, parallel, user_input'
+              'Поддерживаемые типы: model, script, conditional, parallel, loop, user_input'
             ]
           });
       }
@@ -524,6 +529,133 @@ export class DefaultStepExecutor implements StepExecutor {
   }
 
   /**
+   * Выполнение шага цикла (для типа 'loop')
+   */
+  private async executeLoopStep(
+    step: WorkflowStep,
+    context: ExecutionContext
+  ): Promise<StepResult> {
+    // Проверка наличия тела цикла
+    if (!step.loop_body) {
+      throw new WorkflowErrorClass({
+        code: 'NO_LOOP_BODY',
+        category: 'execution',
+        severity: 'error',
+        message: `Не указано тело цикла для шага ${step.id}`,
+        context: { stepId: step.id },
+        recoverable: false,
+        suggestions: [
+          'Укажите loop_body в конфигурации шага'
+        ]
+      });
+    }
+
+    let iterations: number;
+    let items: unknown[] | undefined;
+
+    // Определяем количество итераций
+    if (step.loop_iterations !== undefined) {
+      // Цикл с фиксированным количеством итераций
+      iterations = step.loop_iterations;
+      if (iterations < 0) {
+        throw new WorkflowErrorClass({
+          code: 'INVALID_LOOP_ITERATIONS',
+          category: 'execution',
+          severity: 'error',
+          message: `Количество итераций цикла должно быть неотрицательным: ${iterations}`,
+          context: { stepId: step.id, iterations },
+          recoverable: false,
+          suggestions: [
+            'Укажите неотрицательное значение для loop_iterations'
+          ]
+        });
+      }
+    } else if (step.loop_items !== undefined) {
+      // Цикл по элементам массива
+      items = step.loop_items;
+      if (!Array.isArray(items)) {
+        throw new WorkflowErrorClass({
+          code: 'INVALID_LOOP_ITEMS',
+          category: 'execution',
+          severity: 'error',
+          message: `loop_items должен быть массивом`,
+          context: { stepId: step.id, loopItems: items },
+          recoverable: false,
+          suggestions: [
+            'Укажите массив для loop_items'
+          ]
+        });
+      }
+      iterations = items.length;
+    } else {
+      throw new WorkflowErrorClass({
+        code: 'NO_LOOP_CONFIGURATION',
+        category: 'execution',
+        severity: 'error',
+        message: `Не указано ни loop_iterations, ни loop_items для шага ${step.id}`,
+        context: { stepId: step.id },
+        recoverable: false,
+        suggestions: [
+          'Укажите loop_iterations для фиксированного количества итераций',
+          'Укажите loop_items для цикла по элементам массива'
+        ]
+      });
+    }
+
+    context.logger.info(`Начало выполнения цикла ${step.id}: ${iterations} итераций`);
+
+    // Массив для сбора результатов всех итераций
+    const allResults: StepResult[] = [];
+    const allArtifacts: string[] = [];
+    const allOutputs: Record<string, unknown>[] = [];
+
+    // Выполнение итераций
+    for (let i = 0; i < iterations; i++) {
+      context.logger.debug(`Итерация ${i + 1}/${iterations} цикла ${step.id}`);
+
+      // Обновление контекста для текущей итерации
+      const iterationContext = { ...context };
+      
+      // Добавляем переменную итерации в контекст
+      if (step.loop_variable) {
+        if (items !== undefined) {
+          // Для цикла по элементам - текущий элемент
+          iterationContext.state.context[step.loop_variable] = items[i];
+        } else {
+          // Для фиксированного цикла - индекс итерации
+          iterationContext.state.context[step.loop_variable] = i;
+        }
+      }
+
+      // Добавляем индекс итерации
+      iterationContext.state.context['loop_index'] = i;
+      iterationContext.state.context['loop_iteration'] = i + 1;
+
+      // Выполнение тела цикла
+      const result = await this.executeStep(step.loop_body, iterationContext);
+
+      // Сбор результатов
+      allResults.push(result);
+      allArtifacts.push(...result.artifacts);
+      allOutputs.push(result.outputs);
+    }
+
+    context.logger.info(`Цикл ${step.id} завершен: выполнено ${iterations} итераций`);
+
+    // Возвращаем агрегированный результат
+    return {
+      stepId: step.id,
+      status: 'success',
+      outputs: {
+        iterations,
+        results: allOutputs
+      },
+      artifacts: allArtifacts,
+      executionTime: allResults.reduce((sum, r) => sum + r.executionTime, 0)
+    };
+  }
+
+  /**
    * Выполнение шага ввода пользователя
    */
   private async executeUserInputStep(
@@ -592,8 +724,7 @@ export class DefaultStepExecutor implements StepExecutor {
       variables: context.state.context,
       loadArtifact: (path: string) => {
         // Синхронная загрузка для совместимости с интерфейсом
-        const fs = require('fs');
-        return fs.readFileSync(path, 'utf-8');
+        return readFileSync(path, 'utf-8');
       },
       if: (condition: boolean, thenValue: string, elseValue?: string) => {
         return condition ? thenValue : (elseValue || '');
