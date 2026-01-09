@@ -75,6 +75,29 @@ describe('ClaudeCLIAdapter', () => {
     
     expect(customAdapter.name).toBe('claude-cli');
   });
+
+  it('должен добавлять флаг --model если модель указана', () => {
+    const adapter = new ClaudeCLIAdapter();
+    
+    // Используем приватный метод через any для тестирования
+    const argsWithModel = (adapter as any).prepareArguments({
+      prompt: 'test prompt',
+      model: 'claude-sonnet-3.5'
+    });
+    
+    expect(argsWithModel).toEqual(['-p', '--model', 'claude-sonnet-3.5', 'test prompt']);
+  });
+
+  it('не должен добавлять флаг --model если модель не указана', () => {
+    const adapter = new ClaudeCLIAdapter();
+    
+    // Используем приватный метод через any для тестирования
+    const argsWithoutModel = (adapter as any).prepareArguments({
+      prompt: 'test prompt'
+    });
+    
+    expect(argsWithoutModel).toEqual(['-p', 'test prompt']);
+  });
 });
 
 describe('OpenAICLIAdapter', () => {
@@ -287,6 +310,29 @@ describe('GeminiCLIAdapter', () => {
     });
     
     expect(customAdapter.name).toBe('gemini-cli');
+  });
+
+  it('должен добавлять флаг --model если модель указана', () => {
+    const adapter = new GeminiCLIAdapter();
+    
+    // Используем приватный метод через any для тестирования
+    const argsWithModel = (adapter as any).prepareArguments({
+      prompt: 'test prompt',
+      model: 'gemini-pro'
+    });
+    
+    expect(argsWithModel).toEqual(['--prompt', '--model', 'gemini-pro', 'test prompt']);
+  });
+
+  it('не должен добавлять флаг --model если модель не указана', () => {
+    const adapter = new GeminiCLIAdapter();
+    
+    // Используем приватный метод через any для тестирования
+    const argsWithoutModel = (adapter as any).prepareArguments({
+      prompt: 'test prompt'
+    });
+    
+    expect(argsWithoutModel).toEqual(['--prompt', 'test prompt']);
   });
 });
 

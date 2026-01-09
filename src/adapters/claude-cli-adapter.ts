@@ -4,7 +4,7 @@
  */
 
 import { BaseCLIAdapter } from './base-cli-adapter.js';
-import { AdapterConfig } from '../core/types.js';
+import { AdapterConfig, AdapterRequest } from '../core/types.js';
 
 /**
  * Адаптер для Claude CLI
@@ -16,14 +16,12 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
 
   constructor(config?: Partial<AdapterConfig>) {
     // Конфигурация по умолчанию для Claude CLI
+    // Используем режим печати (-p) для неинтерактивного выполнения
     const defaultConfig: AdapterConfig = {
       name: 'claude-cli',
       command: 'claude',
       args: [
-        'chat',
-        '--model',
-        '${model}',
-        '--message',
+        '-p',
         '${prompt}'
       ],
       env: {
@@ -44,6 +42,26 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
     };
 
     super(mergedConfig);
+  }
+
+  /**
+   * Подготовка аргументов команды с подстановкой параметров
+   * Переопределяем для добавления флага --model если модель указана
+   * @param request - Запрос к адаптеру
+   * @returns string[] - Массив аргументов
+   */
+  protected prepareArguments(request: AdapterRequest): string[] {
+    const args: string[] = ['-p'];
+    
+    // Добавляем флаг --model если модель указана
+    if (request.model) {
+      args.push('--model', request.model);
+    }
+    
+    // Добавляем промпт
+    args.push(request.prompt);
+    
+    return args;
   }
 
   /**

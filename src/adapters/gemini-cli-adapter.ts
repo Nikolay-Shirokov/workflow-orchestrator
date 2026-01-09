@@ -4,7 +4,7 @@
  */
 
 import { BaseCLIAdapter } from './base-cli-adapter.js';
-import { AdapterConfig } from '../core/types.js';
+import { AdapterConfig, AdapterRequest } from '../core/types.js';
 
 /**
  * Адаптер для Gemini CLI
@@ -16,13 +16,13 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
 
   constructor(config?: Partial<AdapterConfig>) {
     // Конфигурация по умолчанию для Gemini CLI
+    // Используем флаг --prompt для headless режима
     const defaultConfig: AdapterConfig = {
       name: 'gemini-cli',
       command: 'gemini',
       args: [
-        'generate',
-        '--model=${model}',
-        '--prompt=${prompt}'
+        '--prompt',
+        '${prompt}'
       ],
       env: {
         GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || ''
@@ -42,6 +42,26 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
     };
 
     super(mergedConfig);
+  }
+
+  /**
+   * Подготовка аргументов команды с подстановкой параметров
+   * Переопределяем для добавления флага --model если модель указана
+   * @param request - Запрос к адаптеру
+   * @returns string[] - Массив аргументов
+   */
+  protected prepareArguments(request: AdapterRequest): string[] {
+    const args: string[] = ['--prompt'];
+    
+    // Добавляем флаг --model если модель указана
+    if (request.model) {
+      args.push('--model', request.model);
+    }
+    
+    // Добавляем промпт
+    args.push(request.prompt);
+    
+    return args;
   }
 
   /**

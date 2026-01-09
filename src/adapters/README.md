@@ -41,12 +41,14 @@ console.log(response.content);
 {
   name: 'claude-cli',
   command: 'claude',
-  args: ['chat', '--model', '${model}', '--message', '${prompt}'],
+  args: ['-p', '${prompt}'],
   env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY },
   parser: 'markdown',
   timeout: 300000 // 5 минут
 }
 ```
+
+**Примечание:** Флаг `--model` добавляется автоматически, если модель указана в запросе.
 
 **Парсинг ответов:**
 - Удаляет префиксы: `Assistant:`, `Claude:`, `Response:`, `Output:`
@@ -124,12 +126,14 @@ console.log(response.content);
 {
   name: 'gemini-cli',
   command: 'gemini',
-  args: ['generate', '--model=${model}', '--prompt=${prompt}'],
+  args: ['--prompt', '${prompt}'],
   env: { GOOGLE_API_KEY: process.env.GOOGLE_API_KEY },
   parser: 'text',
   timeout: 300000 // 5 минут
 }
 ```
+
+**Примечание:** Флаг `--model` добавляется автоматически, если модель указана в запросе.
 
 **Парсинг ответов:**
 - Обрабатывает текстовый формат
