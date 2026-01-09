@@ -27,6 +27,27 @@ export interface WorkflowSettings {
   max_retries?: number;
   timeout?: number;
   log_level?: string;
+  mcp_tools?: MCPToolConfig[];
+}
+
+/**
+ * Конфигурация MCP-инструмента
+ */
+export interface MCPToolConfig {
+  /** Имя инструмента */
+  name: string;
+  
+  /** Команда для проверки доступности */
+  checkCommand?: string;
+  
+  /** Ожидаемый код выхода при успехе */
+  expectedExitCode?: number;
+  
+  /** Таймаут проверки в миллисекундах */
+  timeout?: number;
+  
+  /** Обязателен ли инструмент */
+  required?: boolean;
 }
 
 /**

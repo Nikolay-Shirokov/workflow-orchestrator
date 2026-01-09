@@ -25,6 +25,7 @@ import {
 import { WorkflowConfigParser, DependencyGraph } from './workflow-config-parser.js';
 import { StateManager } from './state-manager.js';
 import { RoleManager } from './role-manager.js';
+import { MCPManager, MCPContext } from './mcp-manager.js';
 
 /**
  * Интерфейс движка рабочих процессов
@@ -98,6 +99,9 @@ export interface WorkflowEngineConfig {
   
   /** Менеджер ролей (опционально) */
   roleManager?: RoleManager;
+  
+  /** Менеджер MCP-инструментов (опционально) */
+  mcpManager?: MCPManager;
 }
 
 /**
@@ -112,6 +116,8 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
   private artifactManager: ArtifactManager;
   private logger: Logger;
   private roleManager?: RoleManager;
+  private mcpManager?: MCPManager;
+  private mcpContext?: MCPContext;
 
   constructor(config: WorkflowEngineConfig) {
     this.configParser = config.configParser;
@@ -122,6 +128,7 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
     this.artifactManager = config.artifactManager;
     this.logger = config.logger;
     this.roleManager = config.roleManager;
+    this.mcpManager = config.mcpManager;
   }
 
   /**
@@ -203,6 +210,26 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       this.logger.info(`Загружено ролей: ${Object.keys(config.roles).length}`);
     }
 
+    // Инициализация MCP-инструментов, если они определены
+    if (config.settings.mcp_tools && this.mcpManager) {
+      this.logger.info('Проверка доступности MCP-инструментов...');
+      const toolsInfo = await this.mcpManager.checkMultipleTools(config.settings.mcp_tools);
+      this.mcpContext = this.mcpManager.createMCPContext(toolsInfo);
+      
+      // Передаем MCP-контекст в StepExecutor, если он поддерживает это
+      if (this.stepExecutor && 'setMCPContext' in this.stepExecutor) {
+        (this.stepExecutor as any).setMCPContext(this.mcpContext);
+      }
+      
+      // Логирование недоступных инструментов
+      this.mcpManager.logUnavailableTools(toolsInfo);
+      
+      this.logger.info(
+        `MCP-инструменты: ${this.mcpContext.available_tools.length} доступно, ` +
+        `${this.mcpContext.unavailable_tools.length} недоступно`
+      );
+    }
+
     // Определение порядка выполнения шагов
     const executionOrder = this.determineExecutionOrder(config.steps);
     this.logger.info(`Порядок выполнения: ${executionOrder.join(' -> ')}`);
@@ -222,7 +249,9 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       artifacts_dir: config.settings.artifacts_dir,
       workflow_name: config.name,
       workflow_version: config.version,
-      session_id: state.sessionId
+      session_id: state.sessionId,
+      // Добавляем MCP-контекст, если доступен
+      ...(this.mcpContext ? { mcp_tools: this.mcpContext.flags } : {})
     };
 
     // Сохранение начального состояния
@@ -245,8 +274,33 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       this.logger.info(`Загружено ролей: ${Object.keys(config.roles).length}`);
     }
 
+    // Инициализация MCP-инструментов, если они определены
+    if (config.settings.mcp_tools && this.mcpManager) {
+      this.logger.info('Проверка доступности MCP-инструментов...');
+      const toolsInfo = await this.mcpManager.checkMultipleTools(config.settings.mcp_tools);
+      this.mcpContext = this.mcpManager.createMCPContext(toolsInfo);
+      
+      // Передаем MCP-контекст в StepExecutor, если он поддерживает это
+      if (this.stepExecutor && 'setMCPContext' in this.stepExecutor) {
+        (this.stepExecutor as any).setMCPContext(this.mcpContext);
+      }
+      
+      // Логирование недоступных инструментов
+      this.mcpManager.logUnavailableTools(toolsInfo);
+      
+      this.logger.info(
+        `MCP-инструменты: ${this.mcpContext.available_tools.length} доступно, ` +
+        `${this.mcpContext.unavailable_tools.length} недоступно`
+      );
+    }
+
     // Загрузка состояния
     const state = await this.stateManager.loadState(sessionId);
+
+    // Обновляем MCP-контекст в состоянии, если доступен
+    if (this.mcpContext) {
+      state.context.mcp_tools = this.mcpContext.flags;
+    }
 
     // Проверка совместимости версий
     if (state.workflowName !== config.name) {
@@ -332,6 +386,71 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
   // ========== Приватные методы ==========
 
   /**
+   * Проверка условия выполнения шага
+   */
+  private shouldExecuteStep(step: WorkflowStep, state: WorkflowState): boolean {
+    // Если условие не указано, выполняем шаг
+    if (!step.condition) {
+      return true;
+    }
+
+    // Проверяем MCP-условия, если доступен MCPManager
+    if (this.mcpManager && this.mcpContext) {
+      const mcpResult = this.mcpManager.evaluateCondition(step.condition, this.mcpContext);
+      
+      // Если это MCP-условие и оно не выполнено, пропускаем шаг
+      if (!mcpResult && step.condition in this.mcpContext.flags) {
+        this.logger.info(
+          `Шаг ${step.id} пропущен: MCP-условие "${step.condition}" не выполнено`
+        );
+        return false;
+      }
+    }
+
+    // Проверяем другие условия из контекста
+    try {
+      // Простая оценка условия из контекста
+      const conditionValue = this.evaluateConditionExpression(step.condition, state.context);
+      
+      if (!conditionValue) {
+        this.logger.info(
+          `Шаг ${step.id} пропущен: условие "${step.condition}" не выполнено`
+        );
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        `Не удалось оценить условие "${step.condition}" для шага ${step.id}: ${(error as Error).message}`
+      );
+      // В случае ошибки оценки, выполняем шаг
+      return true;
+    }
+  }
+
+  /**
+   * Оценка выражения условия
+   */
+  private evaluateConditionExpression(condition: string, context: Record<string, unknown>): boolean {
+    // Простая оценка: проверяем наличие переменной в контексте
+    // Поддерживаем точечную нотацию (например, "mcp_tools.web_search_available")
+    const parts = condition.split('.');
+    let value: unknown = context;
+    
+    for (const part of parts) {
+      if (value && typeof value === 'object' && part in value) {
+        value = (value as Record<string, unknown>)[part];
+      } else {
+        return false;
+      }
+    }
+    
+    // Преобразуем в boolean
+    return Boolean(value);
+  }
+
+  /**
    * Выполнение рабочего процесса
    */
   private async executeWorkflow(
@@ -358,6 +477,27 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
             'Убедитесь, что шаг определен в конфигурации'
           ]
         });
+      }
+
+      // Проверка условия выполнения шага
+      if (!this.shouldExecuteStep(step, state)) {
+        // Пропускаем шаг, но добавляем его в историю как пропущенный
+        const skippedHistory = {
+          stepId: step.id,
+          stepName: step.name,
+          status: 'skipped' as const,
+          startedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+          executionTime: 0,
+          artifacts: [],
+          error: `Условие не выполнено: ${step.condition}`
+        };
+        
+        state.history.push(skippedHistory);
+        state.completedSteps.push(stepId);
+        await this.stateManager.saveState(state);
+        
+        continue;
       }
 
       // Обновление текущего шага

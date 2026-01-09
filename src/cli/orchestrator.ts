@@ -13,6 +13,8 @@ import { AdapterRegistry } from '../adapters/adapter-registry.js';
 import { DefaultTemplateEngine } from '../core/template-engine.js';
 import { createArtifactManager } from '../core/artifact-manager.js';
 import { WorkflowConfigParser } from '../core/workflow-config-parser.js';
+import { MCPManager } from '../core/mcp-manager.js';
+import { RoleManager } from '../core/role-manager.js';
 import { CLIWorkflowStatus, DryRunResult } from './index.js';
 import { ProgressDisplay } from './progress-display.js';
 
@@ -80,7 +82,15 @@ export class WorkflowOrchestrator {
       baseDir: this.artifactsDir,
       logger: this.logger
     });
-    const stepExecutor = createStepExecutor();
+    
+    // Инициализация менеджеров
+    const roleManager = new RoleManager();
+    const mcpManager = new MCPManager(this.logger);
+    
+    const stepExecutor = createStepExecutor({
+      roleManager,
+      mcpManager
+    });
 
     this.workflowEngine = createWorkflowEngine({
       configParser,
@@ -89,7 +99,9 @@ export class WorkflowOrchestrator {
       adapterRegistry,
       templateEngine,
       artifactManager,
-      logger: this.logger
+      logger: this.logger,
+      roleManager,
+      mcpManager
     });
   }
 

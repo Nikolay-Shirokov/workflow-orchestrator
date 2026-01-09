@@ -22,6 +22,7 @@ import {
   AdapterRequest
 } from './types.js';
 import { RoleManager } from './role-manager.js';
+import { MCPManager, MCPContext } from './mcp-manager.js';
 
 /**
  * Конфигурация исполнителя шагов
@@ -38,17 +39,27 @@ export interface StepExecutorConfig {
   
   /** Менеджер ролей */
   roleManager?: RoleManager;
+  
+  /** Менеджер MCP-инструментов */
+  mcpManager?: MCPManager;
+  
+  /** Контекст MCP */
+  mcpContext?: MCPContext;
 }
 
 /**
  * Реализация исполнителя шагов по умолчанию
  */
 export class DefaultStepExecutor implements StepExecutor {
-  private config: Required<Omit<StepExecutorConfig, 'roleManager'>>;
+  private config: Required<Omit<StepExecutorConfig, 'roleManager' | 'mcpManager' | 'mcpContext'>>;
   private roleManager?: RoleManager;
+  private mcpManager?: MCPManager;
+  private mcpContext?: MCPContext;
 
   constructor(config: StepExecutorConfig = {}) {
     this.roleManager = config.roleManager;
+    this.mcpManager = config.mcpManager;
+    this.mcpContext = config.mcpContext;
     this.config = {
       defaultRetryConfig: config.defaultRetryConfig || {
         maxRetries: 3,
@@ -64,6 +75,13 @@ export class DefaultStepExecutor implements StepExecutor {
       defaultTimeout: config.defaultTimeout || 300000, // 5 минут
       defaultShell: config.defaultShell || (process.platform === 'win32' ? 'cmd' : 'bash')
     };
+  }
+  
+  /**
+   * Установка MCP-контекста (для обновления после инициализации)
+   */
+  setMCPContext(mcpContext: MCPContext): void {
+    this.mcpContext = mcpContext;
   }
 
   /**
@@ -783,10 +801,21 @@ export class DefaultStepExecutor implements StepExecutor {
     }
     
     // Рендерим шаблон с подстановкой переменных
-    return context.templateEngine.render(
+    let renderedPrompt = context.templateEngine.render(
       template,
       this.createTemplateContext(context)
     );
+    
+    // Добавляем информацию о MCP-инструментах, если доступна
+    if (this.mcpManager && this.mcpContext) {
+      const mcpInfo = this.mcpManager.formatForPrompt(this.mcpContext);
+      if (mcpInfo) {
+        renderedPrompt = `${renderedPrompt}\n\n---\n\n${mcpInfo}`;
+        context.logger.debug(`Добавлена информация о MCP-инструментах в промпт для шага ${step.id}`);
+      }
+    }
+    
+    return renderedPrompt;
   }
 
   /**
