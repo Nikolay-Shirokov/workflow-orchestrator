@@ -107,19 +107,16 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
 
   /**
    * Проверка доступности Gemini CLI
-   * Проверяет наличие утилиты и валидность API ключа
+   * Проверяет наличие утилиты через выполнение команды --version
+   * Примечание: API ключ не обязателен, так как gemini-cli может быть
+   * авторизован на уровне машины/пользователя
    * @returns Promise<boolean> - true если утилита доступна
    */
   async isAvailable(): Promise<boolean> {
     try {
-      // Проверяем наличие API ключа
-      const apiKey = this.config.env?.GOOGLE_API_KEY || process.env.GOOGLE_API_KEY;
-      if (!apiKey) {
-        console.warn('GOOGLE_API_KEY не установлен в переменных окружения');
-        return false;
-      }
-
       // Проверяем доступность команды
+      // Не требуем обязательного наличия API ключа, так как
+      // gemini-cli может использовать авторизацию на уровне системы
       return await super.isAvailable();
     } catch (error) {
       return false;

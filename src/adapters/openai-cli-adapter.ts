@@ -97,19 +97,16 @@ export class OpenAICLIAdapter extends BaseCLIAdapter {
 
   /**
    * Проверка доступности OpenAI CLI
-   * Проверяет наличие утилиты и валидность API ключа
+   * Проверяет наличие утилиты через выполнение команды --version
+   * Примечание: API ключ не обязателен, так как openai-cli может быть
+   * авторизован на уровне машины/пользователя
    * @returns Promise<boolean> - true если утилита доступна
    */
   async isAvailable(): Promise<boolean> {
     try {
-      // Проверяем наличие API ключа
-      const apiKey = this.config.env?.OPENAI_API_KEY || process.env.OPENAI_API_KEY;
-      if (!apiKey) {
-        console.warn('OPENAI_API_KEY не установлен в переменных окружения');
-        return false;
-      }
-
       // Проверяем доступность команды
+      // Не требуем обязательного наличия API ключа, так как
+      // openai-cli может использовать авторизацию на уровне системы
       return await super.isAvailable();
     } catch (error) {
       return false;
