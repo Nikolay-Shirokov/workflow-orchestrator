@@ -40,7 +40,7 @@ export class DefaultTemplateEngine implements TemplateEngine {
     // Обрабатываем все переменные в шаблоне
     result = result.replace(this.VARIABLE_PATTERN, (match, expression) => {
       processedVariables.add(match);
-      return this.evaluateExpression(expression.trim(), context);
+      return this.evaluateExpression(expression, context);
     });
     
     return result;
@@ -177,8 +177,8 @@ export class DefaultTemplateEngine implements TemplateEngine {
     }
     
     const condition = parts[0].trim();
-    const thenValue = parts[1].trim();
-    const elseValue = parts.length > 2 ? parts.slice(2).join(':').trim() : '';
+    const thenValue = parts[1];
+    const elseValue = parts.length > 2 ? parts.slice(2).join(':') : '';
     
     // Вычисляем условие
     const conditionResult = this.evaluateCondition(condition, context);
