@@ -167,3 +167,492 @@ export interface WorkflowError {
   stackTrace?: string;
   retryCount: number;
 }
+
+// ============================================================================
+// CLI Adapter интерфейсы
+// ============================================================================
+
+/**
+ * Интерфейс CLI-адаптера для взаимодействия с AI-моделями
+ */
+export interface CLIAdapter {
+  /** Имя адаптера */
+  name: string;
+  
+  /** Версия адаптера */
+  version: string;
+  
+  /**
+   * Проверка доступности утилиты
+   * @returns Promise<boolean> - true если утилита доступна
+   */
+  isAvailable(): Promise<boolean>;
+  
+  /**
+   * Выполнение запроса к модели
+   * @param request - Запрос к адаптеру
+   * @returns Promise<AdapterResponse> - Ответ от модели
+   */
+  execute(request: AdapterRequest): Promise<AdapterResponse>;
+  
+  /**
+   * Парсинг ответа модели
+   * @param rawOutput - Сырой вывод от CLI
+   * @returns string - Распарсенный контент
+   */
+  parseResponse(rawOutput: string): string;
+  
+  /**
+   * Обработка ошибок
+   * @param error - Ошибка выполнения
+   * @returns AdapterError - Структурированная ошибка
+   */
+  handleError(error: Error): AdapterError;
+}
+
+/**
+ * Запрос к CLI-адаптеру
+ */
+export interface AdapterRequest {
+  /** Промпт для модели */
+  prompt: string;
+  
+  /** Модель для использования (опционально) */
+  model?: string;
+  
+  /** Температура генерации (опционально) */
+  temperature?: number;
+  
+  /** Максимальное количество токенов (опционально) */
+  maxTokens?: number;
+  
+  /** Системный промпт (опционально) */
+  systemPrompt?: string;
+  
+  /** Переменные окружения (опционально) */
+  env?: Record<string, string>;
+  
+  /** Таймаут в миллисекундах (опционально) */
+  timeout?: number;
+}
+
+/**
+ * Ответ от CLI-адаптера
+ */
+export interface AdapterResponse {
+  /** Контент ответа */
+  content: string;
+  
+  /** Использованная модель */
+  model: string;
+  
+  /** Количество использованных токенов (опционально) */
+  tokensUsed?: number;
+  
+  /** Время выполнения в миллисекундах */
+  executionTime: number;
+  
+  /** Дополнительные метаданные (опционально) */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Ошибка адаптера
+ */
+export interface AdapterError {
+  /** Код ошибки */
+  code: string;
+  
+  /** Сообщение об ошибке */
+  message: string;
+  
+  /** Можно ли повторить операцию */
+  retryable: boolean;
+  
+  /** Оригинальная ошибка */
+  originalError: Error;
+}
+
+// ============================================================================
+// Template Engine интерфейсы
+// ============================================================================
+
+/**
+ * Интерфейс движка шаблонов
+ */
+export interface TemplateEngine {
+  /**
+   * Рендеринг шаблона с подстановкой переменных
+   * @param template - Текст шаблона
+   * @param context - Контекст для подстановки
+   * @returns string - Отрендеренный текст
+   */
+  render(template: string, context: TemplateContext): string;
+  
+  /**
+   * Загрузка шаблона из файла
+   * @param path - Путь к файлу шаблона
+   * @returns string - Содержимое шаблона
+   */
+  loadTemplate(path: string): string;
+  
+  /**
+   * Валидация шаблона
+   * @param template - Текст шаблона
+   * @returns ValidationResult - Результат валидации
+   */
+  validate(template: string): ValidationResult;
+}
+
+/**
+ * Контекст шаблона
+ */
+export interface TemplateContext {
+  /** Переменные из состояния */
+  variables: Record<string, unknown>;
+  
+  /**
+   * Функция для загрузки артефактов
+   * @param path - Путь к артефакту
+   * @returns string - Содержимое артефакта
+   */
+  loadArtifact(path: string): string;
+  
+  /**
+   * Условная функция
+   * @param condition - Условие
+   * @param thenValue - Значение если true
+   * @param elseValue - Значение если false (опционально)
+   * @returns string - Результат
+   */
+  if(condition: boolean, thenValue: string, elseValue?: string): string;
+  
+  /**
+   * Функция для работы со списками
+   * @param items - Массив элементов
+   * @param template - Шаблон для каждого элемента
+   * @returns string - Результат
+   */
+  forEach(items: unknown[], template: string): string;
+}
+
+/**
+ * Результат валидации
+ */
+export interface ValidationResult {
+  /** Валиден ли шаблон */
+  valid: boolean;
+  
+  /** Список ошибок */
+  errors: ValidationError[];
+  
+  /** Список предупреждений */
+  warnings: ValidationWarning[];
+}
+
+/**
+ * Ошибка валидации
+ */
+export interface ValidationError {
+  /** Сообщение об ошибке */
+  message: string;
+  
+  /** Номер строки (опционально) */
+  line?: number;
+  
+  /** Номер колонки (опционально) */
+  column?: number;
+  
+  /** Код ошибки */
+  code: string;
+}
+
+/**
+ * Предупреждение валидации
+ */
+export interface ValidationWarning {
+  /** Сообщение предупреждения */
+  message: string;
+  
+  /** Номер строки (опционально) */
+  line?: number;
+  
+  /** Номер колонки (опционально) */
+  column?: number;
+}
+
+// ============================================================================
+// Расширенная обработка ошибок
+// ============================================================================
+
+/**
+ * Категория ошибки
+ */
+export type ErrorCategory = 'config' | 'execution' | 'state' | 'user_input';
+
+/**
+ * Серьезность ошибки
+ */
+export type ErrorSeverity = 'fatal' | 'error' | 'warning';
+
+/**
+ * Параметры для создания WorkflowError
+ */
+export interface ErrorParams {
+  /** Код ошибки */
+  code: string;
+  
+  /** Категория ошибки */
+  category: ErrorCategory;
+  
+  /** Серьезность ошибки */
+  severity: ErrorSeverity;
+  
+  /** Сообщение об ошибке */
+  message: string;
+  
+  /** Контекст ошибки */
+  context: Record<string, unknown>;
+  
+  /** Можно ли восстановиться */
+  recoverable: boolean;
+  
+  /** Предложения по исправлению */
+  suggestions: string[];
+}
+
+/**
+ * Класс ошибки рабочего процесса
+ */
+export class WorkflowErrorClass extends Error {
+  code: string;
+  category: ErrorCategory;
+  severity: ErrorSeverity;
+  context: Record<string, unknown>;
+  recoverable: boolean;
+  suggestions: string[];
+  
+  constructor(params: ErrorParams) {
+    super(params.message);
+    this.name = 'WorkflowError';
+    this.code = params.code;
+    this.category = params.category;
+    this.severity = params.severity;
+    this.context = params.context;
+    this.recoverable = params.recoverable;
+    this.suggestions = params.suggestions;
+    
+    // Сохраняем правильный stack trace
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, WorkflowErrorClass);
+    }
+  }
+}
+
+// ============================================================================
+// Execution Context интерфейсы
+// ============================================================================
+
+/**
+ * Контекст выполнения
+ */
+export interface ExecutionContext {
+  /** Состояние рабочего процесса */
+  state: WorkflowState;
+  
+  /** Реестр адаптеров */
+  adapters: AdapterRegistry;
+  
+  /** Движок шаблонов */
+  templateEngine: TemplateEngine;
+  
+  /** Менеджер артефактов */
+  artifactManager: ArtifactManager;
+  
+  /** Логгер */
+  logger: Logger;
+}
+
+/**
+ * Реестр адаптеров
+ */
+export interface AdapterRegistry {
+  /**
+   * Регистрация адаптера
+   * @param adapter - CLI-адаптер
+   */
+  register(adapter: CLIAdapter): void;
+  
+  /**
+   * Получение адаптера по имени
+   * @param name - Имя адаптера
+   * @returns CLIAdapter | undefined
+   */
+  get(name: string): CLIAdapter | undefined;
+  
+  /**
+   * Проверка наличия адаптера
+   * @param name - Имя адаптера
+   * @returns boolean
+   */
+  has(name: string): boolean;
+  
+  /**
+   * Получение всех адаптеров
+   * @returns CLIAdapter[]
+   */
+  getAll(): CLIAdapter[];
+}
+
+/**
+ * Менеджер артефактов
+ */
+export interface ArtifactManager {
+  /**
+   * Сохранение артефакта
+   * @param stepId - ID шага
+   * @param name - Имя артефакта
+   * @param content - Содержимое
+   * @returns Promise<string> - Путь к сохраненному файлу
+   */
+  save(stepId: string, name: string, content: string): Promise<string>;
+  
+  /**
+   * Загрузка артефакта
+   * @param path - Путь к артефакту
+   * @returns Promise<string> - Содержимое артефакта
+   */
+  load(path: string): Promise<string>;
+  
+  /**
+   * Проверка существования артефакта
+   * @param path - Путь к артефакту
+   * @returns Promise<boolean>
+   */
+  exists(path: string): Promise<boolean>;
+  
+  /**
+   * Получение списка артефактов для сессии
+   * @param sessionId - ID сессии
+   * @returns Promise<ArtifactInfo[]>
+   */
+  list(sessionId: string): Promise<ArtifactInfo[]>;
+}
+
+/**
+ * Информация об артефакте
+ */
+export interface ArtifactInfo {
+  /** Путь к файлу */
+  path: string;
+  
+  /** Имя артефакта */
+  name: string;
+  
+  /** ID шага */
+  stepId: string;
+  
+  /** Размер в байтах */
+  size: number;
+  
+  /** Время создания */
+  createdAt: string;
+  
+  /** Метаданные */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Интерфейс логгера
+ */
+export interface Logger {
+  debug(message: string, ...args: unknown[]): void;
+  info(message: string, ...args: unknown[]): void;
+  warn(message: string, ...args: unknown[]): void;
+  error(message: string, ...args: unknown[]): void;
+}
+
+// ============================================================================
+// Step Executor интерфейсы
+// ============================================================================
+
+/**
+ * Исполнитель шагов
+ */
+export interface StepExecutor {
+  /**
+   * Выполнение одного шага
+   * @param step - Шаг для выполнения
+   * @param context - Контекст выполнения
+   * @returns Promise<StepResult>
+   */
+  executeStep(step: WorkflowStep, context: ExecutionContext): Promise<StepResult>;
+  
+  /**
+   * Параллельное выполнение шагов
+   * @param steps - Массив шагов
+   * @param context - Контекст выполнения
+   * @returns Promise<StepResult[]>
+   */
+  executeParallel(steps: WorkflowStep[], context: ExecutionContext): Promise<StepResult[]>;
+  
+  /**
+   * Выполнение с повторами
+   * @param step - Шаг для выполнения
+   * @param context - Контекст выполнения
+   * @param maxRetries - Максимальное количество повторов
+   * @returns Promise<StepResult>
+   */
+  executeWithRetry(
+    step: WorkflowStep,
+    context: ExecutionContext,
+    maxRetries: number
+  ): Promise<StepResult>;
+}
+
+/**
+ * Результат выполнения шага
+ */
+export interface StepResult {
+  /** ID шага */
+  stepId: string;
+  
+  /** Статус выполнения */
+  status: StepStatus;
+  
+  /** Выходные данные */
+  outputs: Record<string, unknown>;
+  
+  /** Пути к артефактам */
+  artifacts: string[];
+  
+  /** Время выполнения в миллисекундах */
+  executionTime: number;
+  
+  /** Ошибка (если есть) */
+  error?: Error;
+}
+
+// ============================================================================
+// Retry Configuration
+// ============================================================================
+
+/**
+ * Конфигурация повторов
+ */
+export interface RetryConfig {
+  /** Максимальное количество повторов */
+  maxRetries: number;
+  
+  /** Стратегия задержки */
+  backoffStrategy: 'fixed' | 'exponential' | 'linear';
+  
+  /** Начальная задержка в миллисекундах */
+  initialDelay: number;
+  
+  /** Максимальная задержка в миллисекундах */
+  maxDelay: number;
+  
+  /** Коды ошибок, для которых можно повторить */
+  retryableErrors: string[];
+}
