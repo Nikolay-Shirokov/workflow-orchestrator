@@ -84,12 +84,14 @@ console.log(response.content);
 {
   name: 'openai-cli',
   command: 'openai',
-  args: ['api', 'chat.completions.create', '-m', '${model}', '-g', 'user', '${prompt}'],
+  args: ['api', 'chat.completions.create', '-g', 'user', '${prompt}'],
   env: { OPENAI_API_KEY: process.env.OPENAI_API_KEY },
   parser: 'json',
   timeout: 300000 // 5 минут
 }
 ```
+
+**Примечание:** Флаг `-m` добавляется автоматически, если модель указана в запросе.
 
 **Парсинг ответов:**
 - Парсит JSON структуру: `{ choices: [{ message: { content: "..." } }] }`

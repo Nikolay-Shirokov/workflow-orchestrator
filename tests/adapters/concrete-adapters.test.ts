@@ -204,6 +204,29 @@ describe('OpenAICLIAdapter', () => {
       process.env.OPENAI_API_KEY = originalKey;
     }
   });
+
+  it('должен добавлять флаг -m если модель указана', () => {
+    const adapter = new OpenAICLIAdapter();
+    
+    // Используем приватный метод через any для тестирования
+    const argsWithModel = (adapter as any).prepareArguments({
+      prompt: 'test prompt',
+      model: 'gpt-4'
+    });
+    
+    expect(argsWithModel).toEqual(['api', 'chat.completions.create', '-m', 'gpt-4', '-g', 'user', 'test prompt']);
+  });
+
+  it('не должен добавлять флаг -m если модель не указана', () => {
+    const adapter = new OpenAICLIAdapter();
+    
+    // Используем приватный метод через any для тестирования
+    const argsWithoutModel = (adapter as any).prepareArguments({
+      prompt: 'test prompt'
+    });
+    
+    expect(argsWithoutModel).toEqual(['api', 'chat.completions.create', '-g', 'user', 'test prompt']);
+  });
 });
 
 describe('GeminiCLIAdapter', () => {
