@@ -1,0 +1,316 @@
+/**
+ * Менеджер артефактов рабочего процесса
+ * 
+ * Отвечает за:
+ * - Сохранение результатов шагов в файлы артефактов
+ * - Организацию структуры директорий по сессиям
+ * - Добавление метаданных к артефактам
+ * - Валидацию существования артефактов
+ * - Поддержку множественных артефактов на шаг
+ */
+
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import { ArtifactInfo, ArtifactManager, Logger, WorkflowErrorClass } from './types.js';
+
+/**
+ * Метаданные артефакта
+ */
+export interface ArtifactMetadata {
+  /** Имя артефакта */
+  name: string;
+  
+  /** ID шага, создавшего артефакт */
+  stepId: string;
+  
+  /** Имя шага */
+  stepName?: string;
+  
+  /** Время создания (ISO 8601) */
+  createdAt: string;
+  
+  /** Размер в байтах */
+  size: number;
+  
+  /** Версия рабочего процесса */
+  workflowVersion?: string;
+  
+  /** Дополнительные метаданные */
+  custom?: Record<string, unknown>;
+}
+
+/**
+ * Конфигурация менеджера артефактов
+ */
+export interface ArtifactManagerConfig {
+  /** Базовая директория для артефактов */
+  baseDir: string;
+  
+  /** Шаблон для директории сессии (поддерживает {sessionId}, {timestamp}) */
+  sessionDirTemplate?: string;
+  
+  /** Включить сохранение метаданных */
+  saveMetadata?: boolean;
+  
+  /** Логгер */
+  logger?: Logger;
+}
+
+/**
+ * Реализация менеджера артефактов по умолчанию
+ */
+export class DefaultArtifactManager implements ArtifactManager {
+  private config: Required<ArtifactManagerConfig>;
+  private sessionDirs: Map<string, string> = new Map();
+
+  constructor(config: ArtifactManagerConfig) {
+    this.config = {
+      baseDir: config.baseDir,
+      sessionDirTemplate: config.sessionDirTemplate || 'session_{sessionId}',
+      saveMetadata: config.saveMetadata ?? true,
+      logger: config.logger || console as unknown as Logger,
+    };
+  }
+
+  /**
+   * Сохранение артефакта
+   * @param stepId - ID шага
+   * @param name - Имя артефакта
+   * @param content - Содержимое
+   * @returns Promise<string> - Путь к сохраненному файлу
+   */
+  async save(stepId: string, name: string, content: string): Promise<string> {
+    // Извлечение sessionId из stepId или использование текущей сессии
+    const sessionId = this.extractSessionId(stepId);
+    
+    // Получение или создание директории сессии
+    const sessionDir = await this.getOrCreateSessionDir(sessionId);
+    
+    // Формирование пути к файлу артефакта
+    const artifactPath = path.join(sessionDir, name);
+    
+    // Создание поддиректорий, если необходимо
+    const artifactDir = path.dirname(artifactPath);
+    await fs.mkdir(artifactDir, { recursive: true });
+    
+    // Сохранение содержимого
+    await fs.writeFile(artifactPath, content, 'utf-8');
+    
+    // Получение размера файла
+    const stats = await fs.stat(artifactPath);
+    
+    // Сохранение метаданных
+    if (this.config.saveMetadata) {
+      const metadata: ArtifactMetadata = {
+        name,
+        stepId,
+        createdAt: new Date().toISOString(),
+        size: stats.size,
+      };
+      
+      await this.saveMetadata(artifactPath, metadata);
+    }
+    
+    this.config.logger.info(`Сохранен артефакт: ${artifactPath} (${stats.size} байт)`);
+    
+    return artifactPath;
+  }
+
+  /**
+   * Загрузка артефакта
+   * @param path - Путь к артефакту
+   * @returns Promise<string> - Содержимое артефакта
+   */
+  async load(artifactPath: string): Promise<string> {
+    try {
+      // Проверка существования файла
+      await fs.access(artifactPath);
+      
+      // Чтение содержимого
+      const content = await fs.readFile(artifactPath, 'utf-8');
+      
+      this.config.logger.debug(`Загружен артефакт: ${artifactPath}`);
+      
+      return content;
+    } catch (error) {
+      throw new WorkflowErrorClass({
+        code: 'ARTIFACT_NOT_FOUND',
+        category: 'execution',
+        severity: 'error',
+        message: `Артефакт не найден: ${artifactPath}`,
+        context: { artifactPath, error },
+        recoverable: false,
+        suggestions: [
+          'Проверьте правильность пути к артефакту',
+          'Убедитесь, что шаг, создающий артефакт, был выполнен',
+          'Проверьте целостность файловой системы',
+        ],
+      });
+    }
+  }
+
+  /**
+   * Проверка существования артефакта
+   * @param path - Путь к артефакту
+   * @returns Promise<boolean>
+   */
+  async exists(artifactPath: string): Promise<boolean> {
+    try {
+      await fs.access(artifactPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Получение списка артефактов для сессии
+   * @param sessionId - ID сессии
+   * @returns Promise<ArtifactInfo[]>
+   */
+  async list(sessionId: string): Promise<ArtifactInfo[]> {
+    const sessionDir = this.getSessionDir(sessionId);
+    
+    // Проверка существования директории сессии
+    try {
+      await fs.access(sessionDir);
+    } catch {
+      // Директория не существует - возвращаем пустой список
+      return [];
+    }
+    
+    // Рекурсивный поиск всех файлов в директории сессии
+    const artifacts: ArtifactInfo[] = [];
+    await this.collectArtifacts(sessionDir, sessionDir, artifacts);
+    
+    return artifacts;
+  }
+
+  // ========== Вспомогательные методы ==========
+
+  /**
+   * Извлечение sessionId из stepId
+   * Предполагается, что stepId может содержать sessionId или использовать глобальную сессию
+   */
+  private extractSessionId(_stepId: string): string {
+    // Простая реализация: используем stepId как часть пути
+    // В реальной реализации это может быть более сложная логика
+    return 'current';
+  }
+
+  /**
+   * Получение или создание директории сессии
+   */
+  private async getOrCreateSessionDir(sessionId: string): Promise<string> {
+    // Проверка кэша
+    if (this.sessionDirs.has(sessionId)) {
+      return this.sessionDirs.get(sessionId)!;
+    }
+    
+    // Формирование пути к директории сессии
+    const sessionDir = this.getSessionDir(sessionId);
+    
+    // Создание директории
+    await fs.mkdir(sessionDir, { recursive: true });
+    
+    // Кэширование
+    this.sessionDirs.set(sessionId, sessionDir);
+    
+    this.config.logger.debug(`Создана директория сессии: ${sessionDir}`);
+    
+    return sessionDir;
+  }
+
+  /**
+   * Получение пути к директории сессии
+   */
+  private getSessionDir(sessionId: string): string {
+    // Подстановка переменных в шаблон
+    const dirName = this.config.sessionDirTemplate
+      .replace('{sessionId}', sessionId)
+      .replace('{timestamp}', new Date().toISOString().replace(/[:.]/g, '-'));
+    
+    return path.join(this.config.baseDir, dirName);
+  }
+
+  /**
+   * Сохранение метаданных артефакта
+   */
+  private async saveMetadata(artifactPath: string, metadata: ArtifactMetadata): Promise<void> {
+    const metadataPath = `${artifactPath}.meta.json`;
+    const content = JSON.stringify(metadata, null, 2);
+    
+    try {
+      await fs.writeFile(metadataPath, content, 'utf-8');
+    } catch (error) {
+      // Ошибка сохранения метаданных не критична
+      this.config.logger.warn(`Не удалось сохранить метаданные: ${metadataPath}`, error);
+    }
+  }
+
+  /**
+   * Загрузка метаданных артефакта
+   */
+  private async loadMetadata(artifactPath: string): Promise<ArtifactMetadata | null> {
+    const metadataPath = `${artifactPath}.meta.json`;
+    
+    try {
+      const content = await fs.readFile(metadataPath, 'utf-8');
+      return JSON.parse(content) as ArtifactMetadata;
+    } catch {
+      // Метаданные отсутствуют или повреждены
+      return null;
+    }
+  }
+
+  /**
+   * Рекурсивный сбор артефактов из директории
+   */
+  private async collectArtifacts(
+    baseDir: string,
+    currentDir: string,
+    artifacts: ArtifactInfo[]
+  ): Promise<void> {
+    const entries = await fs.readdir(currentDir, { withFileTypes: true });
+    
+    for (const entry of entries) {
+      const fullPath = path.join(currentDir, entry.name);
+      
+      if (entry.isDirectory()) {
+        // Рекурсивный обход поддиректорий
+        await this.collectArtifacts(baseDir, fullPath, artifacts);
+      } else if (entry.isFile() && !entry.name.endsWith('.meta.json')) {
+        // Это файл артефакта (не метаданные)
+        const stats = await fs.stat(fullPath);
+        const metadata = await this.loadMetadata(fullPath);
+        
+        const artifactInfo: ArtifactInfo = {
+          path: fullPath,
+          name: entry.name,
+          stepId: metadata?.stepId || 'unknown',
+          size: stats.size,
+          createdAt: metadata?.createdAt || stats.birthtime.toISOString(),
+          metadata: metadata?.custom,
+        };
+        
+        artifacts.push(artifactInfo);
+      }
+    }
+  }
+}
+
+/**
+ * Создание менеджера артефактов с конфигурацией по умолчанию
+ */
+export function createArtifactManager(
+  config: Partial<ArtifactManagerConfig> = {}
+): ArtifactManager {
+  const defaultConfig: ArtifactManagerConfig = {
+    baseDir: config.baseDir || './artifacts',
+    sessionDirTemplate: config.sessionDirTemplate,
+    saveMetadata: config.saveMetadata ?? true,
+    logger: config.logger,
+  };
+
+  return new DefaultArtifactManager(defaultConfig);
+}

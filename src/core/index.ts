@@ -7,3 +7,4 @@ export { Logger, LogLevel, LoggerConfig, initializeLogger, getLogger } from './l
 export * from './workflow-config-parser.js';
 export { DefaultTemplateEngine, createTemplateContext } from './template-engine.js';
 export * from './state-manager.js';
+export * from './artifact-manager.js';
