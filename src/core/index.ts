@@ -3,4 +3,5 @@
  */
 
 export * from './types.js';
-export * from './logger.js';
+export { Logger, LogLevel, LoggerConfig, initializeLogger, getLogger } from './logger.js';
+export * from './workflow-config-parser.js';
