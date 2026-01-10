@@ -41,21 +41,42 @@ function createTestArtifactManager(config?: Partial<ArtifactManagerConfig>): Def
 
 /**
  * Генератор валидных имен файлов
+ * Улучшенная версия с полной Windows-совместимостью
  */
 const arbitraryFileName = fc.string({ minLength: 1, maxLength: 50 })
   .filter(s => {
-    // Фильтруем невалидные символы для имен файлов
+    // Фильтруем невалидные символы для имен файлов (Windows + Unix)
     const invalidChars = /[<>:"|?*\x00-\x1F\\\/]/;
     // Также фильтруем специальные имена директорий и пустые строки
     const specialNames = ['.', '..', ''];
+    // Зарезервированные имена Windows
+    const reservedNames = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 
+                           'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 
+                           'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'];
+    
     const trimmed = s.trim();
+    const upperName = trimmed.toUpperCase();
+    
     return !invalidChars.test(s) && 
            trimmed.length > 0 && 
            !specialNames.includes(trimmed) &&
            !trimmed.startsWith('.') && // Избегаем скрытых файлов
-           trimmed.length === s.length; // Избегаем пробелов в начале/конце
+           !trimmed.endsWith('.') && // Избегаем имен, заканчивающихся точкой (Windows)
+           !trimmed.endsWith(' ') && // Избегаем имен, заканчивающихся пробелом (Windows)
+           trimmed.length === s.length && // Избегаем пробелов в начале/конце
+           !reservedNames.includes(upperName) && // Избегаем зарезервированных имен Windows
+           !/\s/.test(s); // Полностью избегаем пробелов
   })
-  .map(s => s.replace(/\s+/g, '_')); // Заменяем пробелы на подчеркивания
+  .map(s => {
+    // Дополнительная очистка: заменяем любые оставшиеся проблемные символы
+    let cleaned = s.replace(/[<>:"|?*\x00-\x1F\\\/\s]/g, '_');
+    // Убираем множественные подчеркивания
+    cleaned = cleaned.replace(/_+/g, '_');
+    // Убираем подчеркивания в начале и конце
+    cleaned = cleaned.replace(/^_+|_+$/g, '');
+    // Если после очистки строка пустая, возвращаем дефолтное имя
+    return cleaned.length > 0 ? cleaned : 'file';
+  })
 
 /**
  * Генератор валидных расширений файлов

@@ -88,11 +88,14 @@ export class DefaultArtifactManager implements ArtifactManager {
    * @returns Promise<string> - Путь к сохраненному файлу
    */
   async save(sessionId: string, stepId: string, name: string, content: string): Promise<string> {
+    // Нормализация и валидация имени артефакта
+    const normalizedName = this.normalizePath(name);
+    
     // Получение или создание директории сессии
     const sessionDir = await this.getOrCreateSessionDir(sessionId);
     
     // Формирование пути к файлу артефакта
-    const artifactPath = path.join(sessionDir, name);
+    const artifactPath = path.join(sessionDir, normalizedName);
     
     // Создание поддиректорий, если необходимо
     const artifactDir = path.dirname(artifactPath);
@@ -116,7 +119,7 @@ export class DefaultArtifactManager implements ArtifactManager {
     // Сохранение метаданных
     if (this.config.saveMetadata) {
       const metadata: ArtifactMetadata = {
-        name,
+        name: normalizedName,
         stepId,
         createdAt: new Date().toISOString(),
         size: stats.size,
@@ -156,7 +159,14 @@ export class DefaultArtifactManager implements ArtifactManager {
   async load(artifactPath: string): Promise<string> {
     try {
       // Проверка существования файла
+      await fs.access(artifactPath);
       const stats = await fs.stat(artifactPath);
+      
+      // Пустые файлы - валидный случай, возвращаем пустую строку
+      if (stats.size === 0) {
+        this.config.logger.debug(`Загружен пустой артефакт: ${artifactPath}`);
+        return '';
+      }
       
       // Определяем, использовать ли потоковую передачу
       if (stats.size > this.config.streamingThreshold) {
@@ -252,6 +262,116 @@ export class DefaultArtifactManager implements ArtifactManager {
   }
 
   // ========== Вспомогательные методы ==========
+
+  /**
+   * Нормализация и валидация пути к артефакту
+   * Очищает путь от невалидных символов и предотвращает обход директорий
+   * @param artifactName - Имя артефакта (может содержать поддиректории)
+   * @returns Нормализованный путь
+   */
+  private normalizePath(artifactName: string): string {
+    // Удаляем начальные и конечные пробелы
+    let normalized = artifactName.trim();
+    
+    // Заменяем обратные слэши на прямые для кросс-платформенности
+    normalized = normalized.replace(/\\/g, '/');
+    
+    // Удаляем множественные слэши
+    normalized = normalized.replace(/\/+/g, '/');
+    
+    // Удаляем начальные и конечные слэши
+    normalized = normalized.replace(/^\/+|\/+$/g, '');
+    
+    // Разбиваем на компоненты пути
+    const parts = normalized.split('/');
+    const cleanParts: string[] = [];
+    
+    for (const part of parts) {
+      // Пропускаем пустые части и текущую директорию
+      if (!part || part === '.') {
+        continue;
+      }
+      
+      // Запрещаем обход директорий вверх
+      if (part === '..') {
+        throw new WorkflowErrorClass({
+          code: 'INVALID_ARTIFACT_PATH',
+          category: 'config',
+          severity: 'error',
+          message: `Недопустимый путь к артефакту: обход директорий запрещен`,
+          context: { artifactName, part },
+          recoverable: false,
+          suggestions: [
+            'Не используйте ".." в путях к артефактам',
+            'Используйте только относительные пути внутри директории сессии',
+          ],
+        });
+      }
+      
+      // Очищаем имя от невалидных символов
+      let cleanPart = this.sanitizeFileName(part);
+      
+      if (cleanPart.length === 0) {
+        throw new WorkflowErrorClass({
+          code: 'INVALID_ARTIFACT_NAME',
+          category: 'config',
+          severity: 'error',
+          message: `Недопустимое имя артефакта: "${part}" содержит только невалидные символы`,
+          context: { artifactName, part },
+          recoverable: false,
+          suggestions: [
+            'Используйте только буквы, цифры, дефисы и подчеркивания',
+            'Избегайте специальных символов в именах файлов',
+          ],
+        });
+      }
+      
+      cleanParts.push(cleanPart);
+    }
+    
+    if (cleanParts.length === 0) {
+      throw new WorkflowErrorClass({
+        code: 'EMPTY_ARTIFACT_PATH',
+        category: 'config',
+        severity: 'error',
+        message: `Пустой путь к артефакту после нормализации`,
+        context: { artifactName },
+        recoverable: false,
+        suggestions: [
+          'Укажите валидное имя артефакта',
+        ],
+      });
+    }
+    
+    return cleanParts.join('/');
+  }
+  
+  /**
+   * Очистка имени файла от невалидных символов
+   * @param fileName - Имя файла
+   * @returns Очищенное имя
+   */
+  private sanitizeFileName(fileName: string): string {
+    // Зарезервированные имена Windows
+    const reservedNames = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 
+                           'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 
+                           'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'];
+    
+    // Удаляем невалидные символы для Windows и Unix
+    // Разрешены: буквы, цифры, дефис, подчеркивание, точка
+    let sanitized = fileName.replace(/[<>:"|?*\x00-\x1F]/g, '_');
+    
+    // Удаляем начальные и конечные точки и пробелы (проблемы Windows)
+    sanitized = sanitized.replace(/^[.\s]+|[.\s]+$/g, '');
+    
+    // Проверяем на зарезервированные имена Windows
+    const nameWithoutExt = sanitized.split('.')[0].toUpperCase();
+    if (reservedNames.includes(nameWithoutExt)) {
+      sanitized = `_${sanitized}`;
+    }
+    
+    return sanitized;
+  }
 
   /**
    * Получение или создание директории сессии
