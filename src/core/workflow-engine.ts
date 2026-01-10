@@ -346,15 +346,15 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       });
     }
 
-    // Определение порядка выполнения
-    const executionOrder = this.determineExecutionOrder(config.steps);
-
-    // Определение оставшихся шагов
-    const remainingSteps = executionOrder.filter(
+    // Определение оставшихся шагов для выполнения
+    // При resume мы НЕ перестраиваем граф зависимостей для всех шагов,
+    // а работаем только с теми шагами, которые еще не завершены
+    const allStepIds = config.steps.map(step => step.id);
+    const remainingStepIds = allStepIds.filter(
       stepId => !state.completedSteps.includes(stepId)
     );
 
-    if (remainingSteps.length === 0) {
+    if (remainingStepIds.length === 0) {
       this.logger.info('Все шаги уже завершены');
       state.status = 'completed';
       state.completedAt = new Date().toISOString();
@@ -362,10 +362,31 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       return state;
     }
 
-    this.logger.info(`Возобновление с шага ${remainingSteps[0]}, осталось ${remainingSteps.length} шагов`);
+    // Фильтруем конфигурацию, оставляя только незавершенные шаги
+    const remainingSteps = config.steps.filter(
+      step => remainingStepIds.includes(step.id)
+    );
+
+    // Определяем порядок выполнения только для оставшихся шагов
+    // Это предотвращает проблемы с циклическими зависимостями,
+    // которые могут возникнуть при попытке построить граф для подмножества шагов
+    let executionOrder: string[];
+    try {
+      executionOrder = this.determineExecutionOrder(remainingSteps);
+    } catch (error) {
+      // Если не удается построить граф зависимостей (например, из-за отсутствующих зависимостей),
+      // используем простой порядок - ID шагов в том порядке, в котором они определены
+      this.logger.warn(
+        `Не удалось построить граф зависимостей для оставшихся шагов: ${(error as Error).message}. ` +
+        `Используется порядок определения шагов.`
+      );
+      executionOrder = remainingStepIds;
+    }
+
+    this.logger.info(`Возобновление с шага ${executionOrder[0]}, осталось ${executionOrder.length} шагов`);
 
     // Продолжение выполнения
-    return this.executeWorkflow(config, state, remainingSteps);
+    return this.executeWorkflow(config, state, executionOrder);
   }
 
   /**
@@ -458,19 +479,25 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
     state: WorkflowState,
     executionOrder: string[]
   ): Promise<WorkflowState> {
-    // Создание графа зависимостей для быстрого поиска шагов
-    const graph = this.buildDependencyGraph(config.steps);
+    // Создаем Map шагов для быстрого поиска
+    // Используем только те шаги, которые есть в executionOrder
+    const stepsMap = new Map<string, WorkflowStep>();
+    for (const step of config.steps) {
+      if (executionOrder.includes(step.id)) {
+        stepsMap.set(step.id, step);
+      }
+    }
 
     // Выполнение шагов в порядке
     for (const stepId of executionOrder) {
-      const step = graph.steps.get(stepId);
+      const step = stepsMap.get(stepId);
       if (!step) {
         throw new WorkflowErrorClass({
           code: 'STEP_NOT_FOUND',
           category: 'execution',
           severity: 'fatal',
           message: `Шаг не найден: ${stepId}`,
-          context: { stepId, availableSteps: Array.from(graph.steps.keys()) },
+          context: { stepId, availableSteps: Array.from(stepsMap.keys()) },
           recoverable: false,
           suggestions: [
             'Проверьте правильность ID шага',
