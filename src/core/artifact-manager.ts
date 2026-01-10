@@ -359,7 +359,8 @@ export class DefaultArtifactManager implements ArtifactManager {
     
     // Удаляем невалидные символы для Windows и Unix
     // Разрешены: буквы, цифры, дефис, подчеркивание, точка
-    let sanitized = fileName.replace(/[<>:"|?*\x00-\x1F]/g, '_');
+    // Добавлены дополнительные проблемные символы для Windows: $, [, ], (, ), {, }, `, ', @, #, %, ^, &, +, =
+    let sanitized = fileName.replace(/[<>:"|?*\x00-\x1F$\[\](){}`;'@#%^&+=]/g, '_');
     
     // Удаляем начальные и конечные точки и пробелы (проблемы Windows)
     sanitized = sanitized.replace(/^[.\s]+|[.\s]+$/g, '');

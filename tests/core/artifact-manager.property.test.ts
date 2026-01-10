@@ -37,6 +37,57 @@ function createTestArtifactManager(config?: Partial<ArtifactManagerConfig>): Def
   });
 }
 
+/**
+ * Санитизация имени файла (повторяет логику из artifact-manager.ts)
+ * Используется для проверки ожидаемых имен файлов в тестах
+ */
+function sanitizeFileName(fileName: string): string {
+  // Зарезервированные имена Windows
+  const reservedNames = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 
+                         'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 
+                         'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'];
+  
+  // Удаляем невалидные символы для Windows и Unix
+  let sanitized = fileName.replace(/[<>:"|?*\x00-\x1F$\[\](){}`;'@#%^&+=]/g, '_');
+  
+  // Удаляем начальные и конечные точки и пробелы
+  sanitized = sanitized.replace(/^[.\s]+|[.\s]+$/g, '');
+  
+  // Проверяем на зарезервированные имена Windows
+  const nameWithoutExt = sanitized.split('.')[0].toUpperCase();
+  if (reservedNames.includes(nameWithoutExt)) {
+    sanitized = `_${sanitized}`;
+  }
+  
+  return sanitized;
+}
+
+/**
+ * Нормализация пути (повторяет логику из artifact-manager.ts)
+ * Используется для проверки ожидаемых путей в тестах
+ */
+function normalizePath(artifactName: string): string {
+  let normalized = artifactName.trim();
+  normalized = normalized.replace(/\\/g, '/');
+  normalized = normalized.replace(/\/+/g, '/');
+  normalized = normalized.replace(/^\/+|\/+$/g, '');
+  
+  const parts = normalized.split('/');
+  const cleanParts: string[] = [];
+  
+  for (const part of parts) {
+    if (!part || part === '.') continue;
+    if (part === '..') throw new Error('Invalid path');
+    
+    const cleanPart = sanitizeFileName(part);
+    if (cleanPart.length === 0) throw new Error('Invalid name');
+    
+    cleanParts.push(cleanPart);
+  }
+  
+  return cleanParts.join(path.sep);
+}
+
 // Генераторы для property-based тестирования
 
 /**
@@ -173,7 +224,9 @@ describe('ArtifactManager Property-Based Tests', () => {
             for (let i = 0; i < artifactNames.length; i++) {
               const savedPath = savedPaths[i];
               const actualFileName = path.basename(savedPath);
-              expect(actualFileName).toBe(artifactNames[i]);
+              // Имя файла должно совпадать с санитизированной версией
+              const expectedFileName = sanitizeFileName(artifactNames[i]);
+              expect(actualFileName).toBe(expectedFileName);
               
               const exists = await manager.exists(savedPath);
               expect(exists).toBe(true);
@@ -209,8 +262,9 @@ describe('ArtifactManager Property-Based Tests', () => {
             const exists = await manager.exists(savedPath);
             expect(exists).toBe(true);
 
-            // Проверяем, что относительный путь сохранен
-            expect(savedPath).toContain(artifactNameWithPath.replace(/\//g, path.sep));
+            // Проверяем, что относительный путь сохранен (с учетом санитизации)
+            const expectedPath = normalizePath(artifactNameWithPath);
+            expect(savedPath).toContain(expectedPath);
 
             // Проверяем содержимое
             const loadedContent = await manager.load(savedPath);
