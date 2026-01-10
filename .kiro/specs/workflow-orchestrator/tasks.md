@@ -719,8 +719,8 @@
 > 
 > **ETA**: 1-2 рабочих дня (8-10 часов)
 
-- [ ] 33. Исправление критических проблем State Manager (🔴 КРИТИЧЕСКИЙ)
-  - [ ] 33.1 Property 18: Добавить retry логику для EPERM ошибки на Windows
+- [x] 33. Исправление критических проблем State Manager (🔴 КРИТИЧЕСКИЙ)
+  - [x] 33.1 Property 18: Добавить retry логику для EPERM ошибки на Windows
     - Проблема: `EPERM: operation not permitted, rename`
     - Решение: Retry с экспоненциальной задержкой
     - Файл: `src/core/state-manager.ts`

@@ -275,7 +275,9 @@ export class DefaultStateManager implements StateManager {
       const content = JSON.stringify(state, null, 2);
       
       await fs.writeFile(tempPath, content, 'utf-8');
-      await fs.rename(tempPath, statePath);
+      
+      // Переименование с retry логикой для обработки EPERM на Windows
+      await this.renameWithRetry(tempPath, statePath);
       
       // Убираем флаг изменений после успешного сохранения
       this.dirtyStates.delete(state.sessionId);
@@ -617,6 +619,83 @@ export class DefaultStateManager implements StateManager {
           })
         );
       }, ms);
+    });
+  }
+
+  /**
+   * Переименование файла с retry логикой для обработки EPERM на Windows
+   * 
+   * На Windows операция rename может временно завершаться с ошибкой EPERM
+   * из-за блокировки файлов антивирусом или другими процессами.
+   * Эта функция повторяет попытку с экспоненциальной задержкой.
+   * 
+   * @param oldPath - Исходный путь
+   * @param newPath - Новый путь
+   * @param maxRetries - Максимальное количество попыток (по умолчанию 5)
+   * @param initialDelay - Начальная задержка в мс (по умолчанию 10)
+   */
+  private async renameWithRetry(
+    oldPath: string,
+    newPath: string,
+    maxRetries: number = 5,
+    initialDelay: number = 10
+  ): Promise<void> {
+    let lastError: Error | undefined;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        await fs.rename(oldPath, newPath);
+        
+        // Успешно переименовали
+        if (attempt > 0) {
+          this.config.logger.debug(
+            `Успешно переименован файл после ${attempt} попыток: ${oldPath} -> ${newPath}`
+          );
+        }
+        return;
+      } catch (error: any) {
+        lastError = error;
+        
+        // Проверяем, является ли это EPERM ошибкой
+        const isEPERM = error.code === 'EPERM' || error.code === 'EBUSY' || error.code === 'EACCES';
+        
+        if (!isEPERM || attempt === maxRetries) {
+          // Если это не EPERM или мы исчерпали попытки, выбрасываем ошибку
+          break;
+        }
+        
+        // Вычисляем задержку с экспоненциальным ростом
+        const delay = initialDelay * Math.pow(2, attempt);
+        
+        this.config.logger.debug(
+          `Попытка ${attempt + 1}/${maxRetries + 1} переименования не удалась (${error.code}), ` +
+          `повтор через ${delay}мс: ${oldPath} -> ${newPath}`
+        );
+        
+        // Ждем перед следующей попыткой
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    // Если мы здесь, значит все попытки исчерпаны
+    throw new WorkflowErrorClass({
+      code: 'FILE_RENAME_FAILED',
+      category: 'state',
+      severity: 'error',
+      message: `Не удалось переименовать файл после ${maxRetries + 1} попыток: ${lastError?.message}`,
+      context: { 
+        oldPath, 
+        newPath, 
+        attempts: maxRetries + 1,
+        errorCode: (lastError as any)?.code,
+      },
+      recoverable: true,
+      suggestions: [
+        'Проверьте, не заблокирован ли файл антивирусом',
+        'Убедитесь, что у процесса есть права на запись',
+        'Попробуйте закрыть другие программы, которые могут использовать файл',
+        'Временно отключите антивирус и попробуйте снова',
+      ],
     });
   }
 }
