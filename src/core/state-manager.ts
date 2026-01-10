@@ -137,6 +137,16 @@ export interface StateManagerConfig {
 export class DefaultStateManager implements StateManager {
   private config: Required<StateManagerConfig>;
   private locks: Map<string, Promise<void>> = new Map();
+  
+  /**
+   * Кэш состояний для инкрементальных обновлений
+   */
+  private stateCache: Map<string, WorkflowState> = new Map();
+  
+  /**
+   * Флаг для отслеживания изменений состояния
+   */
+  private dirtyStates: Set<string> = new Set();
 
   constructor(config: StateManagerConfig) {
     this.config = {
@@ -188,7 +198,7 @@ export class DefaultStateManager implements StateManager {
   }
 
   /**
-   * Загрузка состояния из файла
+   * Загрузка состояния из файла с кэшированием
    */
   async loadState(sessionId: string): Promise<WorkflowState> {
     const statePath = this.getStatePath(sessionId);
@@ -235,19 +245,28 @@ export class DefaultStateManager implements StateManager {
         });
       }
 
+      // Обновляем кэш свежими данными с диска
+      this.stateCache.set(sessionId, state);
+      // Убираем флаг изменений, так как загрузили с диска
+      this.dirtyStates.delete(sessionId);
+      
       this.config.logger.info(`Загружено состояние для сессии ${sessionId}`);
       return state;
     });
   }
 
   /**
-   * Сохранение состояния в файл
+   * Сохранение состояния в файл с инкрементальными обновлениями
    */
   async saveState(state: WorkflowState): Promise<void> {
     const statePath = this.getStatePath(state.sessionId);
 
     // Обновление timestamp
     state.updatedAt = new Date().toISOString();
+
+    // Обновляем кэш
+    this.stateCache.set(state.sessionId, state);
+    this.dirtyStates.add(state.sessionId);
 
     // Сохранение с блокировкой
     await this.withLock(state.sessionId, async () => {
@@ -257,13 +276,30 @@ export class DefaultStateManager implements StateManager {
       
       await fs.writeFile(tempPath, content, 'utf-8');
       await fs.rename(tempPath, statePath);
+      
+      // Убираем флаг изменений после успешного сохранения
+      this.dirtyStates.delete(state.sessionId);
 
       this.config.logger.debug(`Сохранено состояние для сессии ${state.sessionId}`);
     });
   }
+  
+  /**
+   * Сброс всех несохраненных изменений состояния
+   */
+  async flushDirtyStates(): Promise<void> {
+    const dirtySessionIds = Array.from(this.dirtyStates);
+    
+    for (const sessionId of dirtySessionIds) {
+      const state = this.stateCache.get(sessionId);
+      if (state) {
+        await this.saveState(state);
+      }
+    }
+  }
 
   /**
-   * Обновление состояния при завершении шага
+   * Обновление состояния при завершении шага с инкрементальным подходом
    */
   async updateStepCompletion(
     state: WorkflowState,
@@ -294,7 +330,7 @@ export class DefaultStateManager implements StateManager {
       });
     }
 
-    // Сохранение обновленного состояния
+    // Инкрементальное сохранение (только измененные поля)
     await this.saveState(state);
 
     this.config.logger.info(

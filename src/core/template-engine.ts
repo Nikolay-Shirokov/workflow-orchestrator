@@ -31,6 +31,21 @@ export class DefaultTemplateEngine implements TemplateEngine {
   private readonly VARIABLE_PATTERN = /\$\{([^}]+)\}/g;
   
   /**
+   * Кэш загруженных шаблонов (ленивая загрузка)
+   */
+  private templateCache: Map<string, string> = new Map();
+  
+  /**
+   * Кэш загруженных артефактов (ленивая загрузка)
+   */
+  private artifactCache: Map<string, { content: string; timestamp: number }> = new Map();
+  
+  /**
+   * Время жизни кэша артефактов в миллисекундах (5 минут)
+   */
+  private readonly ARTIFACT_CACHE_TTL = 5 * 60 * 1000;
+  
+  /**
    * Рендеринг шаблона с подстановкой переменных
    */
   render(template: string, context: TemplateContext): string {
@@ -47,12 +62,22 @@ export class DefaultTemplateEngine implements TemplateEngine {
   }
   
   /**
-   * Загрузка шаблона из файла
+   * Загрузка шаблона из файла с кэшированием (ленивая загрузка)
    */
   loadTemplate(filePath: string): string {
+    // Проверяем кэш
+    if (this.templateCache.has(filePath)) {
+      return this.templateCache.get(filePath)!;
+    }
+    
     try {
       // Синхронное чтение для простоты использования
-      return fs.readFileSync(filePath, 'utf-8');
+      const content = fs.readFileSync(filePath, 'utf-8');
+      
+      // Кэшируем загруженный шаблон
+      this.templateCache.set(filePath, content);
+      
+      return content;
     } catch (error) {
       throw new WorkflowErrorClass({
         code: 'TEMPLATE_LOAD_ERROR',
@@ -68,6 +93,20 @@ export class DefaultTemplateEngine implements TemplateEngine {
         ]
       });
     }
+  }
+  
+  /**
+   * Очистка кэша шаблонов
+   */
+  clearTemplateCache(): void {
+    this.templateCache.clear();
+  }
+  
+  /**
+   * Очистка кэша артефактов
+   */
+  clearArtifactCache(): void {
+    this.artifactCache.clear();
   }
   
   /**
@@ -210,7 +249,7 @@ export class DefaultTemplateEngine implements TemplateEngine {
   }
   
   /**
-   * Вычисление загрузки артефакта
+   * Вычисление загрузки артефакта с кэшированием
    */
   private evaluateArtifact(expression: string, context: TemplateContext): string {
     const artifactPath = expression.slice(9).trim();
@@ -230,7 +269,25 @@ export class DefaultTemplateEngine implements TemplateEngine {
       });
     }
     
-    return context.loadArtifact(artifactPath);
+    // Проверяем кэш артефактов
+    const cached = this.artifactCache.get(artifactPath);
+    const now = Date.now();
+    
+    if (cached && (now - cached.timestamp) < this.ARTIFACT_CACHE_TTL) {
+      // Возвращаем закэшированное содержимое
+      return cached.content;
+    }
+    
+    // Загружаем артефакт
+    const content = context.loadArtifact(artifactPath);
+    
+    // Кэшируем содержимое
+    this.artifactCache.set(artifactPath, {
+      content,
+      timestamp: now
+    });
+    
+    return content;
   }
   
   /**

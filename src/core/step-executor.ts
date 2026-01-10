@@ -181,7 +181,7 @@ export class DefaultStepExecutor implements StepExecutor {
   }
 
   /**
-   * Параллельное выполнение шагов
+   * Параллельное выполнение шагов с оптимизацией
    */
   async executeParallel(
     steps: WorkflowStep[],
@@ -189,20 +189,22 @@ export class DefaultStepExecutor implements StepExecutor {
   ): Promise<StepResult[]> {
     context.logger.info(`Параллельное выполнение ${steps.length} шагов`);
     
-    // Запускаем все шаги параллельно
-    const promises = steps.map(step => 
-      this.executeStep(step, context).catch(error => ({
-        stepId: step.id,
-        status: 'failed' as const,
-        outputs: {},
-        artifacts: [],
-        executionTime: 0,
-        error: error as Error
-      }))
-    );
+    // Оптимизация: группируем шаги по приоритету и зависимостям
+    const groupedSteps = this.groupStepsByPriority(steps);
     
-    // Ждем завершения всех шагов
-    const results = await Promise.all(promises);
+    // Запускаем все шаги параллельно с ограничением конкурентности
+    const maxConcurrency = this.getMaxConcurrency();
+    const results: StepResult[] = [];
+    
+    // Выполняем группы последовательно, но внутри группы - параллельно
+    for (const group of groupedSteps) {
+      const groupResults = await this.executeStepsWithConcurrencyLimit(
+        group,
+        context,
+        maxConcurrency
+      );
+      results.push(...groupResults);
+    }
     
     // Проверяем наличие ошибок
     const failedSteps = results.filter(r => r.status === 'failed');
@@ -233,6 +235,68 @@ export class DefaultStepExecutor implements StepExecutor {
     }
     
     context.logger.info(`Все ${steps.length} параллельных шагов завершены успешно`);
+    
+    return results;
+  }
+  
+  /**
+   * Группировка шагов по приоритету для оптимального выполнения
+   */
+  private groupStepsByPriority(steps: WorkflowStep[]): WorkflowStep[][] {
+    // Простая реализация: все шаги в одной группе
+    // В будущем можно добавить анализ зависимостей и приоритетов
+    return [steps];
+  }
+  
+  /**
+   * Получение максимального уровня конкурентности
+   */
+  private getMaxConcurrency(): number {
+    // Используем количество CPU ядер, но не более 10
+    const cpuCount = require('os').cpus().length;
+    return Math.min(cpuCount, 10);
+  }
+  
+  /**
+   * Выполнение шагов с ограничением конкурентности
+   */
+  private async executeStepsWithConcurrencyLimit(
+    steps: WorkflowStep[],
+    context: ExecutionContext,
+    maxConcurrency: number
+  ): Promise<StepResult[]> {
+    const results: StepResult[] = [];
+    const executing: Promise<StepResult>[] = [];
+    
+    for (const step of steps) {
+      // Создаем промис для выполнения шага
+      const promise = this.executeStep(step, context).catch(error => ({
+        stepId: step.id,
+        status: 'failed' as const,
+        outputs: {},
+        artifacts: [],
+        executionTime: 0,
+        error: error as Error
+      }));
+      
+      executing.push(promise);
+      
+      // Если достигли лимита конкурентности, ждем завершения хотя бы одного
+      if (executing.length >= maxConcurrency) {
+        const result = await Promise.race(executing);
+        results.push(result);
+        
+        // Удаляем завершенный промис из списка выполняющихся
+        const index = executing.findIndex(p => p === promise);
+        if (index !== -1) {
+          executing.splice(index, 1);
+        }
+      }
+    }
+    
+    // Ждем завершения оставшихся шагов
+    const remainingResults = await Promise.all(executing);
+    results.push(...remainingResults);
     
     return results;
   }

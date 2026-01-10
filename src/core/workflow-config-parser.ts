@@ -31,21 +31,75 @@ export interface DependencyGraph {
  */
 export class WorkflowConfigParser {
   /**
-   * Загрузка конфигурации из файла
+   * Кэш распарсенных конфигураций
+   */
+  private configCache: Map<string, { config: WorkflowConfig; timestamp: number; fileHash: string }> = new Map();
+  
+  /**
+   * Время жизни кэша конфигураций в миллисекундах (10 минут)
+   */
+  private readonly CONFIG_CACHE_TTL = 10 * 60 * 1000;
+  
+  /**
+   * Загрузка конфигурации из файла с кэшированием
    * @param filePath - Путь к файлу конфигурации (YAML или JSON)
    * @returns Promise<WorkflowConfig>
    */
   async loadFromFile(filePath: string): Promise<WorkflowConfig> {
+    // Проверяем кэш
+    const cached = this.configCache.get(filePath);
+    const now = Date.now();
+    
+    if (cached && (now - cached.timestamp) < this.CONFIG_CACHE_TTL) {
+      // Проверяем, не изменился ли файл
+      const currentHash = await this.calculateFileHash(filePath);
+      
+      if (currentHash === cached.fileHash) {
+        // Возвращаем закэшированную конфигурацию
+        return cached.config;
+      }
+    }
+    
+    // Загружаем и парсим конфигурацию
     const content = await readFile(filePath, 'utf-8');
     
     // Определяем формат по расширению файла
+    let config: WorkflowConfig;
     if (filePath.endsWith('.yaml') || filePath.endsWith('.yml')) {
-      return this.parseYAML(content);
+      config = this.parseYAML(content);
     } else if (filePath.endsWith('.json')) {
-      return this.parseJSON(content);
+      config = this.parseJSON(content);
     } else {
       throw new Error(`Неподдерживаемый формат файла: ${filePath}. Используйте .yaml, .yml или .json`);
     }
+    
+    // Кэшируем конфигурацию
+    const fileHash = await this.calculateFileHash(filePath);
+    this.configCache.set(filePath, {
+      config,
+      timestamp: now,
+      fileHash
+    });
+    
+    return config;
+  }
+  
+  /**
+   * Вычисление хэша файла для проверки изменений
+   * @param filePath - Путь к файлу
+   * @returns Promise<string> - Хэш файла
+   */
+  private async calculateFileHash(filePath: string): Promise<string> {
+    const { createHash } = await import('crypto');
+    const content = await readFile(filePath);
+    return createHash('sha256').update(content).digest('hex');
+  }
+  
+  /**
+   * Очистка кэша конфигураций
+   */
+  clearCache(): void {
+    this.configCache.clear();
   }
   
   /**

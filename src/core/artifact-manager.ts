@@ -7,10 +7,13 @@
  * - Добавление метаданных к артефактам
  * - Валидацию существования артефактов
  * - Поддержку множественных артефактов на шаг
+ * - Потоковую передачу больших артефактов
  */
 
 import * as fs from 'fs/promises';
+import { createReadStream, createWriteStream } from 'fs';
 import * as path from 'path';
+import { pipeline } from 'stream/promises';
 import { ArtifactInfo, ArtifactManager, Logger, WorkflowErrorClass } from './types.js';
 
 /**
@@ -52,6 +55,9 @@ export interface ArtifactManagerConfig {
   /** Включить сохранение метаданных */
   saveMetadata?: boolean;
   
+  /** Порог размера для потоковой передачи (в байтах, по умолчанию 1MB) */
+  streamingThreshold?: number;
+  
   /** Логгер */
   logger?: Logger;
 }
@@ -68,6 +74,7 @@ export class DefaultArtifactManager implements ArtifactManager {
       baseDir: config.baseDir,
       sessionDirTemplate: config.sessionDirTemplate || 'session_{sessionId}',
       saveMetadata: config.saveMetadata ?? true,
+      streamingThreshold: config.streamingThreshold || 1024 * 1024, // 1MB
       logger: config.logger || console as unknown as Logger,
     };
   }
@@ -93,8 +100,17 @@ export class DefaultArtifactManager implements ArtifactManager {
     const artifactDir = path.dirname(artifactPath);
     await fs.mkdir(artifactDir, { recursive: true });
     
-    // Сохранение содержимого
-    await fs.writeFile(artifactPath, content, 'utf-8');
+    // Определяем, использовать ли потоковую передачу
+    const contentSize = Buffer.byteLength(content, 'utf-8');
+    
+    if (contentSize > this.config.streamingThreshold) {
+      // Используем потоковую передачу для больших файлов
+      await this.saveWithStreaming(artifactPath, content);
+      this.config.logger.debug(`Использована потоковая передача для артефакта ${artifactPath} (${contentSize} байт)`);
+    } else {
+      // Обычное сохранение для небольших файлов
+      await fs.writeFile(artifactPath, content, 'utf-8');
+    }
     
     // Получение размера файла
     const stats = await fs.stat(artifactPath);
@@ -115,23 +131,47 @@ export class DefaultArtifactManager implements ArtifactManager {
     
     return artifactPath;
   }
+  
+  /**
+   * Сохранение артефакта с использованием потоковой передачи
+   * @param artifactPath - Путь к файлу
+   * @param content - Содержимое
+   */
+  private async saveWithStreaming(artifactPath: string, content: string): Promise<void> {
+    const { Readable } = await import('stream');
+    
+    // Создаем readable stream из строки
+    const readable = Readable.from([content]);
+    
+    // Создаем writable stream
+    const writable = createWriteStream(artifactPath, { encoding: 'utf-8' });
+    
+    // Используем pipeline для потоковой передачи
+    await pipeline(readable, writable);
+  }
 
   /**
-   * Загрузка артефакта
+   * Загрузка артефакта с поддержкой потоковой передачи
    * @param path - Путь к артефакту
    * @returns Promise<string> - Содержимое артефакта
    */
   async load(artifactPath: string): Promise<string> {
     try {
       // Проверка существования файла
-      await fs.access(artifactPath);
+      const stats = await fs.stat(artifactPath);
       
-      // Чтение содержимого
-      const content = await fs.readFile(artifactPath, 'utf-8');
-      
-      this.config.logger.debug(`Загружен артефакт: ${artifactPath}`);
-      
-      return content;
+      // Определяем, использовать ли потоковую передачу
+      if (stats.size > this.config.streamingThreshold) {
+        // Используем потоковую передачу для больших файлов
+        const content = await this.loadWithStreaming(artifactPath);
+        this.config.logger.debug(`Использована потоковая передача для загрузки артефакта ${artifactPath} (${stats.size} байт)`);
+        return content;
+      } else {
+        // Обычная загрузка для небольших файлов
+        const content = await fs.readFile(artifactPath, 'utf-8');
+        this.config.logger.debug(`Загружен артефакт: ${artifactPath}`);
+        return content;
+      }
     } catch (error) {
       throw new WorkflowErrorClass({
         code: 'ARTIFACT_NOT_FOUND',
@@ -147,6 +187,33 @@ export class DefaultArtifactManager implements ArtifactManager {
         ],
       });
     }
+  }
+  
+  /**
+   * Загрузка артефакта с использованием потоковой передачи
+   * @param artifactPath - Путь к файлу
+   * @returns Promise<string> - Содержимое
+   */
+  private async loadWithStreaming(artifactPath: string): Promise<string> {
+    const chunks: (string | Buffer)[] = [];
+    const readable = createReadStream(artifactPath, { encoding: 'utf-8' });
+    
+    return new Promise((resolve, reject) => {
+      readable.on('data', (chunk: string | Buffer) => {
+        chunks.push(chunk);
+      });
+      
+      readable.on('end', () => {
+        const result = chunks.map(chunk => 
+          typeof chunk === 'string' ? chunk : chunk.toString('utf-8')
+        ).join('');
+        resolve(result);
+      });
+      
+      readable.on('error', (error) => {
+        reject(error);
+      });
+    });
   }
 
   /**
