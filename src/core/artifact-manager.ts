@@ -72,7 +72,7 @@ export class DefaultArtifactManager implements ArtifactManager {
   constructor(config: ArtifactManagerConfig) {
     this.config = {
       baseDir: config.baseDir,
-      sessionDirTemplate: config.sessionDirTemplate || 'session_{sessionId}',
+      sessionDirTemplate: config.sessionDirTemplate !== undefined ? config.sessionDirTemplate : 'session_{sessionId}',
       saveMetadata: config.saveMetadata ?? true,
       streamingThreshold: config.streamingThreshold || 1024 * 1024, // 1MB
       logger: config.logger || console as unknown as Logger,
@@ -402,6 +402,11 @@ export class DefaultArtifactManager implements ArtifactManager {
    * Получение пути к директории сессии
    */
   private getSessionDir(sessionId: string): string {
+    // Если шаблон пустой, используем baseDir напрямую
+    if (!this.config.sessionDirTemplate || this.config.sessionDirTemplate.trim() === '') {
+      return this.config.baseDir;
+    }
+    
     // Подстановка переменных в шаблон
     const dirName = this.config.sessionDirTemplate
       .replace('{sessionId}', sessionId)

@@ -71,7 +71,7 @@ workflow:
       shell: "powershell"
       script: |
         New-Item -ItemType Directory -Force -Path "${artifacts_dir}" | Out-Null
-        Set-Content -Path "${artifacts_dir}/step1_user_request.md" -Value "${user_request}"
+        "${user_request}"
       outputs:
         user_request_file: "${artifacts_dir}/step1_user_request.md"
     
