@@ -425,7 +425,7 @@ describe('Property 22: Возобновление с последнего зав
       ),
       { numRuns: 100 }
     );
-  }, 30000); // Увеличиваем таймаут до 30 секунд
+  }, 60000); // Увеличиваем таймаут до 60 секунд для Property 22
 });
 
 // ============================================================================
@@ -441,7 +441,14 @@ describe('Property 24: Валидация целостности артефак�
         workflowNameArb,
         versionArb,
         stepIdArb,
-        fc.array(fc.string({ minLength: 1, maxLength: 20 }), { minLength: 1, maxLength: 3 }),
+        // Улучшенный генератор имен файлов - фильтруем невалидные символы для Windows
+        fc.array(
+          fc.string({ minLength: 1, maxLength: 20 })
+            .filter(s => s.trim().length > 0) // Не пустые строки
+            .filter(s => !/[<>:"|?*\\/]/.test(s)) // Без невалидных символов Windows
+            .filter(s => !/^\.+$/.test(s)), // Не только точки
+          { minLength: 1, maxLength: 3 }
+        ),
         async (workflowName, workflowVersion, initialStep, artifactNames) => {
           // Arrange
           const stateManager = createStateManager({

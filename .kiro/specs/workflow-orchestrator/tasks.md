@@ -644,13 +644,13 @@
     - Файл: `src/core/step-executor.ts`
     - Проверить логику сбора результатов
 
-- [ ] 29. Исправление State Manager Property Tests
-  - [ ] 29.1 Оптимизировать Property 22 (возобновление)
+- [x] 29. Исправление State Manager Property Tests
+  - [x] 29.1 Оптимизировать Property 22 (возобновление)
     - Проблема: `Exceeded timeout of 30000 ms`
     - Файл: `tests/core/state-manager.test.ts`
     - Увеличить таймаут до 60000ms или упростить тест
   
-  - [ ] 29.2 Улучшить генератор путей артефактов для Property 24
+  - [x] 29.2 Улучшить генератор путей артефактов для Property 24
     - Проблема: `ENOENT: no such file or directory, open 'C:\...\> .txt'`
     - Файл: `tests/core/state-manager.test.ts`
     - Фильтровать невалидные символы в путях
