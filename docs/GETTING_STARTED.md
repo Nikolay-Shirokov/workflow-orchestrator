@@ -2,6 +2,24 @@
 
 Это краткое руководство поможет вам создать и запустить ваш первый рабочий процесс с Workflow Orchestrator.
 
+## Установка
+
+### Быстрая установка
+
+```bash
+npm install -g workflow-orchestrator
+```
+
+### Из исходников
+
+```bash
+git clone https://github.com/Nikolay-Shirokov/workflow-orchestrator.git
+cd workflow-orchestrator
+npm install
+npm run build
+npm link
+```
+
 ## Предварительные требования
 
 1. Установлен Node.js 18+ и npm
@@ -442,9 +460,9 @@ workflow-orchestrator validate workflow.dsl
 
 ## Получение помощи
 
-- Документация: [docs/](.)
-- Примеры: [examples/](../examples/)
-- Issues: GitHub Issues
-- Сообщество: Discord/Slack
+- 📖 **Документация**: [docs/](.)
+- 💬 **Примеры**: [examples/](../examples/)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/Nikolay-Shirokov/workflow-orchestrator/issues)
+- 💡 **Обсуждения**: [GitHub Discussions](https://github.com/Nikolay-Shirokov/workflow-orchestrator/discussions)
 
 Удачи в автоматизации ваших рабочих процессов! 🚀

@@ -21,10 +21,24 @@
     "orchestrator",
     "ai",
     "cli",
-    "automation"
+    "automation",
+    "ai-workflow",
+    "claude",
+    "openai",
+    "gemini",
+    "llm",
+    "mcp"
   ],
-  "author": "",
+  "author": "Nikolay Shirokov",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nikolay-Shirokov/workflow-orchestrator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Nikolay-Shirokov/workflow-orchestrator/issues"
+  },
+  "homepage": "https://github.com/Nikolay-Shirokov/workflow-orchestrator#readme",
   "dependencies": {
     "commander": "^11.1.0",
     "semver": "^7.7.3",

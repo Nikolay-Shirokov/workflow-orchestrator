@@ -1,0 +1,44 @@
+# Исходники (публикуем только dist/)
+src/
+tests/
+*.test.ts
+*.spec.ts
+
+# Конфигурация разработки
+.git/
+.github/
+.kiro/
+.vscode/
+old/
+
+# Тестирование
+coverage/
+.nyc_output/
+test.log
+test-dsl-debug.js
+
+# Конфигурационные файлы
+tsconfig.json
+tsconfig.test.json
+jest.config.js
+.eslintrc.json
+
+# Временные файлы
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Зависимости
+node_modules/
+
+# Примеры артефактов
+artifacts/
+examples/artifacts/
+
+# Документация разработки
+.kiro/specs/
+CONTRIBUTING.md
+
+# Прочее
+-p/

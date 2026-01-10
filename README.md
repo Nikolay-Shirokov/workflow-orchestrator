@@ -1,6 +1,50 @@
 # Workflow Orchestrator
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
+[![Tests](https://img.shields.io/badge/tests-274%2F277%20passing-success)](https://github.com/Nikolay-Shirokov/workflow-orchestrator)
+[![Coverage](https://img.shields.io/badge/coverage-98.9%25-brightgreen)](https://github.com/Nikolay-Shirokov/workflow-orchestrator)
+
 Настраиваемая система оркестрации многошаговых рабочих процессов с использованием AI-моделей через CLI-адаптеры.
+
+---
+
+## 🚀 Быстрый старт
+
+```bash
+# Установка
+npm install -g workflow-orchestrator
+
+# Создайте файл my-workflow.yaml
+cat > my-workflow.yaml << 'EOF'
+workflow:
+  name: "hello-world"
+  version: "1.0"
+  
+  settings:
+    artifacts_dir: "artifacts"
+  
+  roles:
+    assistant:
+      adapter: "claude-cli"
+      model: "claude-sonnet-3.5"
+  
+  steps:
+    - id: "greeting"
+      type: "model"
+      role: "assistant"
+      prompt_template: "Поприветствуйте пользователя!"
+      outputs:
+        result: "${artifacts_dir}/greeting.md"
+EOF
+
+# Запустите
+workflow-orchestrator run my-workflow.yaml
+```
+
+📖 Подробнее: [Руководство по началу работы](docs/GETTING_STARTED.md)
+
+---
 
 ## Описание
 
@@ -21,8 +65,20 @@ Workflow Orchestrator - это инструмент для автоматиза�
 
 ## Установка
 
+### Из npm (рекомендуется)
+
 ```bash
+npm install -g workflow-orchestrator
+```
+
+### Из исходников
+
+```bash
+git clone https://github.com/Nikolay-Shirokov/workflow-orchestrator.git
+cd workflow-orchestrator
 npm install
+npm run build
+npm link
 ```
 
 Подробное руководство по установке и настройке см. в [docs/INSTALLATION.md](docs/INSTALLATION.md)
@@ -306,15 +362,28 @@ workflow-orchestrator/
 └── package.json
 ```
 
-## Документация
+## 📚 Документация
 
-- **[Руководство по началу работы](docs/GETTING_STARTED.md)** - быстрый старт для новичков
-- **[Руководство по установке](docs/INSTALLATION.md)** - детальная установка и настройка
-- **[Создание пользовательских адаптеров](docs/CUSTOM_ADAPTERS.md)** - система плагинов
-- [Документация по DSL синтаксису](docs/DSL_SYNTAX.md) - полное описание DSL
-- [Примеры экспорта/импорта](examples/export-import-example.md) - работа с конфигурациями
-- [Конфигурации адаптеров](examples/cli-adapters-config.yaml) - настройка AI-моделей
-- [Dual-design процесс](examples/dual-design-workflow.yaml) - пример сложного процесса
+### Начало работы
+- 🚀 **[Быстрый старт](docs/GETTING_STARTED.md)** - создайте свой первый workflow за 5 минут
+- 📦 **[Установка и настройка](docs/INSTALLATION.md)** - детальное руководство по установке
+
+### Разработка
+- 🔌 **[Создание пользовательских адаптеров](docs/CUSTOM_ADAPTERS.md)** - система плагинов
+- 📝 **[DSL синтаксис](docs/DSL_SYNTAX.md)** - упрощенный язык для описания процессов
+- 🔒 **[Безопасность](docs/SECURITY.md)** - рекомендации по безопасности
+- ⚡ **[Оптимизация производительности](docs/PERFORMANCE_OPTIMIZATIONS.md)** - советы по оптимизации
+
+### Примеры
+- 📋 [Dual-design процесс](examples/dual-design-workflow.yaml) - совместная разработка с двумя AI
+- 🔧 [Процесс с MCP](examples/mcp-workflow-example.yaml) - использование MCP-инструментов
+- ⚙️ [Конфигурации адаптеров](examples/cli-adapters-config.yaml) - настройка AI-моделей
+- 📤 [Экспорт/импорт](examples/export-import-example.md) - совместная работа над конфигурациями
+
+### Для участников
+- 🤝 **[Руководство по внесению вклада](CONTRIBUTING.md)** - как помочь проекту
+- 📰 **[Changelog](CHANGELOG.md)** - история изменений
+- 📢 **[Публикация](docs/PUBLISHING.md)** - для мейнтейнеров
 
 ## Примеры использования
 
@@ -432,13 +501,27 @@ steps:
 
 ### Вклад в проект
 
-Проект открыт для вклада. Если вы хотите добавить новые функции или исправить ошибки:
+Проект открыт для вклада! Мы приветствуем:
 
-1. Форкните репозиторий
+- 🐛 Сообщения об ошибках
+- 💡 Предложения новых функций
+- 📝 Улучшения документации
+- 🔧 Pull requests с исправлениями и улучшениями
+
+**Как внести вклад:**
+
+1. Форкните репозиторий: https://github.com/Nikolay-Shirokov/workflow-orchestrator
 2. Создайте ветку для вашей функции (`git checkout -b feature/amazing-feature`)
 3. Зафиксируйте изменения (`git commit -m 'Add amazing feature'`)
 4. Отправьте в ветку (`git push origin feature/amazing-feature`)
 5. Откройте Pull Request
+
+**Перед отправкой PR:**
+
+- Убедитесь, что все тесты проходят (`npm test`)
+- Добавьте тесты для новой функциональности
+- Обновите документацию при необходимости
+- Следуйте существующему стилю кода
 
 ### Roadmap (опционально)
 
@@ -451,6 +534,21 @@ steps:
 - [ ] Метрики и мониторинг выполнения
 - [ ] Поддержка дополнительных AI-моделей
 
+## Поддержка и обратная связь
+
+- 📖 **Документация**: [docs/](docs/)
+- 💬 **Issues**: [GitHub Issues](https://github.com/Nikolay-Shirokov/workflow-orchestrator/issues)
+- 🐛 **Сообщить об ошибке**: [Создать issue](https://github.com/Nikolay-Shirokov/workflow-orchestrator/issues/new)
+- 💡 **Предложить функцию**: [Создать issue](https://github.com/Nikolay-Shirokov/workflow-orchestrator/issues/new)
+
 ## Лицензия
 
-MIT
+MIT License - см. файл [LICENSE](LICENSE) для деталей.
+
+## Автор
+
+Разработано [Nikolay Shirokov](https://github.com/Nikolay-Shirokov)
+
+## Благодарности
+
+Спасибо всем, кто вносит вклад в развитие проекта! 🙏

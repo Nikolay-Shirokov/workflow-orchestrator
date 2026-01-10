@@ -8,32 +8,61 @@
 
 ## Установка
 
-### 1. Клонирование репозитория
+### Вариант 1: Установка из npm (рекомендуется)
 
 ```bash
-git clone https://github.com/your-org/workflow-orchestrator.git
+npm install -g workflow-orchestrator
+```
+
+После установки команда `workflow-orchestrator` будет доступна глобально.
+
+Проверка установки:
+
+```bash
+workflow-orchestrator --version
+workflow-orchestrator --help
+```
+
+### Вариант 2: Установка из исходников
+
+#### 1. Клонирование репозитория
+
+```bash
+git clone https://github.com/Nikolay-Shirokov/workflow-orchestrator.git
 cd workflow-orchestrator
 ```
 
-### 2. Установка зависимостей
+#### 2. Установка зависимостей
 
 ```bash
 npm install
 ```
 
-### 3. Сборка проекта
+#### 3. Сборка проекта
 
 ```bash
 npm run build
 ```
 
-### 4. Глобальная установка (опционально)
+#### 4. Глобальная установка
 
 ```bash
 npm link
 ```
 
 После этого команда `workflow-orchestrator` будет доступна глобально.
+
+### Вариант 3: Локальная установка в проект
+
+```bash
+npm install workflow-orchestrator
+```
+
+Использование через npx:
+
+```bash
+npx workflow-orchestrator run config.yaml
+```
 
 ## Настройка CLI-адаптеров
 
@@ -525,8 +554,8 @@ docker run -e ANTHROPIC_API_KEY=your-key workflow-orchestrator
 
 1. Проверьте [раздел устранения проблем](#устранение-проблем)
 2. Изучите [примеры](../examples/)
-3. Создайте issue на GitHub
-4. Обратитесь в сообщество
+3. Создайте [issue на GitHub](https://github.com/Nikolay-Shirokov/workflow-orchestrator/issues)
+4. Посмотрите [существующие issues](https://github.com/Nikolay-Shirokov/workflow-orchestrator/issues?q=is%3Aissue)
 
 ## Следующие шаги
 
