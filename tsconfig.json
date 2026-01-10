@@ -2,9 +2,9 @@
   "compilerOptions": {
     /* Основные настройки */
     "target": "ES2022",
-    "module": "ES2022",
+    "module": "NodeNext",
     "lib": ["ES2022"],
-    "moduleResolution": "node",
+    "moduleResolution": "NodeNext",
     
     /* Выходные настройки */
     "outDir": "./dist",

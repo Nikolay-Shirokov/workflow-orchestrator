@@ -9,7 +9,7 @@
  */
 
 import * as yaml from 'yaml';
-import { ValidationRule, WorkflowErrorClass } from './types';
+import { ValidationRule, WorkflowErrorClass } from './types.js';
 
 /**
  * Формат ввода пользователя

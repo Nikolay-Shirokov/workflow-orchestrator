@@ -9,7 +9,7 @@
  * - Систему разрешений для ролей
  */
 
-import { RoleConfig, AdapterRequest, WorkflowErrorClass } from './types';
+import { RoleConfig, AdapterRequest, WorkflowErrorClass } from './types.js';
 
 /**
  * Разрешения для роли

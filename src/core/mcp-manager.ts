@@ -8,7 +8,7 @@
  * - Логирование предупреждений при недоступности MCP
  */
 
-import { Logger } from './types';
+import { Logger } from './types.js';
 
 /**
  * Информация о MCP-инструменте

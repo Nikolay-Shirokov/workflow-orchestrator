@@ -10,7 +10,7 @@ import {
   Logger,
   WorkflowState,
   ValidationError,
-} from './types';
+} from './types.js';
 
 /**
  * Коды ошибок для различных категорий
