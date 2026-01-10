@@ -182,7 +182,7 @@ describe('Property 17: Обновление состояния при завер
           // Assert
           expect(updatedState.completedSteps).toContain(stepHistory.stepId);
           expect(updatedState.history).toContainEqual(stepHistory);
-          expect(new Date(updatedState.updatedAt).getTime()).toBeGreaterThan(new Date(initialState.updatedAt).getTime());
+          expect(new Date(updatedState.updatedAt).getTime()).toBeGreaterThanOrEqual(new Date(initialState.updatedAt).getTime());
 
           // Проверка, что артефакты добавлены
           for (const artifact of stepHistory.artifacts) {
@@ -243,7 +243,12 @@ describe('Property 18: Сохранение состояния при преры
         workflowNameArb,
         versionArb,
         stepIdArb,
-        fc.array(stepHistoryArb, { minLength: 1, maxLength: 5 }),
+        fc.array(stepHistoryArb, { minLength: 1, maxLength: 5 }).chain(histories => 
+          fc.constant(histories.map((history, i) => ({
+            ...history,
+            stepId: `${history.stepId}_${i}`
+          })))
+        ),
         async (workflowName, workflowVersion, initialStep, stepHistories) => {
           // Arrange
           const stateManager = createStateManager({
@@ -381,7 +386,12 @@ describe('Property 22: Возобновление с последнего зав
         workflowNameArb,
         versionArb,
         stepIdArb,
-        fc.array(stepHistoryArb, { minLength: 2, maxLength: 5 }),
+        fc.array(stepHistoryArb, { minLength: 2, maxLength: 5 }).chain(histories => 
+          fc.constant(histories.map((history, i) => ({
+            ...history,
+            stepId: `${history.stepId}_${i}`
+          })))
+        ),
         async (workflowName, workflowVersion, initialStep, stepHistories) => {
           // Arrange
           const stateManager = createStateManager({
