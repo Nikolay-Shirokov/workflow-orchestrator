@@ -47,16 +47,46 @@ export class DefaultTemplateEngine implements TemplateEngine {
   
   /**
    * Рендеринг шаблона с подстановкой переменных
+   * Поддерживает вложенные переменные через несколько проходов
    */
   render(template: string, context: TemplateContext): string {
     let result = template;
-    const processedVariables = new Set<string>();
+    let previousResult = '';
+    const maxIterations = 10; // Максимум 10 уровней вложенности
+    let iteration = 0;
     
-    // Обрабатываем все переменные в шаблоне
-    result = result.replace(this.VARIABLE_PATTERN, (match, expression) => {
-      processedVariables.add(match);
-      return this.evaluateExpression(expression, context);
-    });
+    // Повторяем, пока есть изменения (разрешаем вложенные переменные)
+    while (result !== previousResult && iteration < maxIterations) {
+      previousResult = result;
+      
+      // Обрабатываем все переменные в шаблоне
+      result = result.replace(this.VARIABLE_PATTERN, (match, expression) => {
+        try {
+          return this.evaluateExpression(expression, context);
+        } catch (error) {
+          // Если переменная не может быть разрешена, оставляем как есть
+          // Это позволит разрешить её на следующей итерации
+          return match;
+        }
+      });
+      
+      iteration++;
+    }
+    
+    if (iteration >= maxIterations) {
+      throw new WorkflowErrorClass({
+        code: 'MAX_TEMPLATE_ITERATIONS',
+        category: 'execution',
+        severity: 'error',
+        message: 'Превышено максимальное количество итераций рендеринга шаблона (возможно, циклическая зависимость)',
+        context: { template, maxIterations },
+        recoverable: false,
+        suggestions: [
+          'Проверьте шаблон на циклические зависимости переменных',
+          'Упростите структуру вложенных переменных'
+        ]
+      });
+    }
     
     return result;
   }
@@ -267,6 +297,12 @@ export class DefaultTemplateEngine implements TemplateEngine {
           'Укажите путь к файлу артефакта'
         ]
       });
+    }
+    
+    // Проверяем, содержит ли путь еще не разрешенные переменные
+    if (artifactPath.includes('${')) {
+      // Возвращаем выражение как есть, чтобы оно было обработано на следующей итерации
+      throw new Error(`Переменная в пути артефакта еще не разрешена: ${artifactPath}`);
     }
     
     // Проверяем кэш артефактов

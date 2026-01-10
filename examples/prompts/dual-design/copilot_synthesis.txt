@@ -5,16 +5,16 @@
 ## Исходные данные
 
 ### Ваши вопросы
-${artifact:${copilot_questions}}
+${artifact:${copilot_questions_file}}
 
 ### Вопросы архитектора
-${artifact:${architect_questions}}
+${artifact:${architect_questions_file}}
 
 ### Ваш анализ вопросов архитектора
-${artifact:${copilot_analysis}}
+${artifact:${copilot_analysis_file}}
 
 ### Анализ архитектора ваших вопросов
-${artifact:${architect_analysis}}
+${artifact:${architect_analysis_file}}
 
 ## Задача
 

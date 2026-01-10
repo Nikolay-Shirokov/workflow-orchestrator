@@ -12,6 +12,7 @@
 
 import { spawn } from 'child_process';
 import { readFileSync } from 'fs';
+import { cpus } from 'os';
 import {
   StepExecutor,
   WorkflowStep,
@@ -253,7 +254,7 @@ export class DefaultStepExecutor implements StepExecutor {
    */
   private getMaxConcurrency(): number {
     // Используем количество CPU ядер, но не более 10
-    const cpuCount = require('os').cpus().length;
+    const cpuCount = cpus().length;
     return Math.min(cpuCount, 10);
   }
   
@@ -507,6 +508,7 @@ export class DefaultStepExecutor implements StepExecutor {
         
         // Обновление контекста
         context.state.context[outputName] = response.content;
+        context.state.context[`${outputName}_file`] = artifactPath;  // Добавляем путь к файлу
         context.state.artifacts[outputName] = artifactPath;
       }
     }
