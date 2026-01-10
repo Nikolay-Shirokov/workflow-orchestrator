@@ -481,7 +481,8 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
 
       // Проверка условия выполнения шага
       if (!this.shouldExecuteStep(step, state)) {
-        // Пропускаем шаг, но добавляем его в историю как пропущенный
+        // Пропускаем шаг, добавляем его в историю как пропущенный
+        // НО НЕ добавляем в completedSteps, так как шаг не был выполнен
         const skippedHistory = {
           stepId: step.id,
           stepName: step.name,
@@ -494,7 +495,7 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
         };
         
         state.history.push(skippedHistory);
-        state.completedSteps.push(stepId);
+        // НЕ добавляем в completedSteps - пропущенные шаги не считаются завершенными
         await this.stateManager.saveState(state);
         
         continue;
