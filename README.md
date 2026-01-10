@@ -16,6 +16,7 @@ Workflow Orchestrator - это инструмент для автоматиза�
 - **Роли и специализация** моделей для разных задач
 - **Параллельное выполнение** независимых шагов
 - **Интеграция с MCP** для расширенных возможностей
+- **Экспорт и импорт** конфигураций для совместной работы и версионирования
 
 ## Установка
 
@@ -41,6 +42,55 @@ npm run test:coverage
 # Запуск тестов в режиме наблюдения
 npm run test:watch
 ```
+
+## Использование
+
+### Основные команды
+
+```bash
+# Запуск рабочего процесса
+workflow-orchestrator run config.yaml
+
+# Возобновление процесса
+workflow-orchestrator resume <session-id> config.yaml
+
+# Проверка статуса
+workflow-orchestrator status <session-id>
+
+# Валидация конфигурации (dry-run)
+workflow-orchestrator dry-run config.yaml
+
+# Экспорт конфигурации
+workflow-orchestrator export config.yaml export.yaml --include-files
+
+# Импорт конфигурации
+workflow-orchestrator import export.yaml imported-config.yaml
+```
+
+### Экспорт и импорт конфигураций
+
+Система поддерживает экспорт и импорт конфигураций для совместной работы и версионирования:
+
+```bash
+# Экспорт с включением внешних файлов
+workflow-orchestrator export \
+  my-workflow.yaml \
+  exports/my-workflow-v1.0.yaml \
+  --include-files \
+  --author "Your Name" \
+  --description "Production workflow" \
+  --tags "production,v1.0"
+
+# Импорт конфигурации
+workflow-orchestrator import \
+  exports/my-workflow-v1.0.yaml \
+  imported/workflow.yaml \
+  --base-dir ./imported \
+  --conflict overwrite \
+  --overwrite-files
+```
+
+Подробнее см. [examples/export-import-example.md](examples/export-import-example.md)
 
 ## Структура проекта
 

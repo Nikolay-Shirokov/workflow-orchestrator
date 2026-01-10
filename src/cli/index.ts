@@ -232,6 +232,159 @@ export function createCLI(): Command {
       }
     });
 
+  // Команда: export - экспорт конфигурации процесса
+  program
+    .command('export')
+    .description('Экспортировать конфигурацию процесса с метаданными')
+    .argument('<config>', 'Путь к файлу конфигурации процесса')
+    .argument('<output>', 'Путь к файлу экспорта')
+    .option('--include-files', 'Включить содержимое внешних файлов (шаблоны промптов)')
+    .option('--base-dir <dir>', 'Базовая директория для разрешения путей', process.cwd())
+    .option('--format <format>', 'Формат экспорта (yaml, json)', 'yaml')
+    .option('--author <name>', 'Автор экспорта')
+    .option('--description <text>', 'Описание экспорта')
+    .option('--tags <tags>', 'Теги через запятую')
+    .option('--min-version <version>', 'Минимальная совместимая версия оркестратора')
+    .action(async (configPath: string, outputPath: string, options) => {
+      const logger = createSimpleLogger(false);
+
+      try {
+        logger.info(`Экспорт конфигурации: ${configPath} -> ${outputPath}`);
+
+        // Импортируем необходимые модули
+        const { WorkflowConfigParser } = await import('../core/workflow-config-parser.js');
+        const { WorkflowExportImportManager } = await import('../core/workflow-export-import.js');
+
+        // Загружаем конфигурацию
+        const parser = new WorkflowConfigParser();
+        const config = await parser.loadFromFile(configPath);
+
+        // Создаем менеджер экспорта/импорта
+        const manager = new WorkflowExportImportManager('1.0.0');
+
+        // Парсим теги
+        const tags = options.tags ? options.tags.split(',').map((t: string) => t.trim()) : undefined;
+
+        // Выполняем экспорт
+        const result = await manager.export(config, {
+          includeExternalFiles: options.includeFiles,
+          baseDir: options.baseDir,
+          format: options.format,
+          pretty: true,
+          metadata: {
+            exportedBy: options.author,
+            description: options.description,
+            tags,
+            minOrchestratorVersion: options.minVersion
+          }
+        });
+
+        // Сохраняем результат
+        await manager.saveExport(result, outputPath);
+
+        // Вывод информации
+        logger.info(`✓ Экспорт завершен успешно`);
+        logger.info(`  Процесс: ${config.name} v${config.version}`);
+        logger.info(`  Шагов: ${config.steps.length}`);
+        if (result.embeddedFiles) {
+          logger.info(`  Встроено файлов: ${Object.keys(result.embeddedFiles).length}`);
+        }
+        logger.info(`  Формат: ${options.format}`);
+        logger.info(`  Файл: ${outputPath}`);
+
+        process.exit(0);
+
+      } catch (error) {
+        logger.error('Ошибка экспорта:', error as Error);
+        process.exit(1);
+      }
+    });
+
+  // Команда: import - импорт конфигурации процесса
+  program
+    .command('import')
+    .description('Импортировать конфигурацию процесса из экспорта')
+    .argument('<export-file>', 'Путь к файлу экспорта')
+    .argument('<output-config>', 'Путь для сохранения импортированной конфигурации')
+    .option('--base-dir <dir>', 'Базовая директория для извлечения файлов', process.cwd())
+    .option('--no-validate', 'Пропустить валидацию совместимости')
+    .option('--conflict <strategy>', 'Стратегия разрешения конфликтов (fail, skip, overwrite, rename)', 'fail')
+    .option('--overwrite-files', 'Перезаписать существующие файлы')
+    .option('--json', 'Вывод в формате JSON')
+    .action(async (exportFile: string, outputConfig: string, options) => {
+      const logger = createSimpleLogger(false);
+
+      try {
+        logger.info(`Импорт конфигурации: ${exportFile} -> ${outputConfig}`);
+
+        // Импортируем необходимые модули
+        const { WorkflowExportImportManager } = await import('../core/workflow-export-import.js');
+        const { writeFile } = await import('fs/promises');
+        const { stringify } = await import('yaml');
+
+        // Создаем менеджер экспорта/импорта
+        const manager = new WorkflowExportImportManager('1.0.0');
+
+        // Выполняем импорт
+        const result = await manager.import(exportFile, {
+          baseDir: options.baseDir,
+          validateCompatibility: options.validate,
+          conflictResolution: options.conflict,
+          overwriteFiles: options.overwriteFiles
+        });
+
+        // Сохраняем конфигурацию
+        const configContent = stringify(result.config, { indent: 2 });
+        await writeFile(outputConfig, configContent, 'utf-8');
+
+        // Вывод результата
+        if (options.json) {
+          console.log(JSON.stringify({
+            config: result.config,
+            metadata: result.metadata,
+            extractedFiles: result.extractedFiles,
+            compatibilityWarnings: result.compatibilityWarnings,
+            resolvedConflicts: result.resolvedConflicts
+          }, null, 2));
+        } else {
+          logger.info(`✓ Импорт завершен успешно`);
+          logger.info(`  Процесс: ${result.config.name} v${result.config.version}`);
+          logger.info(`  Шагов: ${result.config.steps.length}`);
+          logger.info(`  Экспортирован: ${new Date(result.metadata.exportedAt).toLocaleString()}`);
+          
+          if (result.metadata.exportedBy) {
+            logger.info(`  Автор: ${result.metadata.exportedBy}`);
+          }
+          
+          if (result.extractedFiles) {
+            logger.info(`  Извлечено файлов: ${Object.keys(result.extractedFiles).length}`);
+            for (const [original, extracted] of Object.entries(result.extractedFiles)) {
+              logger.info(`    ${original} -> ${extracted}`);
+            }
+          }
+
+          if (result.compatibilityWarnings.length > 0) {
+            logger.warn(`\n⚠ Предупреждения о совместимости (${result.compatibilityWarnings.length}):`);
+            for (const warning of result.compatibilityWarnings) {
+              logger.warn(`  - ${warning}`);
+            }
+          }
+
+          if (result.resolvedConflicts.length > 0) {
+            logger.info(`\nРазрешено конфликтов: ${result.resolvedConflicts.length} (стратегия: ${options.conflict})`);
+          }
+
+          logger.info(`\nКонфигурация сохранена: ${outputConfig}`);
+        }
+
+        process.exit(0);
+
+      } catch (error) {
+        logger.error('Ошибка импорта:', error as Error);
+        process.exit(1);
+      }
+    });
+
   return program;
 }
 

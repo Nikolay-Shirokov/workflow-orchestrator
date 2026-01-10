@@ -18,3 +18,4 @@ export * from './dsl.js';
 export { DSLLexer, TokenType } from './dsl-lexer.js';
 export { DSLParser } from './dsl-parser.js';
 export { DSLTranslator } from './dsl-translator.js';
+export * from './workflow-export-import.js';
