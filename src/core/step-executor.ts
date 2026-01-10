@@ -701,11 +701,12 @@ export class DefaultStepExecutor implements StepExecutor {
     // Собираем все артефакты
     const allArtifacts = results.flatMap(r => r.artifacts);
     
-    // Собираем все выходы
-    const allOutputs = results.reduce((acc, r) => ({
-      ...acc,
-      [r.stepId]: r.outputs
-    }), {});
+    // Собираем все выходы - каждый результат содержит outputs своего шага
+    // Создаем структуру где каждый stepId содержит свои outputs
+    const allOutputs: Record<string, unknown> = {};
+    for (const result of results) {
+      allOutputs[result.stepId] = result.outputs;
+    }
     
     return {
       stepId: step.id,

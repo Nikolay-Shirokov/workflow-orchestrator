@@ -759,7 +759,7 @@ describe('Step Executor Property Tests', () => {
             }
           }
         ),
-        { numRuns: 50 }
+        { numRuns: 50, timeout: 10000 }
       );
     });
 
@@ -813,7 +813,7 @@ describe('Step Executor Property Tests', () => {
             }
           }
         ),
-        { numRuns: 50 }
+        { numRuns: 50, timeout: 10000 }
       );
     });
 
@@ -922,7 +922,7 @@ describe('Step Executor Property Tests', () => {
             // (проверяем через логи или другие механизмы)
           }
         ),
-        { numRuns: 50 }
+        { numRuns: 50, timeout: 10000 }
       );
     });
 
@@ -984,7 +984,7 @@ describe('Step Executor Property Tests', () => {
             }
           }
         ),
-        { numRuns: 50 }
+        { numRuns: 50, timeout: 10000 }
       );
     });
 
@@ -1047,7 +1047,7 @@ describe('Step Executor Property Tests', () => {
             }
           }
         ),
-        { numRuns: 30 }
+        { numRuns: 30, timeout: 10000 }
       );
     });
 

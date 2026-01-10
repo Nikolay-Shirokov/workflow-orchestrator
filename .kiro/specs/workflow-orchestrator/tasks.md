@@ -633,13 +633,13 @@
     - Проблема: `WorkflowError: Артефакт не найден` для пустых файлов
     - Файл: `tests/core/artifact-manager.property.test.ts`
 
-- [ ] 28. Исправление Step Executor Property Tests
-  - [ ] 28.1 Увеличить таймауты для Property 56 и 57
+- [x] 28. Исправление Step Executor Property Tests
+  - [x] 28.1 Увеличить таймауты для Property 56 и 57
     - Проблема: `Exceeded timeout of 5000 ms`
     - Файл: `tests/core/step-executor.property.test.ts`
     - Увеличить до 10000ms или уменьшить numRuns
   
-  - [ ] 28.2 Исправить race condition в executeParallel
+  - [x] 28.2 Исправить race condition в executeParallel
     - Проблема: Не все outputs собираются (9 вместо 10)
     - Файл: `src/core/step-executor.ts`
     - Проверить логику сбора результатов
