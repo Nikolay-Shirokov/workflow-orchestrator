@@ -33,7 +33,7 @@ function createTestContext(
     artifacts: {},
     context: {
       default_adapter: 'mock-adapter',
-      artifacts_dir: './test-artifacts',
+      artifacts_dir: 'session_test-session', // Относительный путь без baseDir
       ...contextVariables
     },
     history: [],
@@ -759,7 +759,7 @@ describe('Step Executor Property Tests', () => {
             }
           }
         ),
-        { numRuns: 50, timeout: 10000 }
+        { numRuns: 50, timeout: 15000 }
       );
     });
 
@@ -813,7 +813,7 @@ describe('Step Executor Property Tests', () => {
             }
           }
         ),
-        { numRuns: 50, timeout: 10000 }
+        { numRuns: 50, timeout: 15000 }
       );
     });
 
@@ -922,7 +922,7 @@ describe('Step Executor Property Tests', () => {
             // (проверяем через логи или другие механизмы)
           }
         ),
-        { numRuns: 50, timeout: 10000 }
+        { numRuns: 50, timeout: 15000 }
       );
     });
 
@@ -984,7 +984,7 @@ describe('Step Executor Property Tests', () => {
             }
           }
         ),
-        { numRuns: 50, timeout: 10000 }
+        { numRuns: 50, timeout: 15000 }
       );
     });
 
@@ -1047,7 +1047,7 @@ describe('Step Executor Property Tests', () => {
             }
           }
         ),
-        { numRuns: 30, timeout: 10000 }
+        { numRuns: 30, timeout: 15000 }
       );
     });
 

@@ -232,7 +232,7 @@ describe('StepExecutor Unit Tests', () => {
         }
       ];
       
-      await expect(executor.executeParallel(steps, context)).rejects.toThrow('Ошибки в параллельных шагах');
+      await expect(executor.executeParallel(steps, context)).rejects.toThrow(/\d+ из \d+ параллельных шагов завершились с ошибкой/);
     });
   });
 
