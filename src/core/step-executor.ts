@@ -812,23 +812,77 @@ export class DefaultStepExecutor implements StepExecutor {
 
   /**
    * Выполнение шага ввода пользователя
+   * 
+   * Базовая реализация:
+   * - Приостанавливает выполнение процесса (устанавливает статус 'paused')
+   * - Сохраняет информацию о том, что ожидается ввод пользователя
+   * - Возвращает результат с пометкой 'skipped' для текущего выполнения
+   * - При возобновлении процесс должен продолжиться со следующего шага
    */
   private async executeUserInputStep(
-    _step: WorkflowStep,
-    _context: ExecutionContext
+    step: WorkflowStep,
+    context: ExecutionContext
   ): Promise<StepResult> {
-    // TODO: Реализация будет добавлена в следующих задачах
-    throw new WorkflowErrorClass({
-      code: 'USER_INPUT_NOT_IMPLEMENTED',
-      category: 'execution',
-      severity: 'error',
-      message: 'Шаги ввода пользователя еще не реализованы',
-      context: {},
-      recoverable: false,
-      suggestions: [
-        'Эта функциональность будет добавлена в следующих задачах'
-      ]
-    });
+    context.logger.info(`Шаг ${step.id} требует ввода пользователя. Приостановка выполнения...`);
+    
+    // Устанавливаем статус процесса как 'paused'
+    context.state.status = 'paused';
+    context.state.currentStep = step.id;
+    
+    // Сохраняем информацию о том, что ожидается ввод пользователя
+    context.state.context['awaiting_user_input'] = {
+      stepId: step.id,
+      stepName: step.name,
+      inputFormat: step.input_format || 'text',
+      promptMessage: step.prompt_message,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Если есть выходы, создаем заглушки для артефактов
+    const artifacts: string[] = [];
+    
+    if (step.outputs) {
+      for (const [outputName, outputPath] of Object.entries(step.outputs)) {
+        // Рендеринг пути с подстановкой переменных
+        const renderedPath = context.templateEngine.render(
+          outputPath,
+          this.createTemplateContext(context)
+        );
+        
+        // Создаем заглушку для артефакта с информацией о том, что ожидается ввод
+        const placeholderContent = `# Ожидается ввод пользователя\n\nШаг: ${step.name}\nФормат: ${step.input_format || 'text'}\n\nВвод будет сохранен здесь после предоставления пользователем.`;
+        
+        const artifactPath = await context.artifactManager.save(
+          step.id,
+          renderedPath,
+          placeholderContent
+        );
+        
+        artifacts.push(artifactPath);
+        
+        // Обновление контекста с заглушкой
+        context.state.context[outputName] = placeholderContent;
+        context.state.artifacts[outputName] = artifactPath;
+      }
+    }
+    
+    context.logger.info(
+      `Процесс приостановлен на шаге ${step.id}. ` +
+      `Для продолжения предоставьте ввод пользователя и возобновите выполнение.`
+    );
+    
+    // Возвращаем результат с пометкой 'skipped' для текущего выполнения
+    // Это позволит процессу корректно завершиться и сохранить состояние
+    return {
+      stepId: step.id,
+      status: 'skipped',
+      outputs: {
+        message: 'Ожидается ввод пользователя',
+        inputFormat: step.input_format || 'text'
+      },
+      artifacts,
+      executionTime: 0
+    };
   }
 
   // ========== Вспомогательные методы ==========
