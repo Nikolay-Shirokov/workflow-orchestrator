@@ -27,12 +27,14 @@
   "license": "MIT",
   "dependencies": {
     "commander": "^11.1.0",
-    "yaml": "^2.3.4",
-    "winston": "^3.11.0"
+    "semver": "^7.7.3",
+    "winston": "^3.11.0",
+    "yaml": "^2.3.4"
   },
   "devDependencies": {
     "@types/jest": "^29.5.11",
     "@types/node": "^20.10.6",
+    "@types/semver": "^7.7.1",
     "@typescript-eslint/eslint-plugin": "^6.17.0",
     "@typescript-eslint/parser": "^6.17.0",
     "eslint": "^8.56.0",

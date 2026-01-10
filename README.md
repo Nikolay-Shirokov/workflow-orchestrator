@@ -10,6 +10,7 @@ Workflow Orchestrator - это инструмент для автоматиза�
 
 - **Декларативное описание процессов** через YAML/JSON или упрощенный DSL
 - **CLI-адаптеры** для различных AI-утилит (claude-cli, codex-cli, gemini-cli и др.)
+- **Система плагинов** для создания пользовательских адаптеров
 - **Управление состоянием** с возможностью остановки и возобновления
 - **Шаблоны промптов** с динамической подстановкой переменных
 - **Артефакты** для полной прозрачности процесса
@@ -182,6 +183,58 @@ workflow-orchestrator import \
 
 См. примеры конфигураций в [examples/cli-adapters-config.yaml](examples/cli-adapters-config.yaml)
 
+### Создание пользовательских адаптеров
+
+Система плагинов позволяет создавать собственные адаптеры для интеграции с любыми AI-моделями:
+
+```javascript
+// my-custom-adapter.js
+import { BaseCLIAdapter } from 'workflow-orchestrator';
+
+class MyAdapter extends BaseCLIAdapter {
+  name = 'my-adapter';
+  version = '1.0.0';
+  
+  parseResponse(rawOutput) {
+    // Ваша логика парсинга
+    return JSON.parse(rawOutput).response;
+  }
+}
+
+export default {
+  metadata: {
+    name: 'my-adapter',
+    version: '1.0.0',
+    minOrchestratorVersion: '1.0.0'
+  },
+  createAdapter: (config) => new MyAdapter(config)
+};
+```
+
+Загрузка плагина:
+
+```javascript
+import { PluginManager, AdapterRegistry } from 'workflow-orchestrator';
+
+const registry = new AdapterRegistry();
+const pluginManager = new PluginManager(registry);
+
+// Загрузка одного плагина
+await pluginManager.loadPlugin('./plugins/my-adapter.js');
+
+// Загрузка всех плагинов из директории
+await pluginManager.loadPluginsFromDirectory('./plugins');
+
+// Создание адаптера
+const adapter = pluginManager.createAdapter('my-adapter', {
+  name: 'my-adapter',
+  command: 'myai-cli',
+  args: ['chat', '--prompt', '${prompt}']
+});
+```
+
+Подробное руководство см. в [docs/CUSTOM_ADAPTERS.md](docs/CUSTOM_ADAPTERS.md)
+
 ## Структура проекта
 
 ```
@@ -236,6 +289,7 @@ workflow-orchestrator/
 
 - **[Руководство по началу работы](docs/GETTING_STARTED.md)** - быстрый старт для новичков
 - **[Руководство по установке](docs/INSTALLATION.md)** - детальная установка и настройка
+- **[Создание пользовательских адаптеров](docs/CUSTOM_ADAPTERS.md)** - система плагинов
 - [Документация по DSL синтаксису](docs/DSL_SYNTAX.md) - полное описание DSL
 - [Примеры экспорта/импорта](examples/export-import-example.md) - работа с конфигурациями
 - [Конфигурации адаптеров](examples/cli-adapters-config.yaml) - настройка AI-моделей

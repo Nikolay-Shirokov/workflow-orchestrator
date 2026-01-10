@@ -241,6 +241,111 @@ export interface CLIAdapter {
   handleError(error: Error): AdapterError;
 }
 
+// ============================================================================
+// Plugin System интерфейсы
+// ============================================================================
+
+/**
+ * Метаданные плагина адаптера
+ */
+export interface AdapterPluginMetadata {
+  /** Имя плагина */
+  name: string;
+  
+  /** Версия плагина (semver) */
+  version: string;
+  
+  /** Описание плагина */
+  description?: string;
+  
+  /** Автор плагина */
+  author?: string;
+  
+  /** Минимальная версия оркестратора */
+  minOrchestratorVersion: string;
+  
+  /** Максимальная версия оркестратора (опционально) */
+  maxOrchestratorVersion?: string;
+  
+  /** Зависимости от других плагинов */
+  dependencies?: Record<string, string>;
+  
+  /** Теги для категоризации */
+  tags?: string[];
+}
+
+/**
+ * Фабрика для создания экземпляра адаптера
+ */
+export type AdapterFactory = (config: AdapterConfig) => CLIAdapter;
+
+/**
+ * Интерфейс плагина адаптера
+ */
+export interface AdapterPlugin {
+  /** Метаданные плагина */
+  metadata: AdapterPluginMetadata;
+  
+  /** Фабрика для создания адаптера */
+  createAdapter: AdapterFactory;
+  
+  /**
+   * Инициализация плагина (опционально)
+   * Вызывается при загрузке плагина
+   */
+  initialize?(): Promise<void>;
+  
+  /**
+   * Очистка ресурсов (опционально)
+   * Вызывается при выгрузке плагина
+   */
+  cleanup?(): Promise<void>;
+  
+  /**
+   * Валидация конфигурации (опционально)
+   * @param config - Конфигурация адаптера
+   * @returns ValidationResult - Результат валидации
+   */
+  validateConfig?(config: AdapterConfig): ValidationResult;
+}
+
+/**
+ * Результат валидации совместимости плагина
+ */
+export interface PluginCompatibilityResult {
+  /** Совместим ли плагин */
+  compatible: boolean;
+  
+  /** Причина несовместимости (если есть) */
+  reason?: string;
+  
+  /** Предупреждения */
+  warnings: string[];
+  
+  /** Проверенная версия оркестратора */
+  orchestratorVersion: string;
+  
+  /** Версия плагина */
+  pluginVersion: string;
+}
+
+/**
+ * Опции загрузки плагина
+ */
+export interface PluginLoadOptions {
+  /** Автоматически регистрировать адаптер */
+  autoRegister?: boolean;
+  
+  /** Пропустить проверку совместимости */
+  skipCompatibilityCheck?: boolean;
+  
+  /** Перезаписать существующий плагин с таким же именем */
+  overwrite?: boolean;
+  
+  /** Валидировать конфигурацию при загрузке */
+  validateConfig?: boolean;
+}
+
 /**
  * Запрос к CLI-адаптеру
  */
