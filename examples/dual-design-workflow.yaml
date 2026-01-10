@@ -1,0 +1,234 @@
+# Пример конфигурации dual-design процесса
+# Совместная разработка требований с помощью двух AI-моделей
+
+workflow:
+  name: "dual-design"
+  version: "1.0"
+  description: "Совместная разработка требований с помощью AI-архитектора и второго пилота"
+  author: "Workflow Orchestrator Team"
+  
+  settings:
+    artifacts_dir: "artifacts/session_${timestamp}"
+    default_adapter: "claude-cli"
+    parallel_execution: true
+    max_retries: 3
+    timeout: 300
+    log_level: "info"
+    
+    # Конфигурация MCP-инструментов
+    mcp_tools:
+      - name: "web_search"
+        checkCommand: "which mcp-web-search"
+        expectedExitCode: 0
+        timeout: 5000
+        required: false
+  
+  # Определение ролей
+  roles:
+    architect:
+      adapter: "claude-cli"
+      model: "claude-sonnet-3.5"
+      role_definition: |
+        Вы - АРХИТЕКТОР в совместной разработке требований.
+        Ваша роль - задавать глубокие технические вопросы и предлагать архитектурные решения.
+        Вы фокусируетесь на технической реализуемости, масштабируемости и лучших практиках.
+      custom_instructions: |
+        - Выполните задачу в одном ответе
+        - Не задавайте дополнительных вопросов пользователю
+        - Будьте конкретны и структурированы
+      permissions:
+        - read
+        - edit: "*.md"
+        - mcp
+      temperature: 0.7
+      max_tokens: 4000
+    
+    copilot:
+      adapter: "openai-cli"
+      model: "gpt-4"
+      role_definition: |
+        Вы - ВТОРОЙ ПИЛОТ, предоставляющий критический анализ и альтернативные перспективы.
+        Ваша роль - выявлять потенциальные проблемы, предлагать улучшения и задавать вопросы о бизнес-логике.
+        Вы фокусируетесь на пользовательском опыте, бизнес-требованиях и рисках.
+      custom_instructions: |
+        - Выполните задачу в одном ответе
+        - Не задавайте дополнительных вопросов пользователю
+        - Предоставьте критический, но конструктивный анализ
+      permissions:
+        - read
+        - mcp
+      temperature: 0.7
+      max_tokens: 4000
+  
+  # Шаги процесса
+  steps:
+    # Шаг 1: Инициализация сессии
+    - id: "step1"
+      name: "Инициализация сессии"
+      type: "script"
+      description: "Создание структуры директорий и сохранение запроса пользователя"
+      script: |
+        mkdir -p ${artifacts_dir}
+        echo "${user_request}" > ${artifacts_dir}/step1_user_request.md
+      outputs:
+        user_request_file: "${artifacts_dir}/step1_user_request.md"
+    
+    # Шаг 1.5: Веб-исследование (опциональный)
+    - id: "step1_5"
+      name: "Веб-исследование"
+      type: "model"
+      role: "architect"
+      condition: "mcp_tools.web_search_available"
+      description: "Опциональное веб-исследование для сбора контекста"
+      prompt_template: "prompts/dual-design/web_research.txt"
+      inputs:
+        user_request: "${user_request}"
+      outputs:
+        research_file: "${artifacts_dir}/step1.5_web_research.md"
+    
+    # Шаги 2-3: Параллельные вопросы от обеих моделей
+    - id: "step2_3"
+      name: "Параллельные вопросы"
+      type: "parallel"
+      description: "Архитектор и второй пилот задают вопросы одновременно"
+      steps:
+        # Шаг 2: Вопросы архитектора
+        - id: "step2"
+          name: "Вопросы архитектора"
+          type: "model"
+          role: "architect"
+          prompt_template: "prompts/dual-design/architect_questions.txt"
+          inputs:
+            user_request: "${user_request}"
+            web_research: "${research_file}"
+          outputs:
+            architect_questions: "${artifacts_dir}/step2_architect_questions.md"
+        
+        # Шаг 3: Вопросы второго пилота
+        - id: "step3"
+          name: "Вопросы второго пилота"
+          type: "model"
+          role: "copilot"
+          prompt_template: "prompts/dual-design/copilot_questions.txt"
+          inputs:
+            user_request: "${user_request}"
+            web_research: "${research_file}"
+          outputs:
+            copilot_questions: "${artifacts_dir}/step3_copilot_questions.md"
+    
+    # Шаг 4: Анализ архитектора
+    - id: "step4"
+      name: "Анализ вопросов вторым архитектором"
+      type: "model"
+      role: "architect"
+      depends_on:
+        - "step2_3"
+      description: "Архитектор анализирует вопросы второго пилота"
+      prompt_template: "prompts/dual-design/architect_analysis.txt"
+      inputs:
+        copilot_questions: "${copilot_questions}"
+      outputs:
+        architect_analysis: "${artifacts_dir}/step4_architect_analysis.md"
+    
+    # Шаг 5: Анализ второго пилота
+    - id: "step5"
+      name: "Анализ вопросов вторым пилотом"
+      type: "model"
+      role: "copilot"
+      depends_on:
+        - "step2_3"
+      description: "Второй пилот анализирует вопросы архитектора"
+      prompt_template: "prompts/dual-design/copilot_analysis.txt"
+      inputs:
+        architect_questions: "${architect_questions}"
+      outputs:
+        copilot_analysis: "${artifacts_dir}/step5_copilot_analysis.md"
+    
+    # Шаг 6: Синтез архитектора
+    - id: "step6"
+      name: "Синтез финальных вопросов архитектором"
+      type: "model"
+      role: "architect"
+      depends_on:
+        - "step4"
+        - "step5"
+      description: "Архитектор создает финальный список вопросов"
+      prompt_template: "prompts/dual-design/architect_synthesis.txt"
+      inputs:
+        architect_questions: "${architect_questions}"
+        copilot_questions: "${copilot_questions}"
+        architect_analysis: "${architect_analysis}"
+        copilot_analysis: "${copilot_analysis}"
+      outputs:
+        architect_final_questions: "${artifacts_dir}/step6_architect_final_questions.md"
+    
+    # Шаг 7: Синтез второго пилота
+    - id: "step7"
+      name: "Синтез финальных вопросов вторым пилотом"
+      type: "model"
+      role: "copilot"
+      depends_on:
+        - "step4"
+        - "step5"
+      description: "Второй пилот создает финальный список вопросов"
+      prompt_template: "prompts/dual-design/copilot_synthesis.txt"
+      inputs:
+        architect_questions: "${architect_questions}"
+        copilot_questions: "${copilot_questions}"
+        architect_analysis: "${architect_analysis}"
+        copilot_analysis: "${copilot_analysis}"
+      outputs:
+        copilot_final_questions: "${artifacts_dir}/step7_copilot_final_questions.md"
+    
+    # Шаг 8: Объединение вопросов
+    - id: "step8"
+      name: "Объединение финальных вопросов"
+      type: "model"
+      role: "architect"
+      depends_on:
+        - "step6"
+        - "step7"
+      description: "Создание единого списка вопросов для пользователя"
+      prompt_template: "prompts/dual-design/merge_questions.txt"
+      inputs:
+        architect_final_questions: "${architect_final_questions}"
+        copilot_final_questions: "${copilot_final_questions}"
+      outputs:
+        final_questions: "${artifacts_dir}/step8_final_questions.md"
+    
+    # Шаг 9: Ввод пользователя
+    - id: "step9"
+      name: "Ответы пользователя"
+      type: "user_input"
+      depends_on:
+        - "step8"
+      description: "Пользователь отвечает на финальные вопросы"
+      input_format: "questions"
+      prompt_message: |
+        Пожалуйста, ответьте на следующие вопросы:
+        
+        ${artifact:${final_questions}}
+      validation:
+        - type: "required"
+          message: "Необходимо ответить на все вопросы"
+      outputs:
+        user_answers: "${artifacts_dir}/step9_user_answers.md"
+    
+    # Шаг 10: Генерация финального документа
+    - id: "step10"
+      name: "Генерация финального документа требований"
+      type: "model"
+      role: "architect"
+      depends_on:
+        - "step9"
+      description: "Создание финального документа требований на основе всех собранных данных"
+      prompt_template: "prompts/dual-design/final_document.txt"
+      inputs:
+        user_request: "${user_request}"
+        web_research: "${research_file}"
+        architect_questions: "${architect_questions}"
+        copilot_questions: "${copilot_questions}"
+        final_questions: "${final_questions}"
+        user_answers: "${user_answers}"
+      outputs:
+        final_document: "${artifacts_dir}/step10_final_requirements.md"

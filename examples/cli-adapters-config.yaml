@@ -1,0 +1,212 @@
+# Примеры конфигураций CLI-адаптеров
+# Этот файл демонстрирует настройку различных адаптеров для AI-моделей
+
+adapters:
+  # Адаптер для Claude CLI
+  - name: "claude-cli"
+    description: "Адаптер для Anthropic Claude через claude-cli"
+    command: "claude"
+    args:
+      - "chat"
+      - "--model"
+      - "${model}"
+      - "--message"
+      - "${prompt}"
+    env:
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+    parser: "markdown"
+    timeout: 300
+    retries: 3
+    
+    # Примеры использования
+    examples:
+      - model: "claude-sonnet-3.5"
+        description: "Наиболее сбалансированная модель"
+      - model: "claude-opus-3"
+        description: "Самая мощная модель для сложных задач"
+      - model: "claude-haiku-3"
+        description: "Быстрая модель для простых задач"
+  
+  # Адаптер для OpenAI CLI
+  - name: "openai-cli"
+    description: "Адаптер для OpenAI GPT через openai-cli"
+    command: "openai"
+    args:
+      - "api"
+      - "chat.completions.create"
+      - "-m"
+      - "${model}"
+      - "-g"
+      - "user"
+      - "${prompt}"
+    env:
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+    parser: "json"
+    response_path: "choices[0].message.content"
+    timeout: 300
+    retries: 3
+    
+    examples:
+      - model: "gpt-4-turbo"
+        description: "GPT-4 Turbo для сложных задач"
+      - model: "gpt-4"
+        description: "Стандартный GPT-4"
+      - model: "gpt-3.5-turbo"
+        description: "Быстрая и экономичная модель"
+  
+  # Адаптер для Google Gemini CLI
+  - name: "gemini-cli"
+    description: "Адаптер для Google Gemini через gemini-cli"
+    command: "gemini"
+    args:
+      - "generate"
+      - "--model=${model}"
+      - "--prompt=${prompt}"
+    env:
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY}"
+    parser: "text"
+    timeout: 300
+    retries: 3
+    
+    examples:
+      - model: "gemini-pro"
+        description: "Основная модель Gemini"
+      - model: "gemini-pro-vision"
+        description: "Модель с поддержкой изображений"
+  
+  # Адаптер для локальной модели через Ollama
+  - name: "ollama"
+    description: "Адаптер для локальных моделей через Ollama"
+    command: "ollama"
+    args:
+      - "run"
+      - "${model}"
+      - "${prompt}"
+    parser: "text"
+    timeout: 600
+    retries: 1
+    
+    examples:
+      - model: "llama2"
+        description: "Llama 2 локально"
+      - model: "mistral"
+        description: "Mistral локально"
+      - model: "codellama"
+        description: "Code Llama для программирования"
+  
+  # Адаптер для Azure OpenAI
+  - name: "azure-openai"
+    description: "Адаптер для Azure OpenAI Service"
+    command: "az"
+    args:
+      - "cognitiveservices"
+      - "account"
+      - "openai"
+      - "chat"
+      - "completions"
+      - "create"
+      - "--deployment-name"
+      - "${model}"
+      - "--messages"
+      - '[{"role":"user","content":"${prompt}"}]'
+    env:
+      AZURE_OPENAI_KEY: "${AZURE_OPENAI_KEY}"
+      AZURE_OPENAI_ENDPOINT: "${AZURE_OPENAI_ENDPOINT}"
+    parser: "json"
+    response_path: "choices[0].message.content"
+    timeout: 300
+    retries: 3
+  
+  # Пользовательский адаптер (пример)
+  - name: "custom-api"
+    description: "Пример пользовательского адаптера через curl"
+    command: "curl"
+    args:
+      - "-X"
+      - "POST"
+      - "${API_ENDPOINT}"
+      - "-H"
+      - "Authorization: Bearer ${API_KEY}"
+      - "-H"
+      - "Content-Type: application/json"
+      - "-d"
+      - '{"model":"${model}","prompt":"${prompt}"}'
+    env:
+      API_ENDPOINT: "${CUSTOM_API_ENDPOINT}"
+      API_KEY: "${CUSTOM_API_KEY}"
+    parser: "json"
+    response_path: "response.text"
+    timeout: 300
+    retries: 3
+
+# Настройки парсеров
+parsers:
+  markdown:
+    description: "Парсер для Markdown-ответов"
+    extract_code_blocks: true
+    preserve_formatting: true
+  
+  json:
+    description: "Парсер для JSON-ответов"
+    path_notation: "dot"  # Использовать точечную нотацию для путей
+    validate: true
+  
+  text:
+    description: "Простой текстовый парсер"
+    trim: true
+    remove_empty_lines: false
+
+# Примеры использования в конфигурации процесса
+usage_examples:
+  # Использование конкретного адаптера для роли
+  role_with_adapter:
+    architect:
+      adapter: "claude-cli"
+      model: "claude-sonnet-3.5"
+  
+  # Переопределение адаптера для конкретного шага
+  step_with_adapter:
+    - id: "analysis"
+      type: "model"
+      adapter: "openai-cli"
+      model: "gpt-4-turbo"
+      role: "architect"
+  
+  # Использование локальной модели
+  local_model:
+    - id: "code_review"
+      type: "model"
+      adapter: "ollama"
+      model: "codellama"
+      role: "reviewer"
+
+# Рекомендации по выбору адаптера
+recommendations:
+  high_quality:
+    - "claude-cli с моделью claude-opus-3"
+    - "openai-cli с моделью gpt-4-turbo"
+  
+  balanced:
+    - "claude-cli с моделью claude-sonnet-3.5"
+    - "openai-cli с моделью gpt-4"
+  
+  fast_and_cheap:
+    - "claude-cli с моделью claude-haiku-3"
+    - "openai-cli с моделью gpt-3.5-turbo"
+    - "gemini-cli с моделью gemini-pro"
+  
+  local:
+    - "ollama с любой поддерживаемой моделью"
+  
+  specialized:
+    code_generation:
+      - "openai-cli с моделью gpt-4-turbo"
+      - "ollama с моделью codellama"
+    
+    analysis:
+      - "claude-cli с моделью claude-opus-3"
+      - "openai-cli с моделью gpt-4"
+    
+    quick_tasks:
+      - "claude-cli с моделью claude-haiku-3"
+      - "gemini-cli с моделью gemini-pro"

@@ -24,6 +24,8 @@ Workflow Orchestrator - это инструмент для автоматиза�
 npm install
 ```
 
+Подробное руководство по установке и настройке см. в [docs/INSTALLATION.md](docs/INSTALLATION.md)
+
 ## Сборка
 
 ```bash
@@ -65,7 +67,82 @@ workflow-orchestrator export config.yaml export.yaml --include-files
 
 # Импорт конфигурации
 workflow-orchestrator import export.yaml imported-config.yaml
+
+# Работа с DSL
+workflow-orchestrator parse workflow.dsl --output workflow.yaml
+workflow-orchestrator validate workflow.dsl
+workflow-orchestrator run workflow.dsl
 ```
+
+### Быстрый старт
+
+1. **Создайте конфигурацию процесса** (YAML или DSL):
+
+```yaml
+# my-workflow.yaml
+workflow:
+  name: "my-first-workflow"
+  version: "1.0"
+  
+  settings:
+    artifacts_dir: "artifacts/session_${timestamp}"
+    default_adapter: "claude-cli"
+  
+  roles:
+    assistant:
+      adapter: "claude-cli"
+      model: "claude-sonnet-3.5"
+  
+  steps:
+    - id: "step1"
+      name: "Анализ запроса"
+      type: "model"
+      role: "assistant"
+      prompt_template: |
+        Проанализируйте следующий запрос: ${user_request}
+      inputs:
+        user_request: "${user_request}"
+      outputs:
+        analysis: "${artifacts_dir}/analysis.md"
+```
+
+2. **Настройте переменные окружения**:
+
+```bash
+export ANTHROPIC_API_KEY="your-api-key"
+# или
+export OPENAI_API_KEY="your-api-key"
+```
+
+3. **Запустите процесс**:
+
+```bash
+workflow-orchestrator run my-workflow.yaml
+```
+
+4. **Проверьте результаты** в директории `artifacts/`
+
+### Примеры процессов
+
+#### Dual-Design процесс
+
+Совместная разработка требований с двумя AI-моделями:
+
+```bash
+workflow-orchestrator run examples/dual-design-workflow.yaml
+```
+
+См. полную конфигурацию в [examples/dual-design-workflow.yaml](examples/dual-design-workflow.yaml)
+
+#### Процесс с MCP-инструментами
+
+Рабочий процесс с веб-исследованием и анализом файлов:
+
+```bash
+workflow-orchestrator run examples/mcp-workflow-example.yaml
+```
+
+См. [examples/mcp-workflow-example.yaml](examples/mcp-workflow-example.yaml)
 
 ### Экспорт и импорт конфигураций
 
@@ -92,18 +169,158 @@ workflow-orchestrator import \
 
 Подробнее см. [examples/export-import-example.md](examples/export-import-example.md)
 
+### Настройка CLI-адаптеров
+
+Система поддерживает различные AI-модели через CLI-адаптеры:
+
+- **Claude** (Anthropic) - через `claude-cli`
+- **GPT** (OpenAI) - через `openai-cli`
+- **Gemini** (Google) - через `gemini-cli`
+- **Ollama** - для локальных моделей
+- **Azure OpenAI** - через Azure CLI
+- **Пользовательские адаптеры** - через curl или другие утилиты
+
+См. примеры конфигураций в [examples/cli-adapters-config.yaml](examples/cli-adapters-config.yaml)
+
 ## Структура проекта
 
 ```
 workflow-orchestrator/
 ├── src/
-│   ├── core/           # Основные модули (типы, логирование)
+│   ├── core/           # Основные модули
+│   │   ├── types.ts                    # Типы и интерфейсы
+│   │   ├── logger.ts                   # Система логирования
+│   │   ├── workflow-config-parser.ts   # Парсер конфигураций
+│   │   ├── workflow-engine.ts          # Движок выполнения
+│   │   ├── state-manager.ts            # Управление состоянием
+│   │   ├── template-engine.ts          # Движок шаблонов
+│   │   ├── step-executor.ts            # Исполнитель шагов
+│   │   ├── artifact-manager.ts         # Управление артефактами
+│   │   ├── user-input-handler.ts       # Обработка ввода
+│   │   ├── error-handler.ts            # Обработка ошибок
+│   │   ├── dsl-lexer.ts                # Лексер DSL
+│   │   ├── dsl-parser.ts               # Парсер DSL
+│   │   ├── dsl-translator.ts           # Транслятор DSL
+│   │   ├── workflow-export-import.ts   # Экспорт/импорт
+│   │   └── mcp-manager.ts              # Управление MCP
 │   ├── adapters/       # CLI-адаптеры для AI-моделей
+│   │   ├── base-cli-adapter.ts         # Базовый адаптер
+│   │   ├── adapter-registry.ts         # Реестр адаптеров
+│   │   ├── claude-cli-adapter.ts       # Claude
+│   │   ├── openai-cli-adapter.ts       # OpenAI
+│   │   ├── gemini-cli-adapter.ts       # Gemini
+│   │   └── mock-cli-adapter.ts         # Мок для тестов
 │   ├── cli/            # Командный интерфейс
+│   │   ├── cli.ts                      # CLI команды
+│   │   ├── orchestrator.ts             # Оркестратор
+│   │   └── progress-display.ts         # Отображение прогресса
 │   └── index.ts        # Главная точка входа
 ├── tests/              # Тесты
+│   ├── core/           # Тесты основных модулей
+│   ├── adapters/       # Тесты адаптеров
+│   └── cli/            # Тесты CLI
+├── examples/           # Примеры конфигураций
+│   ├── dual-design-workflow.yaml       # Dual-design процесс
+│   ├── mcp-workflow-example.yaml       # Процесс с MCP
+│   ├── cli-adapters-config.yaml        # Конфигурации адаптеров
+│   ├── export-import-example.md        # Примеры экспорта/импорта
+│   └── prompts/        # Шаблоны промптов
+│       └── dual-design/                # Промпты для dual-design
+├── docs/               # Документация
+│   └── DSL_SYNTAX.md   # Документация по DSL
 ├── dist/               # Скомпилированный код
 └── package.json
+```
+
+## Документация
+
+- **[Руководство по началу работы](docs/GETTING_STARTED.md)** - быстрый старт для новичков
+- **[Руководство по установке](docs/INSTALLATION.md)** - детальная установка и настройка
+- [Документация по DSL синтаксису](docs/DSL_SYNTAX.md) - полное описание DSL
+- [Примеры экспорта/импорта](examples/export-import-example.md) - работа с конфигурациями
+- [Конфигурации адаптеров](examples/cli-adapters-config.yaml) - настройка AI-моделей
+- [Dual-design процесс](examples/dual-design-workflow.yaml) - пример сложного процесса
+
+## Примеры использования
+
+### Создание простого процесса
+
+```yaml
+workflow:
+  name: "code-review"
+  version: "1.0"
+  
+  settings:
+    artifacts_dir: "artifacts/session_${timestamp}"
+  
+  roles:
+    reviewer:
+      adapter: "claude-cli"
+      model: "claude-sonnet-3.5"
+      role_definition: "Вы - опытный код-ревьюер"
+  
+  steps:
+    - id: "review"
+      name: "Ревью кода"
+      type: "model"
+      role: "reviewer"
+      prompt_template: |
+        Проведите ревью следующего кода:
+        ${artifact:${code_file}}
+      inputs:
+        code_file: "${code_file}"
+      outputs:
+        review: "${artifacts_dir}/review.md"
+```
+
+### Использование DSL
+
+```
+workflow code-review v1.0 {
+  artifacts_dir "artifacts/session_${timestamp}"
+  
+  role reviewer {
+    adapter claude-cli
+    model claude-sonnet-3.5
+    definition "Вы - опытный код-ревьюер"
+  }
+  
+  step review {
+    type model
+    role reviewer
+    prompt """
+      Проведите ревью следующего кода:
+      ${artifact:${code_file}}
+    """
+    input code_file
+    output review = "${artifacts_dir}/review.md"
+  }
+}
+```
+
+### Параллельное выполнение
+
+```yaml
+steps:
+  - id: "parallel_analysis"
+    name: "Параллельный анализ"
+    type: "parallel"
+    steps:
+      - id: "security_check"
+        name: "Проверка безопасности"
+        type: "model"
+        role: "security_expert"
+        prompt_template: "prompts/security_check.txt"
+        outputs:
+          security_report: "${artifacts_dir}/security.md"
+      
+      - id: "performance_check"
+        name: "Проверка производительности"
+        type: "model"
+        role: "performance_expert"
+        prompt_template: "prompts/performance_check.txt"
+        outputs:
+          performance_report: "${artifacts_dir}/performance.md"
 ```
 
 ## Разработка
