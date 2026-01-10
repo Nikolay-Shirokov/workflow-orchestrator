@@ -36,4 +36,11 @@ yarn-error.log*
 
 # Артефакты рабочих процессов
 artifacts/
+state/
 *.state.json
+
+# Временные тестовые файлы
+test-*.js
+test-*.txt
+test-*.json
+test-output*.txt

@@ -433,17 +433,25 @@ export class DefaultStepExecutor implements StepExecutor {
     const adapter = context.adapters.get(adapterName);
     
     if (!adapter) {
+      const allAdapters = context.adapters.getAll();
+      const availableCount = allAdapters.length;
+      const availableNames = allAdapters.map(a => a.name);
+      context.logger.error(`Адаптер "${adapterName}" не найден.`);
+      context.logger.error(`Доступно адаптеров: ${availableCount}`);
+      context.logger.error(`Имена: ${JSON.stringify(availableNames)}`);
+      context.logger.error(`Ищем: "${adapterName}", тип: ${typeof adapterName}`);
+      
       throw new WorkflowErrorClass({
         code: 'ADAPTER_NOT_FOUND',
         category: 'execution',
         severity: 'error',
         message: `Адаптер не найден: ${adapterName}`,
-        context: { stepId: step.id, adapterName },
+        context: { stepId: step.id, adapterName, availableNames, availableCount },
         recoverable: false,
         suggestions: [
           'Проверьте правильность имени адаптера',
           'Убедитесь, что адаптер зарегистрирован',
-          `Доступные адаптеры: ${context.adapters.getAll().map(a => a.name).join(', ')}`
+          `Доступные адаптеры: ${availableNames.join(', ')}`
         ]
       });
     }

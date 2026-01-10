@@ -261,21 +261,46 @@ export class RoleManager {
     // Валидация regex для разрешений на редактирование
     if (roleConfig.permissions) {
       for (const permission of roleConfig.permissions) {
+        // Обработка строковых разрешений
         if (typeof permission === 'string' && permission.startsWith('edit:')) {
-          const regex = permission.substring(5);
+          const pattern = permission.substring(5);
           try {
+            // Конвертируем glob в regex и проверяем
+            const regex = this.globToRegex(pattern);
             new RegExp(regex);
           } catch (error) {
             throw new WorkflowErrorClass({
               code: 'INVALID_PERMISSION_REGEX',
               category: 'config',
               severity: 'error',
-              message: `Невалидное регулярное выражение в разрешениях роли "${roleName}"`,
+              message: `Невалидный паттерн в разрешениях роли "${roleName}"`,
               context: { roleName, permission, error },
               recoverable: false,
               suggestions: [
-                'Проверьте синтаксис регулярного выражения',
-                'Используйте формат: edit:regex_pattern'
+                'Проверьте синтаксис паттерна',
+                'Используйте формат: edit:pattern (например, edit:*.md)'
+              ]
+            });
+          }
+        }
+        // Обработка объектных разрешений (из YAML: edit: "*.md")
+        else if (typeof permission === 'object' && permission !== null && 'edit' in permission) {
+          const pattern = (permission as Record<string, string>).edit;
+          try {
+            // Конвертируем glob в regex и проверяем
+            const regex = this.globToRegex(pattern);
+            new RegExp(regex);
+          } catch (error) {
+            throw new WorkflowErrorClass({
+              code: 'INVALID_PERMISSION_REGEX',
+              category: 'config',
+              severity: 'error',
+              message: `Невалидный паттерн в разрешениях роли "${roleName}"`,
+              context: { roleName, permission, error },
+              recoverable: false,
+              suggestions: [
+                'Проверьте синтаксис паттерна',
+                'Используйте формат: edit: "pattern" (например, edit: "*.md")'
               ]
             });
           }
@@ -285,11 +310,27 @@ export class RoleManager {
   }
   
   /**
-   * Парсинг разрешений из массива строк
+   * Конвертация glob-паттерна в регулярное выражение
+   * @param glob - Glob-паттерн (например, "*.md", "src/**\/*.ts")
+   * @returns Строка регулярного выражения
+   */
+  private globToRegex(glob: string): string {
+    // Экранируем специальные символы regex, кроме * и ?
+    let regex = glob
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // Экранируем спецсимволы
+      .replace(/\*/g, '.*')                   // * -> .*
+      .replace(/\?/g, '.');                   // ? -> .
+    
+    // Добавляем якоря начала и конца
+    return `^${regex}$`;
+  }
+
+  /**
+   * Парсинг разрешений из массива строк или объектов
    * @param permissionsArray - Массив разрешений
    * @returns RolePermissions
    */
-  private parsePermissions(permissionsArray: string[]): RolePermissions {
+  private parsePermissions(permissionsArray: (string | Record<string, string>)[]): RolePermissions {
     const permissions: RolePermissions = {
       read: false,
       edit: false,
@@ -298,17 +339,30 @@ export class RoleManager {
     };
     
     for (const permission of permissionsArray) {
-      if (permission === 'read') {
-        permissions.read = true;
-      } else if (permission === 'command') {
-        permissions.command = true;
-      } else if (permission === 'mcp') {
-        permissions.mcp = true;
-      } else if (permission.startsWith('edit:')) {
-        permissions.edit = true;
-        permissions.editFileRegex = permission.substring(5);
-      } else if (permission === 'edit') {
-        permissions.edit = true;
+      // Обработка строковых разрешений
+      if (typeof permission === 'string') {
+        if (permission === 'read') {
+          permissions.read = true;
+        } else if (permission === 'command') {
+          permissions.command = true;
+        } else if (permission === 'mcp') {
+          permissions.mcp = true;
+        } else if (permission.startsWith('edit:')) {
+          permissions.edit = true;
+          const pattern = permission.substring(5);
+          // Конвертируем glob в regex
+          permissions.editFileRegex = this.globToRegex(pattern);
+        } else if (permission === 'edit') {
+          permissions.edit = true;
+        }
+      } 
+      // Обработка объектных разрешений (из YAML: edit: "*.md")
+      else if (typeof permission === 'object' && permission !== null) {
+        if ('edit' in permission) {
+          permissions.edit = true;
+          // Конвертируем glob в regex
+          permissions.editFileRegex = this.globToRegex(permission.edit);
+        }
       }
     }
     

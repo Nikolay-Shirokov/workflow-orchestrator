@@ -242,14 +242,27 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       firstStepId
     );
 
+    // Подстановка timestamp в artifacts_dir
+    let artifactsDir = config.settings.artifacts_dir || 'artifacts';
+    if (artifactsDir.includes('${timestamp}')) {
+      // Извлекаем timestamp из sessionId (формат: session_20260110T1603_random)
+      const timestampMatch = state.sessionId.match(/session_(.+?)_/);
+      const timestamp = timestampMatch ? timestampMatch[1] : new Date().toISOString().replace(/[:.]/g, '').slice(0, 15);
+      artifactsDir = artifactsDir.replace('${timestamp}', timestamp);
+    }
+    if (artifactsDir.includes('${session_id}')) {
+      artifactsDir = artifactsDir.replace('${session_id}', state.sessionId);
+    }
+
     // Инициализация контекста
     state.context = {
       ...initialContext,
       default_adapter: config.settings.default_adapter,
-      artifacts_dir: config.settings.artifacts_dir,
+      artifacts_dir: artifactsDir,
       workflow_name: config.name,
       workflow_version: config.version,
       session_id: state.sessionId,
+      timestamp: state.sessionId.match(/session_(.+?)_/)?.[1] || '',
       // Добавляем MCP-контекст, если доступен
       ...(this.mcpContext ? { mcp_tools: this.mcpContext.flags } : {})
     };

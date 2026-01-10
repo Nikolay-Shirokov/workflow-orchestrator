@@ -67,9 +67,10 @@ workflow:
       name: "Инициализация сессии"
       type: "script"
       description: "Создание структуры директорий и сохранение запроса пользователя"
+      shell: "powershell"
       script: |
-        mkdir -p ${artifacts_dir}
-        echo "${user_request}" > ${artifacts_dir}/step1_user_request.md
+        New-Item -ItemType Directory -Force -Path "${artifacts_dir}" | Out-Null
+        Set-Content -Path "${artifacts_dir}/step1_user_request.md" -Value "${user_request}"
       outputs:
         user_request_file: "${artifacts_dir}/step1_user_request.md"
     
@@ -80,7 +81,7 @@ workflow:
       role: "architect"
       condition: "mcp_tools.web_search_available"
       description: "Опциональное веб-исследование для сбора контекста"
-      prompt_template: "prompts/dual-design/web_research.txt"
+      prompt_template: "examples/prompts/dual-design/web_research.txt"
       inputs:
         user_request: "${user_request}"
       outputs:
@@ -97,7 +98,7 @@ workflow:
           name: "Вопросы архитектора"
           type: "model"
           role: "architect"
-          prompt_template: "prompts/dual-design/architect_questions.txt"
+          prompt_template: "examples/prompts/dual-design/architect_questions.txt"
           inputs:
             user_request: "${user_request}"
             web_research: "${research_file}"
@@ -109,7 +110,7 @@ workflow:
           name: "Вопросы второго пилота"
           type: "model"
           role: "copilot"
-          prompt_template: "prompts/dual-design/copilot_questions.txt"
+          prompt_template: "examples/prompts/dual-design/copilot_questions.txt"
           inputs:
             user_request: "${user_request}"
             web_research: "${research_file}"
@@ -124,7 +125,7 @@ workflow:
       depends_on:
         - "step2_3"
       description: "Архитектор анализирует вопросы второго пилота"
-      prompt_template: "prompts/dual-design/architect_analysis.txt"
+      prompt_template: "examples/prompts/dual-design/architect_analysis.txt"
       inputs:
         copilot_questions: "${copilot_questions}"
       outputs:
@@ -138,7 +139,7 @@ workflow:
       depends_on:
         - "step2_3"
       description: "Второй пилот анализирует вопросы архитектора"
-      prompt_template: "prompts/dual-design/copilot_analysis.txt"
+      prompt_template: "examples/prompts/dual-design/copilot_analysis.txt"
       inputs:
         architect_questions: "${architect_questions}"
       outputs:
@@ -153,7 +154,7 @@ workflow:
         - "step4"
         - "step5"
       description: "Архитектор создает финальный список вопросов"
-      prompt_template: "prompts/dual-design/architect_synthesis.txt"
+      prompt_template: "examples/prompts/dual-design/architect_synthesis.txt"
       inputs:
         architect_questions: "${architect_questions}"
         copilot_questions: "${copilot_questions}"
@@ -171,7 +172,7 @@ workflow:
         - "step4"
         - "step5"
       description: "Второй пилот создает финальный список вопросов"
-      prompt_template: "prompts/dual-design/copilot_synthesis.txt"
+      prompt_template: "examples/prompts/dual-design/copilot_synthesis.txt"
       inputs:
         architect_questions: "${architect_questions}"
         copilot_questions: "${copilot_questions}"
@@ -189,7 +190,7 @@ workflow:
         - "step6"
         - "step7"
       description: "Создание единого списка вопросов для пользователя"
-      prompt_template: "prompts/dual-design/merge_questions.txt"
+      prompt_template: "examples/prompts/dual-design/merge_questions.txt"
       inputs:
         architect_final_questions: "${architect_final_questions}"
         copilot_final_questions: "${copilot_final_questions}"
@@ -222,7 +223,7 @@ workflow:
       depends_on:
         - "step9"
       description: "Создание финального документа требований на основе всех собранных данных"
-      prompt_template: "prompts/dual-design/final_document.txt"
+      prompt_template: "examples/prompts/dual-design/final_document.txt"
       inputs:
         user_request: "${user_request}"
         web_research: "${research_file}"

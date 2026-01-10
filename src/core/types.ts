@@ -70,7 +70,7 @@ export interface RoleConfig {
   model?: string;
   role_definition?: string;
   custom_instructions?: string;
-  permissions?: string[];
+  permissions?: (string | Record<string, string>)[];
   temperature?: number;
   max_tokens?: number;
 }
