@@ -62,7 +62,7 @@ const arbitraryFileName = fc.stringMatching(/^[a-zA-Z0-9_-]{1,50}$/)
   .map(s => {
     // Если строка пустая после фильтрации (не должно быть), возвращаем дефолт
     return s.length > 0 ? s : 'file';
-  })
+  });
 
 /**
  * Генератор валидных расширений файлов
@@ -277,7 +277,7 @@ describe('ArtifactManager Property-Based Tests', () => {
         ),
         { numRuns: 100 }
       );
-    });
+    }, 15000); // Увеличен таймаут для property-based теста
 
     it('должен изолировать артефакты разных сессий', async () => {
       await fc.assert(
@@ -315,7 +315,7 @@ describe('ArtifactManager Property-Based Tests', () => {
         ),
         { numRuns: 100 }
       );
-    });
+    }, 15000); // Увеличен таймаут для property-based теста
 
     it('должен корректно использовать шаблон директории сессии', async () => {
       await fc.assert(

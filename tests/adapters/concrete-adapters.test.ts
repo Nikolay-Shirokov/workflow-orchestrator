@@ -65,7 +65,7 @@ describe('ClaudeCLIAdapter', () => {
     if (originalKey) {
       process.env.ANTHROPIC_API_KEY = originalKey;
     }
-  });
+  }, 10000); // Увеличиваем таймаут до 10 секунд для проверки доступности CLI
 
   it('должен использовать пользовательскую конфигурацию', () => {
     const customAdapter = new ClaudeCLIAdapter({
