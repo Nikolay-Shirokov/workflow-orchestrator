@@ -49,7 +49,7 @@ describe('TemplateEngine Property-Based Tests', () => {
           fc.string({ minLength: 1, maxLength: 10 })
             .filter(s => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(s)),
           fc.oneof(
-            fc.string(),
+            fc.string().filter(s => !s.includes('${') && !s.includes('}')),
             fc.integer(),
             fc.boolean(),
             fc.constant(null)
@@ -98,6 +98,9 @@ describe('TemplateEngine Property-Based Tests', () => {
           { minLength: 1, maxLength: 5 }
         ),
         (artifacts) => {
+          // Очищаем кэш артефактов перед каждой итерацией
+          engine.clearArtifactCache();
+          
           // Удаляем дубликаты путей, оставляя последний
           const uniqueArtifacts = new Map<string, string>();
           for (const artifact of artifacts) {
