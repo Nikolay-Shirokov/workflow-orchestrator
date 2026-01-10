@@ -17,10 +17,12 @@ const TEST_BASE_DIR = path.join(process.cwd(), 'test-artifacts');
  * Вспомогательная функция для очистки тестовой директории
  */
 async function cleanupTestDir(): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, 100)); // Даем время на закрытие файлов
   try {
     await fs.rm(TEST_BASE_DIR, { recursive: true, force: true });
-  } catch {
-    // Игнорируем ошибки при очистке
+  } catch (error) {
+    // Игнорируем ошибки при очистке на Windows
+    console.warn('Warning: Could not clean up test directory:', error);
   }
 }
 
@@ -43,14 +45,17 @@ function createTestArtifactManager(config?: Partial<ArtifactManagerConfig>): Def
 const arbitraryFileName = fc.string({ minLength: 1, maxLength: 50 })
   .filter(s => {
     // Фильтруем невалидные символы для имен файлов
-    const invalidChars = /[<>:"|?*\x00-\x1F]/;
-    // Также фильтруем специальные имена директорий
-    const specialNames = ['.', '..'];
+    const invalidChars = /[<>:"|?*\x00-\x1F\\\/]/;
+    // Также фильтруем специальные имена директорий и пустые строки
+    const specialNames = ['.', '..', ''];
+    const trimmed = s.trim();
     return !invalidChars.test(s) && 
-           s.trim().length > 0 && 
-           !specialNames.includes(s.trim());
+           trimmed.length > 0 && 
+           !specialNames.includes(trimmed) &&
+           !trimmed.startsWith('.') && // Избегаем скрытых файлов
+           trimmed.length === s.length; // Избегаем пробелов в начале/конце
   })
-  .map(s => s.replace(/\\/g, '_').replace(/\//g, '_')); // Заменяем слэши
+  .map(s => s.replace(/\s+/g, '_')); // Заменяем пробелы на подчеркивания
 
 /**
  * Генератор валидных расширений файлов

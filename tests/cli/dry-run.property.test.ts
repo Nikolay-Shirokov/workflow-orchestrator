@@ -120,6 +120,10 @@ describe('Dry-run Property Tests', () => {
   test('Property 45: dry-run validates without executing commands', async () => {
     await fc.assert(
       fc.asyncProperty(validWorkflowConfigArb, async (config) => {
+        // Создаем уникальную директорию для артефактов
+        const uniqueArtifactsDir = path.join(testDir, `artifacts-${Date.now()}-${Math.random().toString(36).substring(7)}`);
+        config.settings.artifacts_dir = uniqueArtifactsDir;
+        
         // Создание временного файла конфигурации
         const configPath = path.join(testDir, `config-${Date.now()}-${Math.random()}.json`);
         await fs.writeFile(configPath, JSON.stringify(config, null, 2));
@@ -143,19 +147,17 @@ describe('Dry-run Property Tests', () => {
 
           // Проверка: не должно быть побочных эффектов (артефактов)
           // Dry-run не должен создавать артефакты или изменять файловую систему
-          const artifactsExist = await fs.access(config.settings.artifacts_dir)
+          const artifactsExist = await fs.access(uniqueArtifactsDir)
             .then(() => true)
             .catch(() => false);
           
-          // Если директория артефактов существует, она должна быть пустой
-          if (artifactsExist) {
-            const files = await fs.readdir(config.settings.artifacts_dir);
-            expect(files.length).toBe(0);
-          }
+          // Директория артефактов не должна быть создана при dry-run
+          expect(artifactsExist).toBe(false);
 
         } finally {
           // Очистка
           await fs.unlink(configPath).catch(() => {});
+          await fs.rm(uniqueArtifactsDir, { recursive: true, force: true }).catch(() => {});
         }
       }),
       { numRuns: 50 }

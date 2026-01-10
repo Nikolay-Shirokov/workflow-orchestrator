@@ -16,12 +16,23 @@ const TEST_BACKUP_DIR = './test-state/backups';
 
 // Очистка тестовой директории перед и после тестов
 beforeEach(async () => {
-  await fs.rm(TEST_STATE_DIR, { recursive: true, force: true });
+  try {
+    await fs.rm(TEST_STATE_DIR, { recursive: true, force: true });
+  } catch (error) {
+    // Игнорируем ошибки при удалении
+  }
+  await new Promise(resolve => setTimeout(resolve, 100)); // Даем время на освобождение файлов
   await fs.mkdir(TEST_STATE_DIR, { recursive: true });
 });
 
 afterEach(async () => {
-  await fs.rm(TEST_STATE_DIR, { recursive: true, force: true });
+  await new Promise(resolve => setTimeout(resolve, 100)); // Даем время на закрытие файлов
+  try {
+    await fs.rm(TEST_STATE_DIR, { recursive: true, force: true });
+  } catch (error) {
+    // Игнорируем ошибки при удалении на Windows
+    console.warn('Warning: Could not clean up test directory:', error);
+  }
 });
 
 // ============================================================================
@@ -162,13 +173,16 @@ describe('Property 17: Обновление состояния при завер
 
           const initialState = await stateManager.createState(workflowName, workflowVersion, initialStep);
 
+          // Добавляем небольшую задержку, чтобы updatedAt гарантированно отличался
+          await new Promise(resolve => setTimeout(resolve, 10));
+
           // Act
           const updatedState = await stateManager.updateStepCompletion(initialState, stepHistory);
 
           // Assert
           expect(updatedState.completedSteps).toContain(stepHistory.stepId);
           expect(updatedState.history).toContainEqual(stepHistory);
-          expect(updatedState.updatedAt).not.toBe(initialState.updatedAt);
+          expect(new Date(updatedState.updatedAt).getTime()).toBeGreaterThan(new Date(initialState.updatedAt).getTime());
 
           // Проверка, что артефакты добавлены
           for (const artifact of stepHistory.artifacts) {
