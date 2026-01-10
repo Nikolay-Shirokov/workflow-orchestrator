@@ -458,6 +458,7 @@ export class DefaultStepExecutor implements StepExecutor {
         
         // Сохранение артефакта
         const artifactPath = await context.artifactManager.save(
+          context.state.sessionId,
           step.id,
           renderedPath,
           response.content
@@ -573,6 +574,7 @@ export class DefaultStepExecutor implements StepExecutor {
         
         // Для скриптов, выход - это stdout
         const artifactPath = await context.artifactManager.save(
+          context.state.sessionId,
           step.id,
           renderedPath,
           result.stdout
@@ -853,6 +855,7 @@ export class DefaultStepExecutor implements StepExecutor {
         const placeholderContent = `# Ожидается ввод пользователя\n\nШаг: ${step.name}\nФормат: ${step.input_format || 'text'}\n\nВвод будет сохранен здесь после предоставления пользователем.`;
         
         const artifactPath = await context.artifactManager.save(
+          context.state.sessionId,
           step.id,
           renderedPath,
           placeholderContent

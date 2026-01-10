@@ -81,15 +81,13 @@ export class DefaultArtifactManager implements ArtifactManager {
 
   /**
    * Сохранение артефакта
+   * @param sessionId - ID сессии
    * @param stepId - ID шага
    * @param name - Имя артефакта
    * @param content - Содержимое
    * @returns Promise<string> - Путь к сохраненному файлу
    */
-  async save(stepId: string, name: string, content: string): Promise<string> {
-    // Извлечение sessionId из stepId или использование текущей сессии
-    const sessionId = this.extractSessionId(stepId);
-    
+  async save(sessionId: string, stepId: string, name: string, content: string): Promise<string> {
     // Получение или создание директории сессии
     const sessionDir = await this.getOrCreateSessionDir(sessionId);
     
@@ -254,16 +252,6 @@ export class DefaultArtifactManager implements ArtifactManager {
   }
 
   // ========== Вспомогательные методы ==========
-
-  /**
-   * Извлечение sessionId из stepId
-   * Предполагается, что stepId может содержать sessionId или использовать глобальную сессию
-   */
-  private extractSessionId(_stepId: string): string {
-    // Простая реализация: используем stepId как часть пути
-    // В реальной реализации это может быть более сложная логика
-    return 'current';
-  }
 
   /**
    * Получение или создание директории сессии

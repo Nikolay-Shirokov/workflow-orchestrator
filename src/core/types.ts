@@ -646,12 +646,13 @@ export interface AdapterRegistry {
 export interface ArtifactManager {
   /**
    * Сохранение артефакта
+   * @param sessionId - ID сессии
    * @param stepId - ID шага
    * @param name - Имя артефакта
    * @param content - Содержимое
    * @returns Promise<string> - Путь к сохраненному файлу
    */
-  save(stepId: string, name: string, content: string): Promise<string>;
+  save(sessionId: string, stepId: string, name: string, content: string): Promise<string>;
   
   /**
    * Загрузка артефакта

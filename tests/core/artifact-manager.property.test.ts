@@ -75,6 +75,12 @@ const arbitraryStepId = fc.string({ minLength: 1, maxLength: 20 })
   .filter(s => /^[a-zA-Z0-9_-]+$/.test(s));
 
 /**
+ * Генератор ID сессий
+ */
+const arbitrarySessionId = fc.string({ minLength: 1, maxLength: 30 })
+  .filter(s => /^[a-zA-Z0-9_-]+$/.test(s));
+
+/**
  * Генератор содержимого артефактов
  */
 const arbitraryContent = fc.string({ minLength: 0, maxLength: 1000 });
@@ -99,15 +105,16 @@ describe('ArtifactManager Property-Based Tests', () => {
     it('должен сохранять артефакты с указанными именами файлов', async () => {
       await fc.assert(
         fc.asyncProperty(
+          arbitrarySessionId,
           arbitraryStepId,
           arbitraryArtifactName,
           arbitraryContent,
-          async (stepId, artifactName, content) => {
+          async (sessionId, stepId, artifactName, content) => {
             // Arrange
             const manager = createTestArtifactManager();
 
             // Act
-            const savedPath = await manager.save(stepId, artifactName, content);
+            const savedPath = await manager.save(sessionId, stepId, artifactName, content);
 
             // Assert
             // Проверяем, что файл существует
@@ -133,13 +140,14 @@ describe('ArtifactManager Property-Based Tests', () => {
     it('должен сохранять множественные артефакты с разными именами для одного шага', async () => {
       await fc.assert(
         fc.asyncProperty(
+          arbitrarySessionId,
           arbitraryStepId,
           fc.array(arbitraryArtifactName, { minLength: 1, maxLength: 5 }).map(names => 
             // Убираем дубликаты
             Array.from(new Set(names))
           ),
           fc.array(arbitraryContent, { minLength: 1, maxLength: 5 }),
-          async (stepId, artifactNames, contents) => {
+          async (sessionId, stepId, artifactNames, contents) => {
             // Убеждаемся, что у нас достаточно содержимого
             if (artifactNames.length === 0) return;
             
@@ -150,7 +158,7 @@ describe('ArtifactManager Property-Based Tests', () => {
             // Act - сохраняем множественные артефакты
             for (let i = 0; i < artifactNames.length; i++) {
               const content = contents[i % contents.length];
-              const savedPath = await manager.save(stepId, artifactNames[i], content);
+              const savedPath = await manager.save(sessionId, stepId, artifactNames[i], content);
               savedPaths.push(savedPath);
             }
 
@@ -175,6 +183,7 @@ describe('ArtifactManager Property-Based Tests', () => {
     it('должен корректно обрабатывать имена файлов с путями (поддиректориями)', async () => {
       await fc.assert(
         fc.asyncProperty(
+          arbitrarySessionId,
           arbitraryStepId,
           fc.tuple(
             arbitraryFileName,
@@ -182,12 +191,12 @@ describe('ArtifactManager Property-Based Tests', () => {
             arbitraryFileExtension
           ).map(([dir, name, ext]) => `${dir}/${name}${ext}`),
           arbitraryContent,
-          async (stepId, artifactNameWithPath, content) => {
+          async (sessionId, stepId, artifactNameWithPath, content) => {
             // Arrange
             const manager = createTestArtifactManager();
 
             // Act
-            const savedPath = await manager.save(stepId, artifactNameWithPath, content);
+            const savedPath = await manager.save(sessionId, stepId, artifactNameWithPath, content);
 
             // Assert
             const exists = await manager.exists(savedPath);
@@ -220,31 +229,28 @@ describe('ArtifactManager Property-Based Tests', () => {
     it('должен создавать отдельные директории для разных сессий', async () => {
       await fc.assert(
         fc.asyncProperty(
-          fc.array(arbitraryStepId, { minLength: 2, maxLength: 5 }).map(ids => 
+          fc.array(arbitrarySessionId, { minLength: 2, maxLength: 5 }).map(ids => 
             // Убираем дубликаты для создания уникальных сессий
             Array.from(new Set(ids))
           ),
+          arbitraryStepId,
           arbitraryArtifactName,
           arbitraryContent,
-          async (sessionIds, artifactName, content) => {
+          async (sessionIds, stepId, artifactName, content) => {
             if (sessionIds.length < 2) return; // Нужно минимум 2 сессии
 
-            // Arrange - создаем менеджеры для разных сессий
-            const managers = sessionIds.map(_sessionId => 
-              new DefaultArtifactManager({
-                baseDir: TEST_BASE_DIR,
-                sessionDirTemplate: `session_{sessionId}`,
-                saveMetadata: true,
-              })
-            );
+            // Arrange - создаем один менеджер для всех сессий
+            const manager = new DefaultArtifactManager({
+              baseDir: TEST_BASE_DIR,
+              sessionDirTemplate: `session_{sessionId}`,
+              saveMetadata: true,
+            });
 
             // Act - сохраняем артефакты в разных сессиях
             const savedPaths: string[] = [];
             for (let i = 0; i < sessionIds.length; i++) {
-              // Используем sessionId напрямую через приватный метод
-              const manager = managers[i];
-              const stepId = sessionIds[i];
-              const savedPath = await manager.save(stepId, artifactName, content);
+              const sessionId = sessionIds[i];
+              const savedPath = await manager.save(sessionId, stepId, artifactName, content);
               savedPaths.push(savedPath);
             }
 
@@ -257,7 +263,7 @@ describe('ArtifactManager Property-Based Tests', () => {
 
             // Проверяем, что все файлы существуют
             for (const savedPath of savedPaths) {
-              const exists = await managers[0].exists(savedPath);
+              const exists = await manager.exists(savedPath);
               expect(exists).toBe(true);
             }
           }
@@ -269,37 +275,32 @@ describe('ArtifactManager Property-Based Tests', () => {
     it('должен изолировать артефакты разных сессий', async () => {
       await fc.assert(
         fc.asyncProperty(
-          fc.tuple(arbitraryStepId, arbitraryStepId).filter(([a, b]) => {
+          fc.tuple(arbitrarySessionId, arbitrarySessionId).filter(([a, b]) => {
             // На Windows файловая система case-insensitive, поэтому исключаем имена,
             // которые отличаются только регистром
             return a.toLowerCase() !== b.toLowerCase();
           }),
+          arbitraryStepId,
           arbitraryArtifactName,
           fc.tuple(arbitraryContent, arbitraryContent),
-          async ([sessionId1, sessionId2], artifactName, [content1, content2]) => {
-            // Arrange - создаем два менеджера с разными шаблонами сессий
-            const manager1 = new DefaultArtifactManager({
+          async ([sessionId1, sessionId2], stepId, artifactName, [content1, content2]) => {
+            // Arrange - создаем один менеджер для обеих сессий
+            const manager = new DefaultArtifactManager({
               baseDir: TEST_BASE_DIR,
-              sessionDirTemplate: `session_${sessionId1}`,
-              saveMetadata: true,
-            });
-
-            const manager2 = new DefaultArtifactManager({
-              baseDir: TEST_BASE_DIR,
-              sessionDirTemplate: `session_${sessionId2}`,
+              sessionDirTemplate: `session_{sessionId}`,
               saveMetadata: true,
             });
 
             // Act - сохраняем артефакты с одинаковым именем в разных сессиях
-            const path1 = await manager1.save('step1', artifactName, content1);
-            const path2 = await manager2.save('step1', artifactName, content2);
+            const path1 = await manager.save(sessionId1, stepId, artifactName, content1);
+            const path2 = await manager.save(sessionId2, stepId, artifactName, content2);
 
             // Assert - пути должны быть разными
             expect(path1).not.toBe(path2);
 
             // Содержимое должно быть изолировано
-            const loaded1 = await manager1.load(path1);
-            const loaded2 = await manager2.load(path2);
+            const loaded1 = await manager.load(path1);
+            const loaded2 = await manager.load(path2);
 
             expect(loaded1).toBe(content1);
             expect(loaded2).toBe(content2);
@@ -312,10 +313,11 @@ describe('ArtifactManager Property-Based Tests', () => {
     it('должен корректно использовать шаблон директории сессии', async () => {
       await fc.assert(
         fc.asyncProperty(
+          arbitrarySessionId,
           arbitraryStepId,
           arbitraryArtifactName,
           arbitraryContent,
-          async (sessionId, artifactName, content) => {
+          async (sessionId, stepId, artifactName, content) => {
             // Arrange - создаем менеджер с кастомным шаблоном
             const customTemplate = `custom_session_{sessionId}_dir`;
             const manager = new DefaultArtifactManager({
@@ -325,7 +327,7 @@ describe('ArtifactManager Property-Based Tests', () => {
             });
 
             // Act
-            const savedPath = await manager.save(sessionId, artifactName, content);
+            const savedPath = await manager.save(sessionId, stepId, artifactName, content);
 
             // Assert - путь должен содержать часть шаблона
             expect(savedPath).toContain('custom_session_');
@@ -352,6 +354,7 @@ describe('ArtifactManager Property-Based Tests', () => {
     it('должен сохранять множественные артефакты для одного шага', async () => {
       await fc.assert(
         fc.asyncProperty(
+          arbitrarySessionId,
           arbitraryStepId,
           fc.array(
             fc.tuple(arbitraryArtifactName, arbitraryContent),
@@ -361,7 +364,7 @@ describe('ArtifactManager Property-Based Tests', () => {
             const uniqueMap = new Map(artifacts);
             return Array.from(uniqueMap.entries());
           }),
-          async (stepId, artifacts) => {
+          async (sessionId, stepId, artifacts) => {
             if (artifacts.length < 2) return; // Нужно минимум 2 артефакта
 
             // Arrange
@@ -370,7 +373,7 @@ describe('ArtifactManager Property-Based Tests', () => {
             // Act - сохраняем все артефакты для одного шага
             const savedPaths: string[] = [];
             for (const [name, content] of artifacts) {
-              const savedPath = await manager.save(stepId, name, content);
+              const savedPath = await manager.save(sessionId, stepId, name, content);
               savedPaths.push(savedPath);
             }
 
@@ -398,9 +401,10 @@ describe('ArtifactManager Property-Based Tests', () => {
     it('должен корректно обрабатывать большое количество артефактов', async () => {
       await fc.assert(
         fc.asyncProperty(
+          arbitrarySessionId,
           arbitraryStepId,
           fc.integer({ min: 5, max: 15 }), // Уменьшил максимум для ускорения
-          async (stepId, count) => {
+          async (sessionId, stepId, count) => {
             // Arrange
             const manager = createTestArtifactManager();
 
@@ -409,7 +413,7 @@ describe('ArtifactManager Property-Based Tests', () => {
             for (let i = 0; i < count; i++) {
               const name = `artifact_${i}.txt`;
               const content = `Content for artifact ${i}`;
-              const savedPath = await manager.save(stepId, name, content);
+              const savedPath = await manager.save(sessionId, stepId, name, content);
               savedPaths.push(savedPath);
             }
 
@@ -433,8 +437,9 @@ describe('ArtifactManager Property-Based Tests', () => {
     it('должен сохранять артефакты с разными типами содержимого', async () => {
       await fc.assert(
         fc.asyncProperty(
+          arbitrarySessionId,
           arbitraryStepId,
-          async (stepId) => {
+          async (sessionId, stepId) => {
             // Arrange
             const manager = createTestArtifactManager();
 
@@ -450,7 +455,7 @@ describe('ArtifactManager Property-Based Tests', () => {
             // Act - сохраняем все артефакты
             const savedPaths: string[] = [];
             for (const { name, content } of artifacts) {
-              const savedPath = await manager.save(stepId, name, content);
+              const savedPath = await manager.save(sessionId, stepId, name, content);
               savedPaths.push(savedPath);
             }
 
@@ -471,12 +476,13 @@ describe('ArtifactManager Property-Based Tests', () => {
     it('должен поддерживать артефакты в разных поддиректориях', async () => {
       await fc.assert(
         fc.asyncProperty(
+          arbitrarySessionId,
           arbitraryStepId,
           fc.array(
             fc.tuple(arbitraryFileName, arbitraryFileName, arbitraryFileExtension, arbitraryContent),
             { minLength: 2, maxLength: 5 }
           ),
-          async (stepId, artifactData) => {
+          async (sessionId, stepId, artifactData) => {
             if (artifactData.length < 2) return;
 
             // Arrange
@@ -486,7 +492,7 @@ describe('ArtifactManager Property-Based Tests', () => {
             const savedPaths: string[] = [];
             for (const [dir, name, ext, content] of artifactData) {
               const artifactPath = `${dir}/${name}${ext}`;
-              const savedPath = await manager.save(stepId, artifactPath, content);
+              const savedPath = await manager.save(sessionId, stepId, artifactPath, content);
               savedPaths.push(savedPath);
             }
 
