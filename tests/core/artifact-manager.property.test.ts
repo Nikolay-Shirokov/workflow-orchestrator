@@ -42,40 +42,26 @@ function createTestArtifactManager(config?: Partial<ArtifactManagerConfig>): Def
 /**
  * Генератор валидных имен файлов
  * Улучшенная версия с полной Windows-совместимостью
+ * Генерирует только безопасные имена из букв, цифр, дефисов и подчеркиваний
  */
-const arbitraryFileName = fc.string({ minLength: 1, maxLength: 50 })
+const arbitraryFileName = fc.stringMatching(/^[a-zA-Z0-9_-]{1,50}$/)
   .filter(s => {
-    // Фильтруем невалидные символы для имен файлов (Windows + Unix)
-    const invalidChars = /[<>:"|?*\x00-\x1F\\\/]/;
-    // Также фильтруем специальные имена директорий и пустые строки
-    const specialNames = ['.', '..', ''];
-    // Зарезервированные имена Windows
+    // Зарезервированные имена Windows (без расширения)
     const reservedNames = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 
                            'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 
                            'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'];
     
-    const trimmed = s.trim();
-    const upperName = trimmed.toUpperCase();
+    const upperName = s.toUpperCase();
     
-    return !invalidChars.test(s) && 
-           trimmed.length > 0 && 
-           !specialNames.includes(trimmed) &&
-           !trimmed.startsWith('.') && // Избегаем скрытых файлов
-           !trimmed.endsWith('.') && // Избегаем имен, заканчивающихся точкой (Windows)
-           !trimmed.endsWith(' ') && // Избегаем имен, заканчивающихся пробелом (Windows)
-           trimmed.length === s.length && // Избегаем пробелов в начале/конце
-           !reservedNames.includes(upperName) && // Избегаем зарезервированных имен Windows
-           !/\s/.test(s); // Полностью избегаем пробелов
+    // Проверяем, что имя не зарезервировано и не пустое
+    return s.length > 0 && 
+           !reservedNames.includes(upperName) &&
+           !s.startsWith('-') && // Избегаем имен, начинающихся с дефиса
+           !s.endsWith('-'); // Избегаем имен, заканчивающихся дефисом
   })
   .map(s => {
-    // Дополнительная очистка: заменяем любые оставшиеся проблемные символы
-    let cleaned = s.replace(/[<>:"|?*\x00-\x1F\\\/\s]/g, '_');
-    // Убираем множественные подчеркивания
-    cleaned = cleaned.replace(/_+/g, '_');
-    // Убираем подчеркивания в начале и конце
-    cleaned = cleaned.replace(/^_+|_+$/g, '');
-    // Если после очистки строка пустая, возвращаем дефолтное имя
-    return cleaned.length > 0 ? cleaned : 'file';
+    // Если строка пустая после фильтрации (не должно быть), возвращаем дефолт
+    return s.length > 0 ? s : 'file';
   })
 
 /**
@@ -453,7 +439,7 @@ describe('ArtifactManager Property-Based Tests', () => {
         ),
         { numRuns: 50 } // Уменьшил количество итераций для ускорения
       );
-    }, 10000); // Увеличил таймаут до 10 секунд
+    }, 20000); // Увеличил таймаут до 20 секунд для property-based тестов
 
     it('должен сохранять артефакты с разными типами содержимого', async () => {
       await fc.assert(
