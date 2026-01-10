@@ -655,13 +655,13 @@
     - Файл: `tests/core/state-manager.test.ts`
     - Фильтровать невалидные символы в путях
 
-- [ ] 30. Исправление Adapter Tests (Gemini таймауты)
-  - [ ] 30.1 Увеличить таймауты для Gemini тестов
+- [x] 30. Исправление Adapter Tests (Gemini таймауты)
+  - [x] 30.1 Увеличить таймауты для Gemini тестов
     - Проблема: `Exceeded timeout of 10000 ms`
     - Файлы: `tests/adapters/adapter-integration.test.ts`, `tests/adapters/concrete-adapters.test.ts`
     - Увеличить до 20000ms
   
-  - [ ] 30.2 Добавить skip если gemini-cli не установлен
+  - [x] 30.2 Добавить skip если gemini-cli не установлен
     - Проверять доступность перед запуском теста
     - Использовать `test.skip.if()` или аналог
 
