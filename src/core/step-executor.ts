@@ -1071,10 +1071,12 @@ export class DefaultStepExecutor implements StepExecutor {
       
       if (shell === 'cmd') {
         command = 'cmd';
-        args = ['/c', script];
+        args = ['/c', 'chcp 65001 >nul && ' + script];
       } else if (shell === 'powershell') {
         command = 'powershell';
-        args = ['-Command', script];
+        // Добавляем команду для установки UTF-8 кодировки
+        const utf8Script = `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${script}`;
+        args = ['-NoProfile', '-Command', utf8Script];
       } else {
         // bash или другой Unix shell
         command = shell;
@@ -1101,12 +1103,12 @@ export class DefaultStepExecutor implements StepExecutor {
 
       // Захват stdout
       child.stdout?.on('data', (data: Buffer) => {
-        stdout += data.toString();
+        stdout += data.toString('utf-8');
       });
 
       // Захват stderr
       child.stderr?.on('data', (data: Buffer) => {
-        stderr += data.toString();
+        stderr += data.toString('utf-8');
       });
 
       // Обработка завершения процесса
