@@ -14,3 +14,7 @@ export * from './user-input-handler.js';
 export { ErrorHandler, ErrorCodes, RecoveryOptions, createErrorHandler } from './error-handler.js';
 export { RoleManager, RolePermissions } from './role-manager.js';
 export { MCPManager, MCPToolInfo, MCPToolConfig, MCPContext } from './mcp-manager.js';
+export * from './dsl.js';
+export { DSLLexer, TokenType } from './dsl-lexer.js';
+export { DSLParser } from './dsl-parser.js';
+export { DSLTranslator } from './dsl-translator.js';

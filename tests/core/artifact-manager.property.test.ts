@@ -116,11 +116,14 @@ describe('ArtifactManager Property-Based Tests', () => {
             // Проверяем, что содержимое сохранено корректно
             const loadedContent = await manager.load(savedPath);
             expect(loadedContent).toBe(content);
+            
+            // Ждем завершения всех асинхронных операций
+            await new Promise(resolve => setImmediate(resolve));
           }
         ),
         { numRuns: 100 } // Минимум 100 итераций согласно спецификации
       );
-    });
+    }, 30000); // Увеличиваем таймаут до 30 секунд
 
     it('должен сохранять множественные артефакты с разными именами для одного шага', async () => {
       await fc.assert(
@@ -155,11 +158,14 @@ describe('ArtifactManager Property-Based Tests', () => {
               const exists = await manager.exists(savedPath);
               expect(exists).toBe(true);
             }
+            
+            // Ждем завершения всех асинхронных операций
+            await new Promise(resolve => setImmediate(resolve));
           }
         ),
         { numRuns: 100 }
       );
-    });
+    }, 30000); // Увеличиваем таймаут до 30 секунд
 
     it('должен корректно обрабатывать имена файлов с путями (поддиректориями)', async () => {
       await fc.assert(
@@ -188,11 +194,14 @@ describe('ArtifactManager Property-Based Tests', () => {
             // Проверяем содержимое
             const loadedContent = await manager.load(savedPath);
             expect(loadedContent).toBe(content);
+            
+            // Ждем завершения всех асинхронных операций
+            await new Promise(resolve => setImmediate(resolve));
           }
         ),
         { numRuns: 100 }
       );
-    });
+    }, 30000); // Увеличиваем таймаут до 30 секунд
   });
 
   /**

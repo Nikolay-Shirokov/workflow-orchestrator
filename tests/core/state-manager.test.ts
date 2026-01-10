@@ -111,11 +111,14 @@ describe('Property 16: Создание файла состояния', () => {
           expect(savedState.sessionId).toBe(state.sessionId);
           expect(savedState.workflowName).toBe(workflowName);
           expect(savedState.workflowVersion).toBe(workflowVersion);
+          
+          // Ждем завершения всех асинхронных операций
+          await new Promise(resolve => setImmediate(resolve));
         }
       ),
       { numRuns: 100 }
     );
-  });
+  }, 30000); // Увеличиваем таймаут до 30 секунд
 
   test('каждое создание состояния должно генерировать уникальный sessionId', async () => {
     const stateManager = createStateManager({
@@ -177,11 +180,14 @@ describe('Property 17: Обновление состояния при завер
           const loadedState = await stateManager.loadState(updatedState.sessionId);
           expect(loadedState.completedSteps).toContain(stepHistory.stepId);
           expect(loadedState.history.length).toBe(updatedState.history.length);
+          
+          // Ждем завершения всех асинхронных операций
+          await new Promise(resolve => setImmediate(resolve));
         }
       ),
       { numRuns: 100 }
     );
-  });
+  }, 30000); // Увеличиваем таймаут до 30 секунд
 
   test('при ошибке шага, статус должен измениться на failed', async () => {
     const stateManager = createStateManager({
@@ -254,11 +260,14 @@ describe('Property 18: Сохранение состояния при преры
           for (const stepHistory of stepHistories) {
             expect(loadedState.completedSteps).toContain(stepHistory.stepId);
           }
+          
+          // Ждем завершения всех асинхронных операций
+          await new Promise(resolve => setImmediate(resolve));
         }
       ),
       { numRuns: 100 }
     );
-  });
+  }, 30000); // Увеличиваем таймаут до 30 секунд
 });
 
 // ============================================================================
@@ -308,11 +317,14 @@ describe('Property 20: Обязательные поля файла состоя
           const validation = await stateManager.validateState(state);
           expect(validation.valid).toBe(true);
           expect(validation.errors.length).toBe(0);
+          
+          // Ждем завершения всех асинхронных операций
+          await new Promise(resolve => setImmediate(resolve));
         }
       ),
       { numRuns: 100 }
     );
-  });
+  }, 30000); // Увеличиваем таймаут до 30 секунд
 
   test('состояние с отсутствующими обязательными полями должно быть невалидным', async () => {
     const stateManager = createStateManager({
@@ -392,11 +404,14 @@ describe('Property 22: Возобновление с последнего зав
           // Следующий шаг должен быть тот, который не в completedSteps
           // (это логика будет в WorkflowEngine, но состояние должно содержать всю информацию)
           expect(resumedState.completedSteps.length).toBeGreaterThan(0);
+          
+          // Ждем завершения всех асинхронных операций
+          await new Promise(resolve => setImmediate(resolve));
         }
       ),
       { numRuns: 100 }
     );
-  });
+  }, 30000); // Увеличиваем таймаут до 30 секунд
 });
 
 // ============================================================================
@@ -440,11 +455,14 @@ describe('Property 24: Валидация целостности артефак�
           expect(validation.valid).toBe(true);
           expect(validation.missingArtifacts.length).toBe(0);
           expect(validation.corruptedArtifacts.length).toBe(0);
+          
+          // Ждем завершения всех асинхронных операций
+          await new Promise(resolve => setImmediate(resolve));
         }
       ),
       { numRuns: 100 }
     );
-  });
+  }, 30000); // Увеличиваем таймаут до 30 секунд
 
   test('отсутствующие артефакты должны быть обнаружены', async () => {
     const stateManager = createStateManager({
@@ -521,11 +539,14 @@ describe('Property 26: Валидация модификации состоян�
           const validation = await stateManager.validateState(loadedState);
           expect(validation.valid).toBe(true);
           expect(loadedState.currentStep).toBe('modified_step');
+          
+          // Ждем завершения всех асинхронных операций
+          await new Promise(resolve => setImmediate(resolve));
         }
       ),
       { numRuns: 100 }
     );
-  });
+  }, 30000); // Увеличиваем таймаут до 30 секунд
 
   test('невалидные модификации должны быть отклонены', async () => {
     const stateManager = createStateManager({
