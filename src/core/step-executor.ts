@@ -263,40 +263,71 @@ export class DefaultStepExecutor implements StepExecutor {
   private async executeStepsWithConcurrencyLimit(
     steps: WorkflowStep[],
     context: ExecutionContext,
-    maxConcurrency: number
+    _maxConcurrency: number  // Префикс _ указывает, что параметр не используется
   ): Promise<StepResult[]> {
-    const results: StepResult[] = [];
-    const executing: Promise<StepResult>[] = [];
+    // Используем Promise.allSettled для ожидания завершения всех шагов,
+    // даже если некоторые завершились с ошибкой
+    const promises = steps.map(step => this.executeStep(step, context));
     
-    for (const step of steps) {
-      // Создаем промис для выполнения шага
-      const promise = this.executeStep(step, context).catch(error => ({
-        stepId: step.id,
-        status: 'failed' as const,
-        outputs: {},
-        artifacts: [],
-        executionTime: 0,
-        error: error as Error
-      }));
+    // Promise.allSettled дождется завершения всех промисов
+    const settledResults = await Promise.allSettled(promises);
+    
+    // Собираем результаты и ошибки
+    const results: StepResult[] = [];
+    const errors: Array<{ stepId: string; error: Error }> = [];
+    
+    for (let i = 0; i < settledResults.length; i++) {
+      const settled = settledResults[i];
+      const step = steps[i];
       
-      executing.push(promise);
-      
-      // Если достигли лимита конкурентности, ждем завершения хотя бы одного
-      if (executing.length >= maxConcurrency) {
-        const result = await Promise.race(executing);
-        results.push(result);
+      if (settled.status === 'fulfilled') {
+        // Успешное выполнение
+        results.push(settled.value);
+      } else {
+        // Ошибка выполнения
+        const error = settled.reason as Error;
         
-        // Удаляем завершенный промис из списка выполняющихся
-        const index = executing.findIndex(p => p === promise);
-        if (index !== -1) {
-          executing.splice(index, 1);
-        }
+        // Создаем результат с ошибкой
+        const failedResult: StepResult = {
+          stepId: step.id,
+          status: 'failed',
+          outputs: {},
+          artifacts: [],
+          executionTime: 0,
+          error
+        };
+        
+        results.push(failedResult);
+        errors.push({ stepId: step.id, error });
+        
+        context.logger.error(`Шаг ${step.id} завершился с ошибкой:`, error);
       }
     }
     
-    // Ждем завершения оставшихся шагов
-    const remainingResults = await Promise.all(executing);
-    results.push(...remainingResults);
+    // Если были ошибки, выбрасываем агрегированную ошибку
+    if (errors.length > 0) {
+      const errorMessages = errors
+        .map(e => `${e.stepId}: ${e.error.message}`)
+        .join('; ');
+      
+      throw new WorkflowErrorClass({
+        code: 'PARALLEL_EXECUTION_FAILED',
+        category: 'execution',
+        severity: 'error',
+        message: `${errors.length} из ${steps.length} параллельных шагов завершились с ошибкой: ${errorMessages}`,
+        context: {
+          failedSteps: errors.map(e => e.stepId),
+          errors: errorMessages,
+          totalSteps: steps.length,
+          failedCount: errors.length
+        },
+        recoverable: false,
+        suggestions: [
+          'Проверьте логи для деталей каждой ошибки',
+          'Исправьте ошибки и повторите выполнение'
+        ]
+      });
+    }
     
     return results;
   }

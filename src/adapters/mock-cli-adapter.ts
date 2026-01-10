@@ -96,7 +96,8 @@ export class MockCLIAdapter implements CLIAdapter {
     // Симулируем ошибку если указано
     if (mockResponse?.shouldError) {
       const error = new Error(mockResponse.errorMessage || 'Mock error');
-      throw this.handleError(error);
+      // Выбрасываем обычную ошибку, а не AdapterError
+      throw error;
     }
     
     const executionTime = Date.now() - startTime;

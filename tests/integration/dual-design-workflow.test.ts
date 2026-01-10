@@ -16,6 +16,7 @@ import { DefaultTemplateEngine } from '../../src/core/template-engine.js';
 import { DefaultArtifactManager } from '../../src/core/artifact-manager.js';
 import { AdapterRegistry } from '../../src/adapters/adapter-registry.js';
 import { MockCLIAdapter } from '../../src/adapters/mock-cli-adapter.js';
+import { RoleManager } from '../../src/core/role-manager.js';
 import { getLogger } from '../../src/core/logger.js';
 import { WorkflowConfig } from '../../src/core/types.js';
 import * as fs from 'fs/promises';
@@ -90,6 +91,23 @@ async function createDualDesignTestEnvironment() {
   adapterRegistry.register(architectAdapter);
   adapterRegistry.register(copilotAdapter);
 
+  // Создание RoleManager для правильной маршрутизации адаптеров по ролям
+  const roleManager = new RoleManager();
+  
+  // Загрузка ролей из конфигурации
+  roleManager.loadRoles({
+    architect: {
+      adapter: 'claude-cli',
+      model: 'claude-sonnet-3.5',
+      permissions: ['read', 'edit']
+    },
+    copilot: {
+      adapter: 'openai-cli',
+      model: 'gpt-4',
+      permissions: ['read', 'edit']
+    }
+  });
+
   const templateEngine = new DefaultTemplateEngine();
   const artifactManager = new DefaultArtifactManager({
     baseDir: artifactsDir,
@@ -97,7 +115,8 @@ async function createDualDesignTestEnvironment() {
   });
 
   const stepExecutor = new DefaultStepExecutor({
-    defaultTimeout: 10000
+    defaultTimeout: 10000,
+    roleManager
   });
 
   const engineConfig: WorkflowEngineConfig = {
@@ -608,11 +627,14 @@ describe('Dual-Design Workflow Integration Tests', () => {
     it('должен корректно обрабатывать ошибку в одном из параллельных шагов', async () => {
       const config = await createSimplifiedDualDesignConfig(env.artifactsDir);
       
-      // Настраиваем один из адаптеров на ошибку
+      // Очищаем все предыдущие ответы copilot адаптера
+      env.copilotAdapter.clearResponses();
+      
+      // Устанавливаем ответ с ошибкой для ЛЮБОГО промпта
       env.copilotAdapter.setResponse(
-        /questions/i,
+        /.*/,  // Любой промпт
         'Error response',
-        { shouldError: true, errorMessage: 'Simulated error' }
+        { shouldError: true, errorMessage: 'Simulated error in copilot' }
       );
 
       const initialContext = {
@@ -633,7 +655,7 @@ describe('Dual-Design Workflow Integration Tests', () => {
       // Ожидаем, что выполнение завершится с ошибкой
       await expect(
         env.engine.execute(testConfig, initialContext)
-      ).rejects.toThrow();
+      ).rejects.toThrow(/Simulated error in copilot/);
     }, 30000);
   });
 
