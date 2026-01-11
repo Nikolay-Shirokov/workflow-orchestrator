@@ -452,11 +452,13 @@ describe('Property 24: Валидация целостности артефак�
         versionArb,
         stepIdArb,
         // Улучшенный генератор имен файлов - фильтруем невалидные символы для Windows
+        // и опасные имена свойств JavaScript
         fc.array(
           fc.string({ minLength: 1, maxLength: 20 })
             .filter(s => s.trim().length > 0) // Не пустые строки
             .filter(s => !/[<>:"|?*\\/]/.test(s)) // Без невалидных символов Windows
-            .filter(s => !/^\.+$/.test(s)), // Не только точки
+            .filter(s => !/^\.+$/.test(s)) // Не только точки
+            .filter(s => !['__proto__', 'constructor', 'prototype'].includes(s)), // Без опасных имен свойств
           { minLength: 1, maxLength: 3 }
         ),
         async (workflowName, workflowVersion, initialStep, artifactNames) => {
