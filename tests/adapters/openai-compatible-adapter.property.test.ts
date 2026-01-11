@@ -1426,4 +1426,170 @@ describe('OpenAI Compatible Adapter Property Tests', () => {
       );
     });
   });
+
+  /**
+   * Тесты для обработки ошибок
+   * Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7
+   * 
+   * Проверяем, что метод handleError корректно маппит различные типы ошибок
+   * на соответствующие коды AdapterError с правильными флагами retryable
+   */
+  describe('Обработка ошибок', () => {
+    test('должен маппить сетевые ошибки на ADAPTER_NETWORK_ERROR с retryable=true', () => {
+      const adapter = new OpenAICompatibleAdapter();
+      
+      const networkErrors = [
+        new Error('fetch failed'),
+        new Error('ECONNREFUSED'),
+        new Error('ENOTFOUND'),
+        new Error('ETIMEDOUT'),
+        new Error('network error')
+      ];
+      
+      networkErrors.forEach(error => {
+        const adapterError = adapter.handleError(error);
+        
+        expect(adapterError.code).toBe('ADAPTER_NETWORK_ERROR');
+        expect(adapterError.retryable).toBe(true);
+        expect(adapterError.message).toContain('Ошибка сети');
+        expect(adapterError.originalError).toBe(error);
+      });
+    });
+
+    test('должен маппить таймауты на ADAPTER_TIMEOUT с retryable=true', () => {
+      const adapter = new OpenAICompatibleAdapter();
+      
+      const timeoutError = new Error('aborted');
+      timeoutError.name = 'AbortError';
+      
+      const adapterError = adapter.handleError(timeoutError);
+      
+      expect(adapterError.code).toBe('ADAPTER_TIMEOUT');
+      expect(adapterError.retryable).toBe(true);
+      expect(adapterError.message).toContain('таймаут');
+      expect(adapterError.originalError).toBe(timeoutError);
+    });
+
+    test('должен маппить HTTP 401/403 на ADAPTER_AUTH_ERROR с retryable=false', () => {
+      const adapter = new OpenAICompatibleAdapter();
+      
+      [401, 403].forEach(status => {
+        const error = new Error('Unauthorized') as Error & { status: number };
+        error.status = status;
+        
+        const adapterError = adapter.handleError(error);
+        
+        expect(adapterError.code).toBe('ADAPTER_AUTH_ERROR');
+        expect(adapterError.retryable).toBe(false);
+        expect(adapterError.message).toContain('аутентификации');
+        expect(adapterError.message).toContain(status.toString());
+        expect(adapterError.originalError).toBe(error);
+      });
+    });
+
+    test('должен маппить HTTP 404 на ADAPTER_NOT_FOUND с retryable=false', () => {
+      const adapter = new OpenAICompatibleAdapter();
+      
+      const error = new Error('Not Found') as Error & { status: number };
+      error.status = 404;
+      
+      const adapterError = adapter.handleError(error);
+      
+      expect(adapterError.code).toBe('ADAPTER_NOT_FOUND');
+      expect(adapterError.retryable).toBe(false);
+      expect(adapterError.message).toContain('не найден');
+      expect(adapterError.message).toContain('404');
+      expect(adapterError.originalError).toBe(error);
+    });
+
+    test('должен маппить HTTP 429 на ADAPTER_RATE_LIMIT с retryable=true', () => {
+      const adapter = new OpenAICompatibleAdapter();
+      
+      const error = new Error('Rate limit exceeded') as Error & { status: number };
+      error.status = 429;
+      
+      const adapterError = adapter.handleError(error);
+      
+      expect(adapterError.code).toBe('ADAPTER_RATE_LIMIT');
+      expect(adapterError.retryable).toBe(true);
+      expect(adapterError.message).toContain('лимит');
+      expect(adapterError.message).toContain('429');
+      expect(adapterError.originalError).toBe(error);
+    });
+
+    test('должен маппить HTTP 500/503 на ADAPTER_SERVER_ERROR с retryable=true', () => {
+      const adapter = new OpenAICompatibleAdapter();
+      
+      [500, 503].forEach(status => {
+        const error = new Error('Server Error') as Error & { status: number };
+        error.status = status;
+        
+        const adapterError = adapter.handleError(error);
+        
+        expect(adapterError.code).toBe('ADAPTER_SERVER_ERROR');
+        expect(adapterError.retryable).toBe(true);
+        expect(adapterError.message).toContain('сервера');
+        expect(adapterError.message).toContain(status.toString());
+        expect(adapterError.originalError).toBe(error);
+      });
+    });
+
+    test('должен маппить другие 5xx ошибки на ADAPTER_SERVER_ERROR с retryable=true', () => {
+      const adapter = new OpenAICompatibleAdapter();
+      
+      [501, 502, 504, 505].forEach(status => {
+        const error = new Error('Server Error') as Error & { status: number };
+        error.status = status;
+        
+        const adapterError = adapter.handleError(error);
+        
+        expect(adapterError.code).toBe('ADAPTER_SERVER_ERROR');
+        expect(adapterError.retryable).toBe(true);
+        expect(adapterError.message).toContain('сервера');
+        expect(adapterError.originalError).toBe(error);
+      });
+    });
+
+    test('должен маппить другие 4xx ошибки на ADAPTER_INVALID_REQUEST с retryable=false', () => {
+      const adapter = new OpenAICompatibleAdapter();
+      
+      [400, 402, 405, 422].forEach(status => {
+        const error = new Error('Bad Request') as Error & { status: number };
+        error.status = status;
+        
+        const adapterError = adapter.handleError(error);
+        
+        expect(adapterError.code).toBe('ADAPTER_INVALID_REQUEST');
+        expect(adapterError.retryable).toBe(false);
+        expect(adapterError.message).toContain('Неверный запрос');
+        expect(adapterError.originalError).toBe(error);
+      });
+    });
+
+    test('должен сохранять оригинальное сообщение об ошибке', () => {
+      const adapter = new OpenAICompatibleAdapter();
+      
+      const originalMessage = 'Invalid API key provided';
+      const error = new Error(originalMessage) as Error & { status: number };
+      error.status = 401;
+      
+      const adapterError = adapter.handleError(error);
+      
+      expect(adapterError.message).toContain(originalMessage);
+      expect(adapterError.originalError).toBe(error);
+    });
+
+    test('должен обрабатывать неизвестные ошибки', () => {
+      const adapter = new OpenAICompatibleAdapter();
+      
+      const error = new Error('Unknown error');
+      
+      const adapterError = adapter.handleError(error);
+      
+      expect(adapterError.code).toBe('ADAPTER_UNKNOWN_ERROR');
+      expect(adapterError.retryable).toBe(false);
+      expect(adapterError.message).toBe('Unknown error');
+      expect(adapterError.originalError).toBe(error);
+    });
+  });
 });

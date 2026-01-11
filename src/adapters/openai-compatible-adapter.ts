@@ -454,8 +454,20 @@ export class OpenAICompatibleAdapter implements CLIAdapter {
 
   /**
    * Обработка ошибок
+   * Маппит различные типы ошибок на коды AdapterError с правильными флагами retryable
+   * Извлекает сообщения об ошибках из тела ответа API
+   * 
    * @param error - Ошибка выполнения
    * @returns AdapterError - Структурированная ошибка
+   * 
+   * Маппинг ошибок:
+   * - Сетевые ошибки (ECONNREFUSED, ETIMEDOUT, etc.) → ADAPTER_NETWORK_ERROR (retryable)
+   * - Таймауты (AbortError) → ADAPTER_TIMEOUT (retryable)
+   * - HTTP 401/403 → ADAPTER_AUTH_ERROR (не retryable)
+   * - HTTP 404 → ADAPTER_NOT_FOUND (не retryable)
+   * - HTTP 429 → ADAPTER_RATE_LIMIT (retryable)
+   * - HTTP 500/503 → ADAPTER_SERVER_ERROR (retryable)
+   * - HTTP 400-499 → ADAPTER_INVALID_REQUEST (не retryable)
    */
   handleError(error: Error): AdapterError {
     const errorWithStatus = error as Error & { status?: number };
@@ -464,41 +476,62 @@ export class OpenAICompatibleAdapter implements CLIAdapter {
     // Определяем код ошибки и retryable флаг
     let code = 'ADAPTER_UNKNOWN_ERROR';
     let retryable = false;
+    let message = error.message;
     
-    // Сетевые ошибки
+    // Сетевые ошибки и таймауты
     if (error.name === 'AbortError' || error.message.includes('aborted')) {
+      // Таймаут запроса
       code = 'ADAPTER_TIMEOUT';
       retryable = true;
+      message = `Запрос превысил таймаут: ${error.message}`;
     } else if (
       error.message.includes('ECONNREFUSED') ||
       error.message.includes('ENOTFOUND') ||
       error.message.includes('ETIMEDOUT') ||
-      error.message.includes('fetch failed')
+      error.message.includes('fetch failed') ||
+      error.message.includes('network')
     ) {
+      // Сетевые ошибки (невозможно подключиться, DNS ошибки, и т.д.)
       code = 'ADAPTER_NETWORK_ERROR';
       retryable = true;
+      message = `Ошибка сети: ${error.message}`;
     }
     // HTTP статусы
     else if (status === 401 || status === 403) {
+      // Ошибки аутентификации
       code = 'ADAPTER_AUTH_ERROR';
       retryable = false;
+      message = `Ошибка аутентификации (${status}): ${error.message}`;
     } else if (status === 404) {
+      // Ресурс не найден
       code = 'ADAPTER_NOT_FOUND';
       retryable = false;
+      message = `Ресурс не найден (404): ${error.message}`;
     } else if (status === 429) {
+      // Превышен rate limit
       code = 'ADAPTER_RATE_LIMIT';
       retryable = true;
-    } else if (status && status >= 500) {
+      message = `Превышен лимит запросов (429): ${error.message}`;
+    } else if (status === 500 || status === 503) {
+      // Серверные ошибки (500, 503)
       code = 'ADAPTER_SERVER_ERROR';
       retryable = true;
+      message = `Ошибка сервера (${status}): ${error.message}`;
+    } else if (status && status >= 500) {
+      // Другие серверные ошибки (5xx)
+      code = 'ADAPTER_SERVER_ERROR';
+      retryable = true;
+      message = `Ошибка сервера (${status}): ${error.message}`;
     } else if (status && status >= 400 && status < 500) {
+      // Ошибки клиента (4xx, кроме уже обработанных)
       code = 'ADAPTER_INVALID_REQUEST';
       retryable = false;
+      message = `Неверный запрос (${status}): ${error.message}`;
     }
     
     return {
       code,
-      message: error.message,
+      message,
       retryable,
       originalError: error
     };
