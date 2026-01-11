@@ -841,6 +841,271 @@ Line 3
       expect(args[args.length - 1]).toBe('-');
     });
   });
+
+  // Unit-тесты для обработки ошибок
+  // Требования: 6.1, 6.2, 6.3
+
+  describe('Обработка ошибок', () => {
+    it('должен возвращать ADAPTER_NOT_FOUND для ошибки "not found"', () => {
+      // Требования: 6.1
+      const adapter = new CodexCLIAdapter();
+      const error = new Error('Command not found: codex');
+      
+      const result = adapter.handleError(error);
+      
+      expect(result.code).toBe('ADAPTER_NOT_FOUND');
+      expect(result.retryable).toBe(false);
+      expect(result.message).toBe(error.message);
+      expect(result.originalError).toBe(error);
+    });
+
+    it('должен возвращать ADAPTER_NOT_FOUND для ошибки ENOENT', () => {
+      // Требования: 6.1
+      const adapter = new CodexCLIAdapter();
+      const error = new Error('spawn codex ENOENT');
+      
+      const result = adapter.handleError(error);
+      
+      expect(result.code).toBe('ADAPTER_NOT_FOUND');
+      expect(result.retryable).toBe(false);
+    });
+
+    it('должен возвращать ADAPTER_AUTH_ERROR для ошибки аутентификации', () => {
+      // Требования: 6.2
+      const adapter = new CodexCLIAdapter();
+      const error = new Error('Authentication failed: Invalid API key');
+      
+      const result = adapter.handleError(error);
+      
+      expect(result.code).toBe('ADAPTER_AUTH_ERROR');
+      expect(result.retryable).toBe(false);
+      expect(result.message).toBe(error.message);
+      expect(result.originalError).toBe(error);
+    });
+
+    it('должен возвращать ADAPTER_AUTH_ERROR для ошибки unauthorized', () => {
+      // Требования: 6.2
+      const adapter = new CodexCLIAdapter();
+      const error = new Error('Unauthorized: Please check your credentials');
+      
+      const result = adapter.handleError(error);
+      
+      expect(result.code).toBe('ADAPTER_AUTH_ERROR');
+      expect(result.retryable).toBe(false);
+    });
+
+    it('должен возвращать ADAPTER_TIMEOUT для ошибки таймаута', () => {
+      // Требования: 6.3
+      const adapter = new CodexCLIAdapter();
+      const error = new Error('Command exceeded timeout 300000ms');
+      
+      const result = adapter.handleError(error);
+      
+      expect(result.code).toBe('ADAPTER_TIMEOUT');
+      expect(result.retryable).toBe(true);
+      expect(result.message).toBe(error.message);
+      expect(result.originalError).toBe(error);
+    });
+
+    it('должен возвращать ADAPTER_TIMEOUT для ошибки "timed out"', () => {
+      // Требования: 6.3
+      const adapter = new CodexCLIAdapter();
+      const error = new Error('Operation timed out after 5 minutes');
+      
+      const result = adapter.handleError(error);
+      
+      expect(result.code).toBe('ADAPTER_TIMEOUT');
+      expect(result.retryable).toBe(true);
+    });
+
+    it('должен возвращать ADAPTER_INVALID_REQUEST для ошибки валидации', () => {
+      // Требования: 6.1
+      const adapter = new CodexCLIAdapter();
+      const error = new Error('Invalid request: prompt cannot be empty');
+      
+      const result = adapter.handleError(error);
+      
+      expect(result.code).toBe('ADAPTER_INVALID_REQUEST');
+      expect(result.retryable).toBe(false);
+      expect(result.message).toBe(error.message);
+      expect(result.originalError).toBe(error);
+    });
+
+    it('должен возвращать ADAPTER_UNKNOWN_ERROR для неизвестной ошибки', () => {
+      // Требования: 6.1
+      const adapter = new CodexCLIAdapter();
+      const error = new Error('Some unexpected error occurred');
+      
+      const result = adapter.handleError(error);
+      
+      expect(result.code).toBe('ADAPTER_UNKNOWN_ERROR');
+      expect(result.retryable).toBe(false);
+      expect(result.message).toBe(error.message);
+      expect(result.originalError).toBe(error);
+    });
+
+    it('должен включать stderr в сообщение об ошибке', () => {
+      // Требования: 6.4
+      const adapter = new CodexCLIAdapter();
+      const stderr = 'Error: Connection refused\nFailed to connect to API';
+      const error = new Error(`Command failed with exit code 1. stderr: ${stderr}`);
+      
+      const result = adapter.handleError(error);
+      
+      // Сообщение должно содержать stderr
+      expect(result.message).toContain(stderr);
+      expect(result.message).toContain('Connection refused');
+      expect(result.message).toContain('Failed to connect to API');
+    });
+
+    it('должен корректно определять повторяемость для таймаутов', () => {
+      // Требования: 6.5
+      const adapter = new CodexCLIAdapter();
+      const error = new Error('Request timeout after 30 seconds');
+      
+      const result = adapter.handleError(error);
+      
+      // Таймауты должны быть повторяемыми
+      expect(result.retryable).toBe(true);
+      expect(result.code).toBe('ADAPTER_TIMEOUT');
+    });
+
+    it('должен корректно определять неповторяемость для ошибок аутентификации', () => {
+      // Требования: 6.5
+      const adapter = new CodexCLIAdapter();
+      const error = new Error('Authentication error: Invalid token');
+      
+      const result = adapter.handleError(error);
+      
+      // Ошибки аутентификации не должны быть повторяемыми
+      expect(result.retryable).toBe(false);
+      expect(result.code).toBe('ADAPTER_AUTH_ERROR');
+    });
+
+    it('должен корректно определять неповторяемость для ошибок "not found"', () => {
+      // Требования: 6.5
+      const adapter = new CodexCLIAdapter();
+      const error = new Error('Executable not found in PATH');
+      
+      const result = adapter.handleError(error);
+      
+      // Ошибки "not found" не должны быть повторяемыми
+      expect(result.retryable).toBe(false);
+      expect(result.code).toBe('ADAPTER_NOT_FOUND');
+    });
+
+    it('должен обрабатывать ошибки с регистронезависимыми сообщениями', () => {
+      // Требования: 6.1, 6.2, 6.3
+      const adapter = new CodexCLIAdapter();
+      
+      // Проверяем TIMEOUT в верхнем регистре
+      const timeoutError = new Error('TIMEOUT EXCEEDED');
+      const timeoutResult = adapter.handleError(timeoutError);
+      expect(timeoutResult.code).toBe('ADAPTER_TIMEOUT');
+      
+      // Проверяем AUTHENTICATION в смешанном регистре
+      const authError = new Error('Authentication Failed');
+      const authResult = adapter.handleError(authError);
+      expect(authResult.code).toBe('ADAPTER_AUTH_ERROR');
+      
+      // Проверяем NOT FOUND в верхнем регистре
+      const notFoundError = new Error('NOT FOUND');
+      const notFoundResult = adapter.handleError(notFoundError);
+      expect(notFoundResult.code).toBe('ADAPTER_NOT_FOUND');
+    });
+
+    it('должен сохранять оригинальную ошибку для всех типов ошибок', () => {
+      // Требования: 6.1, 6.2, 6.3
+      const adapter = new CodexCLIAdapter();
+      
+      const errors = [
+        new Error('timeout'),
+        new Error('authentication failed'),
+        new Error('not found'),
+        new Error('invalid request'),
+        new Error('unknown error')
+      ];
+      
+      for (const error of errors) {
+        const result = adapter.handleError(error);
+        expect(result.originalError).toBe(error);
+      }
+    });
+
+    it('должен обрабатывать ошибки с дополнительным контекстом', () => {
+      // Требования: 6.4
+      const adapter = new CodexCLIAdapter();
+      const error = new Error('Command failed: timeout. Additional context: network issues. stderr: Connection reset');
+      
+      const result = adapter.handleError(error);
+      
+      // Должен определить тип ошибки по ключевому слову
+      expect(result.code).toBe('ADAPTER_TIMEOUT');
+      
+      // Должен сохранить полное сообщение
+      expect(result.message).toContain('timeout');
+      expect(result.message).toContain('Additional context');
+      expect(result.message).toContain('stderr');
+    });
+
+    it('должен обрабатывать ошибки с множественными ключевыми словами', () => {
+      // Требования: 6.1, 6.2, 6.3
+      const adapter = new CodexCLIAdapter();
+      
+      // Если есть несколько ключевых слов, приоритет имеет первое найденное
+      const error = new Error('not found: authentication timeout');
+      const result = adapter.handleError(error);
+      
+      // Должен определить по первому ключевому слову
+      expect(result.code).toBe('ADAPTER_NOT_FOUND');
+    });
+
+    it('должен обрабатывать пустые сообщения об ошибках', () => {
+      // Требования: 6.1
+      const adapter = new CodexCLIAdapter();
+      const error = new Error('');
+      
+      const result = adapter.handleError(error);
+      
+      // Должен вернуть ADAPTER_UNKNOWN_ERROR для пустого сообщения
+      expect(result.code).toBe('ADAPTER_UNKNOWN_ERROR');
+      expect(result.retryable).toBe(false);
+      expect(result.message).toBe('');
+    });
+
+    it('должен обрабатывать ошибки с специальными символами', () => {
+      // Требования: 6.4
+      const adapter = new CodexCLIAdapter();
+      const error = new Error('Error: "authentication" failed with code 401. stderr: {"error": "unauthorized"}');
+      
+      const result = adapter.handleError(error);
+      
+      // Должен корректно определить тип ошибки
+      expect(result.code).toBe('ADAPTER_AUTH_ERROR');
+      
+      // Должен сохранить специальные символы в сообщении
+      expect(result.message).toContain('"authentication"');
+      expect(result.message).toContain('{"error": "unauthorized"}');
+    });
+
+    it('должен обрабатывать многострочные сообщения об ошибках', () => {
+      // Требования: 6.4
+      const adapter = new CodexCLIAdapter();
+      const error = new Error(`Command failed with timeout
+Line 2: Additional info
+Line 3: stderr: Connection lost`);
+      
+      const result = adapter.handleError(error);
+      
+      // Должен определить тип ошибки
+      expect(result.code).toBe('ADAPTER_TIMEOUT');
+      
+      // Должен сохранить все строки
+      expect(result.message).toContain('Line 2');
+      expect(result.message).toContain('Line 3');
+      expect(result.message).toContain('stderr');
+    });
+  });
 });
 
 describe('Интеграция адаптеров с реестром', () => {

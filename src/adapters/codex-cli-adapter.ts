@@ -278,4 +278,62 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
     // eslint-disable-next-line no-control-regex
     return text.replace(/\x1b\[[0-9;]*m/g, '');
   }
+
+  /**
+   * Обработка ошибок выполнения
+   * Переопределяет базовый метод для специфичной обработки ошибок Codex CLI
+   * @param error - Ошибка выполнения
+   * @returns AdapterError - Структурированная ошибка с кодом и флагом retryable
+   */
+  handleError(error: Error): import('../core/types.js').AdapterError {
+    const message = error.message.toLowerCase();
+    
+    // Определяем тип ошибки по сообщению
+    let code: string;
+    let retryable: boolean;
+    
+    // Проверяем на ошибку "не найдено" (утилита не установлена)
+    if (message.includes('not found') || message.includes('enoent')) {
+      code = 'ADAPTER_NOT_FOUND';
+      retryable = false;
+    } 
+    // Проверяем на ошибку аутентификации
+    else if (message.includes('authentication') || 
+             message.includes('unauthorized') || 
+             message.includes('auth') ||
+             message.includes('api key')) {
+      code = 'ADAPTER_AUTH_ERROR';
+      retryable = false;
+    } 
+    // Проверяем на ошибку таймаута
+    else if (message.includes('timeout') || 
+             message.includes('timed out')) {
+      code = 'ADAPTER_TIMEOUT';
+      retryable = true;
+    } 
+    // Проверяем на ошибку валидации
+    else if (message.includes('invalid')) {
+      code = 'ADAPTER_INVALID_REQUEST';
+      retryable = false;
+    } 
+    // Все остальные ошибки
+    else {
+      code = 'ADAPTER_UNKNOWN_ERROR';
+      retryable = false;
+    }
+    
+    // Извлекаем stderr из сообщения об ошибке, если он там есть
+    // Базовый класс уже включает stderr в сообщение при ошибке выполнения
+    let errorMessage = error.message;
+    
+    // Если в сообщении есть stderr, он уже включен базовым классом
+    // Мы просто возвращаем полное сообщение
+    
+    return {
+      code,
+      message: errorMessage,
+      retryable,
+      originalError: error
+    };
+  }
 }

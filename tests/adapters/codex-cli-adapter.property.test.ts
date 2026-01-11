@@ -1564,4 +1564,435 @@ describe('Codex CLI Adapter Property Tests', () => {
       );
     });
   });
+
+  /**
+   * Feature: codex-cli-adapter, Property 8: Включение stderr в сообщение об ошибке
+   * Validates: Requirements 6.4
+   * 
+   * Для любой ошибки выполнения с непустым stderr, сообщение об ошибке должно 
+   * содержать содержимое stderr.
+   */
+  describe('Property 8: Включение stderr в сообщение об ошибке', () => {
+    test('должен включать stderr в сообщение об ошибке', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }), // Основное сообщение об ошибке
+          fc.string({ minLength: 1, maxLength: 200 }), // Содержимое stderr
+          (errorMsg, stderr) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            // Создаем ошибку с stderr в сообщении (как это делает базовый класс)
+            const errorWithStderr = new Error(`${errorMsg}. stderr: ${stderr}`);
+            
+            const result = adapter.handleError(errorWithStderr);
+            
+            // Сообщение об ошибке должно содержать stderr
+            expect(result.message).toContain(stderr);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен сохранять полное сообщение об ошибке включая stderr', () => {
+      fc.assert(
+        fc.property(
+          fc.constantFrom(
+            'Command failed',
+            'Execution error',
+            'Process terminated',
+            'Invalid response'
+          ),
+          fc.string({ minLength: 10, maxLength: 100 }),
+          (baseMsg, stderr) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            // Формируем сообщение как это делает базовый класс
+            const fullMessage = `${baseMsg}. stderr: ${stderr}`;
+            const error = new Error(fullMessage);
+            
+            const result = adapter.handleError(error);
+            
+            // Полное сообщение должно быть сохранено
+            expect(result.message).toBe(fullMessage);
+            
+            // Должно содержать и базовое сообщение, и stderr
+            expect(result.message).toContain(baseMsg);
+            expect(result.message).toContain(stderr);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать stderr с различными типами содержимого', () => {
+      fc.assert(
+        fc.property(
+          fc.oneof(
+            fc.string({ minLength: 1, maxLength: 100 }), // Обычная строка
+            fc.stringMatching(/.*\n.*/), // Многострочная строка
+            fc.stringMatching(/.*['"\\].*/), // Строка со спецсимволами
+            fc.constant('Error: Authentication failed'),
+            fc.constant('Warning: Deprecated API'),
+            fc.constant('Fatal: Connection timeout')
+          ),
+          (stderr) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const error = new Error(`Command failed. stderr: ${stderr}`);
+            const result = adapter.handleError(error);
+            
+            // stderr должен быть включен в сообщение без изменений
+            expect(result.message).toContain(stderr);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен обрабатывать ошибки без stderr', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }),
+          (errorMsg) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            // Ошибка без stderr
+            const error = new Error(errorMsg);
+            const result = adapter.handleError(error);
+            
+            // Сообщение должно быть сохранено как есть
+            expect(result.message).toBe(errorMsg);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен включать stderr для различных типов ошибок', () => {
+      fc.assert(
+        fc.property(
+          fc.constantFrom(
+            'not found',
+            'authentication failed',
+            'timeout exceeded',
+            'invalid request',
+            'unknown error'
+          ),
+          fc.string({ minLength: 10, maxLength: 100 }),
+          (errorType, stderr) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const error = new Error(`${errorType}. stderr: ${stderr}`);
+            const result = adapter.handleError(error);
+            
+            // stderr должен быть включен независимо от типа ошибки
+            expect(result.message).toContain(stderr);
+            
+            // Тип ошибки также должен быть в сообщении
+            expect(result.message).toContain(errorType);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен сохранять форматирование stderr', () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.string({ minLength: 1, maxLength: 50 }),
+            { minLength: 2, maxLength: 5 }
+          ),
+          (stderrLines) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            // Создаем многострочный stderr
+            const stderr = stderrLines.join('\n');
+            const error = new Error(`Command failed. stderr: ${stderr}`);
+            
+            const result = adapter.handleError(error);
+            
+            // Все строки stderr должны быть в сообщении
+            for (const line of stderrLines) {
+              expect(result.message).toContain(line);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
+
+  /**
+   * Feature: codex-cli-adapter, Property 9: Определение повторяемости ошибки
+   * Validates: Requirements 6.5
+   * 
+   * Для любой ошибки, метод `isRetryableError` должен корректно определять, 
+   * можно ли повторить операцию, основываясь на типе ошибки (таймауты и 
+   * сетевые ошибки - повторяемые, ошибки аутентификации - нет).
+   */
+  describe('Property 9: Определение повторяемости ошибки', () => {
+    test('должен помечать таймауты как повторяемые ошибки', () => {
+      fc.assert(
+        fc.property(
+          fc.constantFrom(
+            'timeout',
+            'timed out',
+            'operation timeout',
+            'request timeout',
+            'connection timeout'
+          ),
+          (timeoutMsg) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const error = new Error(`Command failed: ${timeoutMsg}`);
+            const result = adapter.handleError(error);
+            
+            // Таймауты должны быть повторяемыми
+            expect(result.retryable).toBe(true);
+            expect(result.code).toBe('ADAPTER_TIMEOUT');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен помечать ошибки аутентификации как неповторяемые', () => {
+      fc.assert(
+        fc.property(
+          fc.constantFrom(
+            'authentication failed',
+            'unauthorized',
+            'auth error',
+            'invalid api key',
+            'authentication required'
+          ),
+          (authMsg) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const error = new Error(`Command failed: ${authMsg}`);
+            const result = adapter.handleError(error);
+            
+            // Ошибки аутентификации не должны быть повторяемыми
+            expect(result.retryable).toBe(false);
+            expect(result.code).toBe('ADAPTER_AUTH_ERROR');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен помечать ошибки "not found" как неповторяемые', () => {
+      fc.assert(
+        fc.property(
+          fc.constantFrom(
+            'not found',
+            'command not found',
+            'enoent',
+            'file not found',
+            'executable not found'
+          ),
+          (notFoundMsg) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const error = new Error(`Command failed: ${notFoundMsg}`);
+            const result = adapter.handleError(error);
+            
+            // Ошибки "not found" не должны быть повторяемыми
+            expect(result.retryable).toBe(false);
+            expect(result.code).toBe('ADAPTER_NOT_FOUND');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен помечать ошибки валидации как неповторяемые', () => {
+      fc.assert(
+        fc.property(
+          fc.constantFrom(
+            'invalid request',
+            'invalid input',
+            'invalid parameter',
+            'invalid format',
+            'invalid configuration'
+          ),
+          (invalidMsg) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const error = new Error(`Command failed: ${invalidMsg}`);
+            const result = adapter.handleError(error);
+            
+            // Ошибки валидации не должны быть повторяемыми
+            expect(result.retryable).toBe(false);
+            expect(result.code).toBe('ADAPTER_INVALID_REQUEST');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен помечать неизвестные ошибки как неповторяемые', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 100 }).filter(
+            s => !s.toLowerCase().includes('timeout') &&
+                 !s.toLowerCase().includes('auth') &&
+                 !s.toLowerCase().includes('not found') &&
+                 !s.toLowerCase().includes('invalid') &&
+                 !s.toLowerCase().includes('enoent')
+          ),
+          (errorMsg) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const error = new Error(errorMsg);
+            const result = adapter.handleError(error);
+            
+            // Неизвестные ошибки по умолчанию не должны быть повторяемыми
+            expect(result.retryable).toBe(false);
+            expect(result.code).toBe('ADAPTER_UNKNOWN_ERROR');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно определять повторяемость для различных типов ошибок', () => {
+      fc.assert(
+        fc.property(
+          fc.record({
+            errorType: fc.constantFrom(
+              'timeout',
+              'authentication',
+              'not found',
+              'invalid',
+              'unknown'
+            ),
+            additionalText: fc.string({ minLength: 0, maxLength: 50 })
+          }),
+          ({ errorType, additionalText }) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const errorMessages: Record<string, string> = {
+              'timeout': `Operation timed out ${additionalText}`,
+              'authentication': `Authentication failed ${additionalText}`,
+              'not found': `Command not found ${additionalText}`,
+              'invalid': `Invalid request ${additionalText}`,
+              'unknown': `Some error ${additionalText}`
+            };
+            
+            const error = new Error(errorMessages[errorType]);
+            const result = adapter.handleError(error);
+            
+            // Проверяем корректность флага retryable
+            if (errorType === 'timeout') {
+              expect(result.retryable).toBe(true);
+            } else {
+              expect(result.retryable).toBe(false);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен сохранять оригинальную ошибку независимо от повторяемости', () => {
+      fc.assert(
+        fc.property(
+          fc.constantFrom(
+            'timeout',
+            'authentication failed',
+            'not found',
+            'invalid request'
+          ),
+          (errorMsg) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const originalError = new Error(errorMsg);
+            const result = adapter.handleError(originalError);
+            
+            // Оригинальная ошибка должна быть сохранена
+            expect(result.originalError).toBe(originalError);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать ошибки с регистронезависимыми сообщениями', () => {
+      fc.assert(
+        fc.property(
+          fc.constantFrom(
+            'TIMEOUT',
+            'TimeOut',
+            'AUTHENTICATION FAILED',
+            'Authentication Failed',
+            'NOT FOUND',
+            'Not Found',
+            'INVALID',
+            'Invalid'
+          ),
+          (errorMsg) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const error = new Error(errorMsg);
+            const result = adapter.handleError(error);
+            
+            // Определение типа ошибки должно быть регистронезависимым
+            const lowerMsg = errorMsg.toLowerCase();
+            if (lowerMsg.includes('timeout')) {
+              expect(result.code).toBe('ADAPTER_TIMEOUT');
+              expect(result.retryable).toBe(true);
+            } else if (lowerMsg.includes('authentication')) {
+              expect(result.code).toBe('ADAPTER_AUTH_ERROR');
+              expect(result.retryable).toBe(false);
+            } else if (lowerMsg.includes('not found')) {
+              expect(result.code).toBe('ADAPTER_NOT_FOUND');
+              expect(result.retryable).toBe(false);
+            } else if (lowerMsg.includes('invalid')) {
+              expect(result.code).toBe('ADAPTER_INVALID_REQUEST');
+              expect(result.retryable).toBe(false);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать ошибки с дополнительным контекстом', () => {
+      fc.assert(
+        fc.property(
+          fc.record({
+            errorType: fc.constantFrom('timeout', 'authentication', 'not found', 'invalid'),
+            prefix: fc.string({ minLength: 0, maxLength: 30 }),
+            suffix: fc.string({ minLength: 0, maxLength: 30 })
+          }),
+          ({ errorType, prefix, suffix }) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const errorMessages: Record<string, string> = {
+              'timeout': 'timeout',
+              'authentication': 'authentication failed',
+              'not found': 'not found',
+              'invalid': 'invalid'
+            };
+            
+            const fullMessage = `${prefix} ${errorMessages[errorType]} ${suffix}`;
+            const error = new Error(fullMessage);
+            const result = adapter.handleError(error);
+            
+            // Тип ошибки должен определяться корректно даже с дополнительным контекстом
+            if (errorType === 'timeout') {
+              expect(result.code).toBe('ADAPTER_TIMEOUT');
+              expect(result.retryable).toBe(true);
+            } else {
+              expect(result.retryable).toBe(false);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
 });
