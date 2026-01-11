@@ -58,10 +58,97 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
       args.push('--model', request.model);
     }
     
-    // Добавляем промпт
+    // Добавляем промпт в конце
     args.push(request.prompt);
     
     return args;
+  }
+
+  /**
+   * Переопределяем executeCommand для закрытия stdin
+   * Claude CLI может ждать ввода, если stdin открыт
+   */
+  protected executeCommand(
+    command: string,
+    args: string[],
+    env: Record<string, string>,
+    timeout: number
+  ): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const startTime = Date.now();
+      let stdout = '';
+      let stderr = '';
+      let timedOut = false;
+
+      // Импортируем spawn
+      const { spawn } = require('child_process');
+
+      // Запуск процесса
+      const child = spawn(command, args, {
+        env,
+        shell: true,
+        windowsHide: true
+      });
+
+      // ВАЖНО: Закрываем stdin сразу после запуска
+      // Это предотвращает ожидание ввода от Claude CLI
+      if (child.stdin) {
+        child.stdin.end();
+      }
+
+      // Таймер для таймаута
+      const timeoutId = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGTERM');
+        
+        // Если процесс не завершился через 5 секунд, убиваем принудительно
+        setTimeout(() => {
+          if (!child.killed) {
+            child.kill('SIGKILL');
+          }
+        }, 5000);
+      }, timeout);
+
+      // Захват stdout
+      child.stdout?.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+
+      // Захват stderr
+      child.stderr?.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      // Обработка завершения процесса
+      child.on('close', (exitCode: number | null) => {
+        clearTimeout(timeoutId);
+        const executionTime = Date.now() - startTime;
+
+        if (timedOut) {
+          reject(new Error(
+            `Команда превысила таймаут ${timeout}мс. ` +
+            `stdout: ${stdout.substring(0, 500)}, ` +
+            `stderr: ${stderr.substring(0, 500)}`
+          ));
+          return;
+        }
+
+        resolve({
+          stdout,
+          stderr,
+          exitCode: exitCode ?? -1,
+          executionTime
+        });
+      });
+
+      // Обработка ошибок запуска процесса
+      child.on('error', (error: Error) => {
+        clearTimeout(timeoutId);
+        reject(new Error(
+          `Не удалось запустить команду "${command}": ${error.message}`
+        ));
+      });
+    });
   }
 
   /**
