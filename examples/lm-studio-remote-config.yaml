@@ -1,5 +1,5 @@
-# Пример конфигурации для подключения к удаленному LM Studio
-# LM Studio запущен на другой машине в локальной сети (192.168.50.1:1234)
+# Простой пример конфигурации для тестирования удаленного LM Studio
+# Примечание: Адаптер должен быть зарегистрирован программно перед запуском
 
 workflow:
   name: "test-remote-lm-studio"
@@ -19,12 +19,6 @@ workflow:
   roles:
     assistant:
       adapter: "lm-studio-remote"
-      adapter_config:
-        type: "openai-compatible"
-        baseUrl: "http://192.168.50.1:1234/v1"
-        timeout: 120000
-        headers:
-          User-Agent: "workflow-orchestrator/1.0"
       role_definition: |
         Вы - полезный AI ассистент, работающий через удаленный LM Studio.
         Отвечайте кратко и по существу.
