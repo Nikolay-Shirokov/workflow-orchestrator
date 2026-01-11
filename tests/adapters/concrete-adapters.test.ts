@@ -1106,6 +1106,273 @@ Line 3: stderr: Connection lost`);
       expect(result.message).toContain('stderr');
     });
   });
+
+  // Unit-тесты для проверки доступности
+  // Требования: 7.2, 7.3, 7.4, 7.5
+
+  describe('Проверка доступности (isAvailable)', () => {
+    it('должен возвращать true если команда codex --version выполняется успешно', async () => {
+      // Требования: 7.2, 7.3
+      const adapter = new CodexCLIAdapter();
+      
+      // Мокируем executeCommand для успешного выполнения
+      const originalExecuteCommand = (adapter as any).executeCommand;
+      (adapter as any).executeCommand = jest.fn().mockResolvedValue({
+        stdout: 'codex version 1.0.0',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100
+      });
+      
+      const result = await adapter.isAvailable();
+      
+      expect(result).toBe(true);
+      expect((adapter as any).executeCommand).toHaveBeenCalledWith(
+        'codex',
+        ['--version'],
+        expect.any(Object),
+        5000 // Таймаут 5 секунд
+      );
+      
+      // Восстанавливаем оригинальный метод
+      (adapter as any).executeCommand = originalExecuteCommand;
+    });
+
+    it('должен возвращать false если команда codex не найдена', async () => {
+      // Требования: 7.2, 7.4
+      const adapter = new CodexCLIAdapter();
+      
+      // Мокируем executeCommand для ошибки "not found"
+      const originalExecuteCommand = (adapter as any).executeCommand;
+      (adapter as any).executeCommand = jest.fn().mockRejectedValue(
+        new Error('Command not found: codex')
+      );
+      
+      const result = await adapter.isAvailable();
+      
+      expect(result).toBe(false);
+      expect((adapter as any).executeCommand).toHaveBeenCalledWith(
+        'codex',
+        ['--version'],
+        expect.any(Object),
+        5000
+      );
+      
+      // Восстанавливаем оригинальный метод
+      (adapter as any).executeCommand = originalExecuteCommand;
+    });
+
+    it('должен возвращать false если команда завершается с ненулевым кодом', async () => {
+      // Требования: 7.2, 7.4
+      const adapter = new CodexCLIAdapter();
+      
+      // Мокируем executeCommand для ненулевого кода выхода
+      const originalExecuteCommand = (adapter as any).executeCommand;
+      (adapter as any).executeCommand = jest.fn().mockResolvedValue({
+        stdout: '',
+        stderr: 'Error: Invalid command',
+        exitCode: 1,
+        executionTime: 50
+      });
+      
+      const result = await adapter.isAvailable();
+      
+      expect(result).toBe(false);
+      
+      // Восстанавливаем оригинальный метод
+      (adapter as any).executeCommand = originalExecuteCommand;
+    });
+
+    it('должен использовать таймаут 5 секунд для проверки', async () => {
+      // Требования: 7.5
+      const adapter = new CodexCLIAdapter();
+      
+      // Мокируем executeCommand
+      const originalExecuteCommand = (adapter as any).executeCommand;
+      const mockExecuteCommand = jest.fn().mockResolvedValue({
+        stdout: 'codex version 1.0.0',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100
+      });
+      (adapter as any).executeCommand = mockExecuteCommand;
+      
+      await adapter.isAvailable();
+      
+      // Проверяем, что таймаут равен 5000 мс (5 секунд)
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'codex',
+        ['--version'],
+        expect.any(Object),
+        5000
+      );
+      
+      // Восстанавливаем оригинальный метод
+      (adapter as any).executeCommand = originalExecuteCommand;
+    });
+
+    it('должен возвращать false при таймауте проверки', async () => {
+      // Требования: 7.4, 7.5
+      const adapter = new CodexCLIAdapter();
+      
+      // Мокируем executeCommand для таймаута
+      const originalExecuteCommand = (adapter as any).executeCommand;
+      (adapter as any).executeCommand = jest.fn().mockRejectedValue(
+        new Error('Command exceeded timeout 5000ms')
+      );
+      
+      const result = await adapter.isAvailable();
+      
+      expect(result).toBe(false);
+      
+      // Восстанавливаем оригинальный метод
+      (adapter as any).executeCommand = originalExecuteCommand;
+    });
+
+    it('должен возвращать false для любой ошибки выполнения', async () => {
+      // Требования: 7.4
+      const adapter = new CodexCLIAdapter();
+      
+      // Мокируем executeCommand для различных ошибок
+      const originalExecuteCommand = (adapter as any).executeCommand;
+      
+      const errors = [
+        new Error('ENOENT: no such file or directory'),
+        new Error('Permission denied'),
+        new Error('Network error'),
+        new Error('Unknown error')
+      ];
+      
+      for (const error of errors) {
+        (adapter as any).executeCommand = jest.fn().mockRejectedValue(error);
+        
+        const result = await adapter.isAvailable();
+        expect(result).toBe(false);
+      }
+      
+      // Восстанавливаем оригинальный метод
+      (adapter as any).executeCommand = originalExecuteCommand;
+    });
+
+    it('должен использовать команду codex --version, а не codex exec --version', async () => {
+      // Требования: 7.2
+      const adapter = new CodexCLIAdapter();
+      
+      // Мокируем executeCommand
+      const originalExecuteCommand = (adapter as any).executeCommand;
+      const mockExecuteCommand = jest.fn().mockResolvedValue({
+        stdout: 'codex version 1.0.0',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100
+      });
+      (adapter as any).executeCommand = mockExecuteCommand;
+      
+      await adapter.isAvailable();
+      
+      // Проверяем, что используется именно --version, а не exec
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'codex',
+        ['--version'],
+        expect.any(Object),
+        5000
+      );
+      
+      // Убеждаемся, что НЕ используется 'exec'
+      const callArgs = mockExecuteCommand.mock.calls[0];
+      expect(callArgs[1]).not.toContain('exec');
+      
+      // Восстанавливаем оригинальный метод
+      (adapter as any).executeCommand = originalExecuteCommand;
+    });
+
+    it('должен корректно обрабатывать различные форматы вывода версии', async () => {
+      // Требования: 7.3
+      const adapter = new CodexCLIAdapter();
+      
+      const originalExecuteCommand = (adapter as any).executeCommand;
+      
+      const versionOutputs = [
+        'codex version 1.0.0',
+        'codex 1.0.0',
+        'v1.0.0',
+        '1.0.0',
+        'codex-cli version 2.5.3',
+        '' // Пустой вывод, но exitCode = 0
+      ];
+      
+      for (const stdout of versionOutputs) {
+        (adapter as any).executeCommand = jest.fn().mockResolvedValue({
+          stdout,
+          stderr: '',
+          exitCode: 0,
+          executionTime: 50
+        });
+        
+        const result = await adapter.isAvailable();
+        
+        // Если exitCode = 0, должен вернуть true независимо от формата вывода
+        expect(result).toBe(true);
+      }
+      
+      // Восстанавливаем оригинальный метод
+      (adapter as any).executeCommand = originalExecuteCommand;
+    });
+
+    it('должен игнорировать stderr если exitCode = 0', async () => {
+      // Требования: 7.3
+      const adapter = new CodexCLIAdapter();
+      
+      // Мокируем executeCommand с stderr, но exitCode = 0
+      const originalExecuteCommand = (adapter as any).executeCommand;
+      (adapter as any).executeCommand = jest.fn().mockResolvedValue({
+        stdout: 'codex version 1.0.0',
+        stderr: 'Warning: Some deprecation notice',
+        exitCode: 0,
+        executionTime: 100
+      });
+      
+      const result = await adapter.isAvailable();
+      
+      // Должен вернуть true, так как exitCode = 0
+      expect(result).toBe(true);
+      
+      // Восстанавливаем оригинальный метод
+      (adapter as any).executeCommand = originalExecuteCommand;
+    });
+
+    it('должен быть независимым от конфигурации адаптера', async () => {
+      // Требования: 7.1
+      const customAdapter = new CodexCLIAdapter({
+        command: 'custom-codex',
+        timeout: 60000,
+        args: ['custom', 'args']
+      });
+      
+      // Мокируем executeCommand
+      const originalExecuteCommand = (customAdapter as any).executeCommand;
+      const mockExecuteCommand = jest.fn().mockResolvedValue({
+        stdout: 'custom-codex version 1.0.0',
+        stderr: '',
+        exitCode: 0,
+        executionTime: 100
+      });
+      (customAdapter as any).executeCommand = mockExecuteCommand;
+      
+      await customAdapter.isAvailable();
+      
+      // Должен использовать команду из конфигурации, но с --version
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'custom-codex',
+        ['--version'],
+        expect.any(Object),
+        5000 // Таймаут всегда 5 секунд для проверки
+      );
+      
+      // Восстанавливаем оригинальный метод
+      (customAdapter as any).executeCommand = originalExecuteCommand;
+    });
+  });
 });
 
 describe('Интеграция адаптеров с реестром', () => {

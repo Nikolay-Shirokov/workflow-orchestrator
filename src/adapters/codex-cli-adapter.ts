@@ -336,4 +336,28 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
       originalError: error
     };
   }
+
+  /**
+   * Проверка доступности Codex CLI
+   * Выполняет команду `codex --version` с таймаутом 5 секунд
+   * @returns Promise<boolean> - true если утилита доступна, false в противном случае
+   */
+  async isAvailable(): Promise<boolean> {
+    try {
+      // Выполняем команду codex --version с таймаутом 5 секунд
+      const result = await this.executeCommand(
+        this.config.command,
+        ['--version'],
+        {},
+        5000 // 5 секунд таймаут для проверки
+      );
+      
+      // Возвращаем true если команда выполнилась успешно (exitCode = 0)
+      return result.exitCode === 0;
+    } catch (error) {
+      // Если произошла любая ошибка (команда не найдена, таймаут, и т.д.),
+      // возвращаем false
+      return false;
+    }
+  }
 }
