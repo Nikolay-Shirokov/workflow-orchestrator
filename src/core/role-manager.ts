@@ -265,20 +265,25 @@ export class RoleManager {
         if (typeof permission === 'string' && permission.startsWith('edit:')) {
           const pattern = permission.substring(5);
           try {
-            // Конвертируем glob в regex и проверяем
-            const regex = this.globToRegex(pattern);
-            new RegExp(regex);
+            // Если паттерн уже regex, валидируем напрямую
+            if (pattern.startsWith('^') || pattern.endsWith('$') || pattern.includes('(') || pattern.includes('[')) {
+              new RegExp(pattern);
+            } else {
+              // Иначе конвертируем glob в regex и проверяем
+              const regex = this.globToRegex(pattern);
+              new RegExp(regex);
+            }
           } catch (error) {
             throw new WorkflowErrorClass({
               code: 'INVALID_PERMISSION_REGEX',
               category: 'config',
               severity: 'error',
-              message: `Невалидный паттерн в разрешениях роли "${roleName}"`,
-              context: { roleName, permission, error },
+              message: `Невалидное регулярное выражение в разрешениях роли "${roleName}": ${pattern}`,
+              context: { roleName, permission, pattern, error },
               recoverable: false,
               suggestions: [
-                'Проверьте синтаксис паттерна',
-                'Используйте формат: edit:pattern (например, edit:*.md)'
+                'Проверьте синтаксис регулярного выражения',
+                'Используйте формат: edit:pattern (например, edit:*.md или edit:.*\\.md$)'
               ]
             });
           }
@@ -287,20 +292,25 @@ export class RoleManager {
         else if (typeof permission === 'object' && permission !== null && 'edit' in permission) {
           const pattern = (permission as Record<string, string>).edit;
           try {
-            // Конвертируем glob в regex и проверяем
-            const regex = this.globToRegex(pattern);
-            new RegExp(regex);
+            // Если паттерн уже regex, валидируем напрямую
+            if (pattern.startsWith('^') || pattern.endsWith('$') || pattern.includes('(') || pattern.includes('[')) {
+              new RegExp(pattern);
+            } else {
+              // Иначе конвертируем glob в regex и проверяем
+              const regex = this.globToRegex(pattern);
+              new RegExp(regex);
+            }
           } catch (error) {
             throw new WorkflowErrorClass({
               code: 'INVALID_PERMISSION_REGEX',
               category: 'config',
               severity: 'error',
-              message: `Невалидный паттерн в разрешениях роли "${roleName}"`,
-              context: { roleName, permission, error },
+              message: `Невалидное регулярное выражение в разрешениях роли "${roleName}": ${pattern}`,
+              context: { roleName, permission, pattern, error },
               recoverable: false,
               suggestions: [
-                'Проверьте синтаксис паттерна',
-                'Используйте формат: edit: "pattern" (например, edit: "*.md")'
+                'Проверьте синтаксис регулярного выражения',
+                'Используйте формат: edit: "pattern" (например, edit: "*.md" или edit: ".*\\.md$")'
               ]
             });
           }
@@ -315,6 +325,11 @@ export class RoleManager {
    * @returns Строка регулярного выражения
    */
   private globToRegex(glob: string): string {
+    // Если паттерн уже является regex (содержит ^ в начале или $ в конце), возвращаем как есть
+    if (glob.startsWith('^') || glob.endsWith('$')) {
+      return glob;
+    }
+    
     // Экранируем специальные символы regex, кроме * и ?
     let regex = glob
       .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // Экранируем спецсимволы

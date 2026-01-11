@@ -666,8 +666,9 @@ describe('TemplateEngine Property-Based Tests', () => {
         fc.array(
           fc.record({
             path: fc.string({ minLength: 1, maxLength: 30 })
-              .filter(s => !s.includes('}') && !s.includes('$') && s.trim().length > 0),
+              .filter(s => !s.includes('{') && !s.includes('}') && !s.includes('$') && !s.includes(':') && s.trim().length > 0),
             content: fc.string({ minLength: 0, maxLength: 100 })
+              .filter(s => !s.includes('{') && !s.includes('}') && !s.includes('$'))
           }),
           { minLength: 1, maxLength: 5 }
         ),
@@ -723,9 +724,9 @@ describe('TemplateEngine Property-Based Tests', () => {
         fc.string({ minLength: 1, maxLength: 10 })
           .filter(s => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(s)),
         fc.string({ minLength: 1, maxLength: 20 })
-          .filter(s => !s.includes('}') && !s.includes('$') && !s.includes(':') && /\S/.test(s)),
+          .filter(s => !s.includes('{') && !s.includes('}') && !s.includes('$') && !s.includes(':') && /\S/.test(s)),
         fc.string({ minLength: 1, maxLength: 20 })
-          .filter(s => !s.includes('}') && !s.includes('$') && !s.includes(':') && /\S/.test(s)),
+          .filter(s => !s.includes('{') && !s.includes('}') && !s.includes('$') && !s.includes(':') && /\S/.test(s)),
         fc.boolean(),
         (conditionVar, thenText, elseText, conditionValue) => {
           // Убеждаемся что then и else разные

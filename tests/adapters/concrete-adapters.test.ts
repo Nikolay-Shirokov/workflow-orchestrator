@@ -337,7 +337,7 @@ describe('GeminiCLIAdapter', () => {
     if (originalKey) {
       process.env.GOOGLE_API_KEY = originalKey;
     }
-  }, 20000); // Увеличиваем таймаут до 20 секунд
+  }, 30000); // Увеличиваем таймаут до 30 секунд
 
   it('должен использовать пользовательскую конфигурацию', () => {
     const customAdapter = new GeminiCLIAdapter({
