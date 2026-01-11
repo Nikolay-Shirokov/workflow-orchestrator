@@ -86,6 +86,131 @@ interface OpenAIErrorResponse {
 }
 
 /**
+ * Опции для HTTP запроса
+ */
+interface RequestOptions {
+  /** HTTP заголовки */
+  headers?: Record<string, string>;
+  /** Таймаут в миллисекундах */
+  timeout?: number;
+  /** AbortSignal для отмены запроса */
+  signal?: AbortSignal;
+}
+
+/**
+ * HTTP ответ
+ */
+interface HTTPResponse {
+  /** HTTP статус код */
+  status: number;
+  /** HTTP статус текст */
+  statusText: string;
+  /** HTTP заголовки ответа */
+  headers: Record<string, string>;
+  /** Тело ответа */
+  body: string;
+}
+
+/**
+ * Внутренний HTTP клиент для выполнения запросов
+ * Инкапсулирует логику HTTP запросов с поддержкой таймаутов и заголовков
+ */
+class HTTPClient {
+  /**
+   * Выполнение GET запроса
+   * @param url - URL для запроса
+   * @param options - Опции запроса
+   * @returns Promise<HTTPResponse> - HTTP ответ
+   */
+  async get(url: string, options: RequestOptions = {}): Promise<HTTPResponse> {
+    return this.request(url, 'GET', undefined, options);
+  }
+
+  /**
+   * Выполнение POST запроса
+   * @param url - URL для запроса
+   * @param body - Тело запроса (будет сериализовано в JSON)
+   * @param options - Опции запроса
+   * @returns Promise<HTTPResponse> - HTTP ответ
+   */
+  async post(
+    url: string,
+    body: unknown,
+    options: RequestOptions = {}
+  ): Promise<HTTPResponse> {
+    return this.request(url, 'POST', body, options);
+  }
+
+  /**
+   * Внутренний метод для выполнения HTTP запроса
+   * @param url - URL для запроса
+   * @param method - HTTP метод
+   * @param body - Тело запроса (опционально)
+   * @param options - Опции запроса
+   * @returns Promise<HTTPResponse> - HTTP ответ
+   */
+  private async request(
+    url: string,
+    method: string,
+    body?: unknown,
+    options: RequestOptions = {}
+  ): Promise<HTTPResponse> {
+    // Создаем AbortController для таймаута если не передан signal
+    let controller: AbortController | undefined;
+    let timeoutId: NodeJS.Timeout | undefined;
+    
+    if (options.timeout && !options.signal) {
+      controller = new AbortController();
+      timeoutId = setTimeout(() => controller!.abort(), options.timeout);
+    }
+
+    try {
+      // Формируем параметры fetch
+      const fetchOptions: RequestInit = {
+        method,
+        headers: options.headers,
+        signal: options.signal || controller?.signal
+      };
+
+      // Добавляем тело для POST запросов
+      if (body !== undefined) {
+        fetchOptions.body = JSON.stringify(body);
+      }
+
+      // Выполняем запрос
+      const response = await fetch(url, fetchOptions);
+
+      // Очищаем таймаут
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+
+      // Читаем тело ответа
+      const responseBody = await response.text();
+
+      // Преобразуем заголовки в объект
+      const headers: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        headers[key] = value;
+      });
+
+      return {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+        body: responseBody
+      };
+    } catch (error) {
+      // Очищаем таймаут в случае ошибки
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      throw error;
+    }
+  }
+}
+
+/**
  * Адаптер для OpenAI-совместимых HTTP API
  * Поддерживает LM Studio, LocalAI, Ollama, Text Generation WebUI и другие
  */
@@ -98,6 +223,7 @@ export class OpenAICompatibleAdapter implements CLIAdapter {
   private defaultModel?: string;
   private timeout: number;
   private headers: Record<string, string>;
+  private httpClient: HTTPClient;
 
   /**
    * Создание адаптера с конфигурацией
@@ -115,6 +241,9 @@ export class OpenAICompatibleAdapter implements CLIAdapter {
     this.defaultModel = config?.defaultModel;
     this.timeout = config?.timeout || 300000; // 5 минут по умолчанию
     this.headers = config?.headers || {};
+    
+    // Создаем HTTP клиент
+    this.httpClient = new HTTPClient();
   }
 
   /**
@@ -137,16 +266,12 @@ export class OpenAICompatibleAdapter implements CLIAdapter {
   async isAvailable(): Promise<boolean> {
     try {
       const url = `${this.baseUrl}/models`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 секунд таймаут
-
-      const response = await fetch(url, {
-        method: 'GET',
+      
+      // Используем HTTP клиент с коротким таймаутом
+      const response = await this.httpClient.get(url, {
         headers: this.buildHeaders(),
-        signal: controller.signal
+        timeout: 5000 // 5 секунд таймаут
       });
-
-      clearTimeout(timeoutId);
       
       if (response.status === 200) {
         return true;
@@ -176,30 +301,22 @@ export class OpenAICompatibleAdapter implements CLIAdapter {
       // Построение запроса
       const chatRequest = this.buildChatCompletionRequest(request);
       
-      // Выполнение HTTP запроса
+      // Выполнение HTTP запроса через HTTP клиент
       const url = `${this.baseUrl}/chat/completions`;
-      const controller = new AbortController();
       const timeout = request.timeout || this.timeout;
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-      const response = await fetch(url, {
-        method: 'POST',
+      const response = await this.httpClient.post(url, chatRequest, {
         headers: this.buildHeaders(),
-        body: JSON.stringify(chatRequest),
-        signal: controller.signal
+        timeout
       });
 
-      clearTimeout(timeoutId);
-
       // Обработка ответа
-      const responseText = await response.text();
-      
-      if (!response.ok) {
-        throw this.createHttpError(response.status, responseText);
+      if (response.status !== 200) {
+        throw this.createHttpError(response.status, response.body);
       }
 
       // Парсинг ответа
-      const chatResponse: OpenAIChatResponse = JSON.parse(responseText);
+      const chatResponse: OpenAIChatResponse = JSON.parse(response.body);
       const content = this.parseChatCompletion(chatResponse);
       
       const executionTime = Date.now() - startTime;
