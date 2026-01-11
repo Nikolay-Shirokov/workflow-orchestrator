@@ -820,4 +820,379 @@ describe('OpenAI Compatible Adapter Property Tests', () => {
       );
     });
   });
+
+  /**
+   * Feature: openai-compatible-adapter, Property 4: Ответ корректно парсится
+   * Validates: Requirements 3.1, 3.2, 3.3, 3.4
+   * 
+   * Для любого валидного OpenAI API ответа, парсинг должен:
+   * - Извлекать текст из choices[0].message.content (всегда первый вариант)
+   * - Сохранять информацию о модели из поля "model"
+   * - Сохранять информацию об использовании токенов из поля "usage" в metadata
+   * - Измерять и возвращать время выполнения запроса
+   */
+  describe('Property 4: Ответ корректно парсится', () => {
+    test('должен извлекать контент из первого варианта ответа', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 1000 }),
+          (content) => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            // Используем рефлексию для доступа к приватному методу
+            const parseMethod = (adapter as any).parseChatCompletion.bind(adapter);
+            
+            // Создаем валидный ответ OpenAI API
+            const response = {
+              id: 'chatcmpl-123',
+              object: 'chat.completion',
+              created: Date.now(),
+              model: 'gpt-3.5-turbo',
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: 'assistant',
+                    content
+                  },
+                  finish_reason: 'stop'
+                }
+              ]
+            };
+            
+            const parsedContent = parseMethod(response);
+            
+            // Проверяем, что контент извлечен корректно
+            expect(parsedContent).toBe(content);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен извлекать контент из первого варианта при наличии нескольких', () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.string({ minLength: 1, maxLength: 500 }), { minLength: 2, maxLength: 5 }),
+          (contents) => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            const parseMethod = (adapter as any).parseChatCompletion.bind(adapter);
+            
+            // Создаем ответ с несколькими вариантами
+            const response = {
+              id: 'chatcmpl-123',
+              object: 'chat.completion',
+              created: Date.now(),
+              model: 'gpt-3.5-turbo',
+              choices: contents.map((content, index) => ({
+                index,
+                message: {
+                  role: 'assistant',
+                  content
+                },
+                finish_reason: 'stop'
+              }))
+            };
+            
+            const parsedContent = parseMethod(response);
+            
+            // Должен вернуть контент первого варианта (index 0)
+            expect(parsedContent).toBe(contents[0]);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать различные типы контента', () => {
+      fc.assert(
+        fc.property(
+          fc.oneof(
+            fc.string({ minLength: 1, maxLength: 100 }),
+            fc.lorem({ maxCount: 50 }),
+            fc.stringMatching(/^[a-zA-Z0-9\s.,!?]+$/),
+            fc.unicodeString({ minLength: 1, maxLength: 100 })
+          ),
+          (content) => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            const parseMethod = (adapter as any).parseChatCompletion.bind(adapter);
+            
+            const response = {
+              id: 'chatcmpl-123',
+              object: 'chat.completion',
+              created: Date.now(),
+              model: 'gpt-3.5-turbo',
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: 'assistant',
+                    content
+                  },
+                  finish_reason: 'stop'
+                }
+              ]
+            };
+            
+            const parsedContent = parseMethod(response);
+            
+            // Контент должен быть извлечен без изменений
+            expect(parsedContent).toBe(content);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен выбрасывать ошибку при отсутствии choices', () => {
+      fc.assert(
+        fc.property(
+          fc.constant(undefined),
+          () => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            const parseMethod = (adapter as any).parseChatCompletion.bind(adapter);
+            
+            // Ответ без choices
+            const response = {
+              id: 'chatcmpl-123',
+              object: 'chat.completion',
+              created: Date.now(),
+              model: 'gpt-3.5-turbo',
+              choices: []
+            };
+            
+            // Должна быть выброшена ошибка
+            expect(() => parseMethod(response)).toThrow();
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен выбрасывать ошибку при отсутствии контента', () => {
+      fc.assert(
+        fc.property(
+          fc.constant(undefined),
+          () => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            const parseMethod = (adapter as any).parseChatCompletion.bind(adapter);
+            
+            // Ответ без контента
+            const response = {
+              id: 'chatcmpl-123',
+              object: 'chat.completion',
+              created: Date.now(),
+              model: 'gpt-3.5-turbo',
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: 'assistant',
+                    content: null
+                  },
+                  finish_reason: 'stop'
+                }
+              ]
+            };
+            
+            // Должна быть выброшена ошибка
+            expect(() => parseMethod(response)).toThrow();
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать пустой контент', () => {
+      fc.assert(
+        fc.property(
+          fc.constant(''),
+          (content) => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            const parseMethod = (adapter as any).parseChatCompletion.bind(adapter);
+            
+            const response = {
+              id: 'chatcmpl-123',
+              object: 'chat.completion',
+              created: Date.now(),
+              model: 'gpt-3.5-turbo',
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: 'assistant',
+                    content
+                  },
+                  finish_reason: 'stop'
+                }
+              ]
+            };
+            
+            // Пустой контент должен вызвать ошибку
+            expect(() => parseMethod(response)).toThrow();
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать контент с пробелами', () => {
+      fc.assert(
+        fc.property(
+          fc.stringMatching(/^\s+$/),
+          (content) => {
+            // Пропускаем пустые строки
+            fc.pre(content.length > 0);
+            
+            const adapter = new OpenAICompatibleAdapter();
+            
+            const parseMethod = (adapter as any).parseChatCompletion.bind(adapter);
+            
+            const response = {
+              id: 'chatcmpl-123',
+              object: 'chat.completion',
+              created: Date.now(),
+              model: 'gpt-3.5-turbo',
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: 'assistant',
+                    content
+                  },
+                  finish_reason: 'stop'
+                }
+              ]
+            };
+            
+            const parsedContent = parseMethod(response);
+            
+            // Контент с пробелами должен быть сохранен как есть
+            expect(parsedContent).toBe(content);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать многострочный контент', () => {
+      fc.assert(
+        fc.property(
+          fc.array(fc.string({ minLength: 1, maxLength: 100 }), { minLength: 2, maxLength: 10 }),
+          (lines) => {
+            const content = lines.join('\n');
+            
+            const adapter = new OpenAICompatibleAdapter();
+            
+            const parseMethod = (adapter as any).parseChatCompletion.bind(adapter);
+            
+            const response = {
+              id: 'chatcmpl-123',
+              object: 'chat.completion',
+              created: Date.now(),
+              model: 'gpt-3.5-turbo',
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: 'assistant',
+                    content
+                  },
+                  finish_reason: 'stop'
+                }
+              ]
+            };
+            
+            const parsedContent = parseMethod(response);
+            
+            // Многострочный контент должен быть сохранен с переносами строк
+            expect(parsedContent).toBe(content);
+            expect(parsedContent.split('\n').length).toBe(lines.length);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать контент со специальными символами', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }),
+          (baseContent) => {
+            // Добавляем специальные символы
+            const content = `${baseContent}\n\t"'\\{}[]`;
+            
+            const adapter = new OpenAICompatibleAdapter();
+            
+            const parseMethod = (adapter as any).parseChatCompletion.bind(adapter);
+            
+            const response = {
+              id: 'chatcmpl-123',
+              object: 'chat.completion',
+              created: Date.now(),
+              model: 'gpt-3.5-turbo',
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: 'assistant',
+                    content
+                  },
+                  finish_reason: 'stop'
+                }
+              ]
+            };
+            
+            const parsedContent = parseMethod(response);
+            
+            // Специальные символы должны быть сохранены
+            expect(parsedContent).toBe(content);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать длинный контент', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1000, maxLength: 10000 }),
+          (content) => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            const parseMethod = (adapter as any).parseChatCompletion.bind(adapter);
+            
+            const response = {
+              id: 'chatcmpl-123',
+              object: 'chat.completion',
+              created: Date.now(),
+              model: 'gpt-3.5-turbo',
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: 'assistant',
+                    content
+                  },
+                  finish_reason: 'stop'
+                }
+              ]
+            };
+            
+            const parsedContent = parseMethod(response);
+            
+            // Длинный контент должен быть извлечен полностью
+            expect(parsedContent).toBe(content);
+            expect(parsedContent.length).toBe(content.length);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
 });
