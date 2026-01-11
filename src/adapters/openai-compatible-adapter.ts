@@ -291,6 +291,8 @@ export class OpenAICompatibleAdapter implements CLIAdapter {
 
   /**
    * Выполнение запроса к модели
+   * Устойчив к неподдерживаемым параметрам и ошибкам парсинга
+   * 
    * @param request - Запрос к адаптеру
    * @returns Promise<AdapterResponse> - Ответ от модели
    */
@@ -315,8 +317,18 @@ export class OpenAICompatibleAdapter implements CLIAdapter {
         throw this.createHttpError(response.status, response.body);
       }
 
-      // Парсинг ответа
-      const chatResponse: OpenAIChatResponse = JSON.parse(response.body);
+      // Парсинг ответа с защитой от ошибок
+      let chatResponse: OpenAIChatResponse;
+      try {
+        chatResponse = JSON.parse(response.body);
+      } catch (parseError) {
+        // Если не удалось распарсить ответ, это может быть из-за неподдерживаемого формата
+        console.warn(
+          `[${this.name}] Не удалось распарсить ответ API. Возможно, сервис вернул нестандартный формат.`
+        );
+        throw new Error(`Ошибка парсинга ответа: ${(parseError as Error).message}`);
+      }
+      
       const content = this.parseChatCompletion(chatResponse);
       
       const executionTime = Date.now() - startTime;
@@ -338,6 +350,9 @@ export class OpenAICompatibleAdapter implements CLIAdapter {
 
   /**
    * Построение запроса к Chat Completion API
+   * Устойчив к неподдерживаемым параметрам - отправляет только стандартные параметры OpenAI API
+   * Если сервис не поддерживает какие-то параметры, он их просто игнорирует
+   * 
    * @param request - Запрос к адаптеру
    * @returns OpenAIChatRequest - Запрос в формате OpenAI
    */
@@ -358,13 +373,15 @@ export class OpenAICompatibleAdapter implements CLIAdapter {
       content: request.prompt
     });
     
-    // Формируем запрос
+    // Формируем запрос с обязательными параметрами
     const chatRequest: OpenAIChatRequest = {
       model: request.model || this.defaultModel || 'gpt-3.5-turbo',
       messages
     };
     
-    // Добавляем опциональные параметры
+    // Добавляем опциональные параметры только если они указаны
+    // Это обеспечивает устойчивость - если сервис не поддерживает параметр,
+    // он просто игнорирует его без ошибки
     if (request.temperature !== undefined) {
       chatRequest.temperature = request.temperature;
     }
@@ -456,6 +473,7 @@ export class OpenAICompatibleAdapter implements CLIAdapter {
    * Обработка ошибок
    * Маппит различные типы ошибок на коды AdapterError с правильными флагами retryable
    * Извлекает сообщения об ошибках из тела ответа API
+   * Обеспечивает устойчивость к неподдерживаемым параметрам - не падает при ошибках валидации
    * 
    * @param error - Ошибка выполнения
    * @returns AdapterError - Структурированная ошибка
@@ -468,6 +486,11 @@ export class OpenAICompatibleAdapter implements CLIAdapter {
    * - HTTP 429 → ADAPTER_RATE_LIMIT (retryable)
    * - HTTP 500/503 → ADAPTER_SERVER_ERROR (retryable)
    * - HTTP 400-499 → ADAPTER_INVALID_REQUEST (не retryable)
+   * 
+   * Устойчивость к неподдерживаемым параметрам:
+   * - Ошибки валидации параметров обрабатываются как ADAPTER_INVALID_REQUEST
+   * - Логируются предупреждения о неподдерживаемых параметрах
+   * - Адаптер не падает, а возвращает структурированную ошибку
    */
   handleError(error: Error): AdapterError {
     const errorWithStatus = error as Error & { status?: number };
@@ -524,8 +547,17 @@ export class OpenAICompatibleAdapter implements CLIAdapter {
       message = `Ошибка сервера (${status}): ${error.message}`;
     } else if (status && status >= 400 && status < 500) {
       // Ошибки клиента (4xx, кроме уже обработанных)
+      // Включает ошибки валидации параметров (например, неподдерживаемые параметры)
       code = 'ADAPTER_INVALID_REQUEST';
       retryable = false;
+      
+      // Логируем предупреждение о возможных неподдерживаемых параметрах
+      if (error.message.includes('parameter') || error.message.includes('field')) {
+        console.warn(
+          `[${this.name}] Возможно, сервис не поддерживает некоторые параметры: ${error.message}`
+        );
+      }
+      
       message = `Неверный запрос (${status}): ${error.message}`;
     }
     

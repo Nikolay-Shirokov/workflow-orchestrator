@@ -2026,5 +2026,212 @@ describe('OpenAI Compatible Adapter Property Tests', () => {
       expect(adapterError.message).toBe('Unknown error');
       expect(adapterError.originalError).toBe(error);
     });
+
+    test('должен логировать предупреждения о неподдерживаемых параметрах', () => {
+      const adapter = new OpenAICompatibleAdapter({
+        name: 'test-adapter'
+      });
+      
+      // Мокируем console.warn
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      
+      // Создаем ошибку валидации параметра
+      const error = new Error('Invalid parameter: unsupported_param is not supported') as Error & { status: number };
+      error.status = 400;
+      
+      const adapterError = adapter.handleError(error);
+      
+      // Проверяем, что ошибка обработана как ADAPTER_INVALID_REQUEST
+      expect(adapterError.code).toBe('ADAPTER_INVALID_REQUEST');
+      expect(adapterError.retryable).toBe(false);
+      
+      // Проверяем, что было залогировано предупреждение
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('не поддерживает некоторые параметры')
+      );
+      
+      consoleWarnSpy.mockRestore();
+    });
+  });
+
+  /**
+   * Feature: openai-compatible-adapter, Property 9: Адаптер устойчив к неподдерживаемым параметрам
+   * Validates: Requirements 6.6
+   * 
+   * Для любого запроса с параметрами, которые могут не поддерживаться сервисом,
+   * адаптер должен отправлять их в теле запроса, но не падать если сервис их игнорирует
+   * или возвращает ошибку валидации для них.
+   */
+  describe('Устойчивость к неподдерживаемым параметрам', () => {
+    test('должен корректно обрабатывать ошибки валидации параметров', () => {
+      const adapter = new OpenAICompatibleAdapter();
+      
+      // Создаем ошибку валидации параметра (400 Bad Request)
+      const error = new Error('Invalid field: top_p is not supported by this model') as Error & { status: number };
+      error.status = 400;
+      
+      const adapterError = adapter.handleError(error);
+      
+      // Адаптер не должен падать, а должен вернуть структурированную ошибку
+      expect(adapterError).toBeDefined();
+      expect(adapterError.code).toBe('ADAPTER_INVALID_REQUEST');
+      expect(adapterError.retryable).toBe(false);
+      expect(adapterError.message).toContain('Неверный запрос');
+      expect(adapterError.originalError).toBe(error);
+    });
+
+    test('должен отправлять только стандартные параметры OpenAI API', () => {
+      const adapter = new OpenAICompatibleAdapter();
+      
+      const request = {
+        prompt: 'Test prompt',
+        model: 'test-model',
+        temperature: 0.7,
+        maxTokens: 100,
+        systemPrompt: 'You are a helpful assistant'
+      };
+      
+      const buildMethod = (adapter as any).buildChatCompletionRequest.bind(adapter);
+      const chatRequest = buildMethod(request);
+      
+      // Проверяем, что запрос содержит только стандартные параметры
+      expect(chatRequest).toHaveProperty('model');
+      expect(chatRequest).toHaveProperty('messages');
+      expect(chatRequest).toHaveProperty('temperature');
+      expect(chatRequest).toHaveProperty('max_tokens');
+      
+      // Проверяем, что нет неожиданных параметров
+      const expectedKeys = ['model', 'messages', 'temperature', 'max_tokens'];
+      const actualKeys = Object.keys(chatRequest);
+      
+      actualKeys.forEach(key => {
+        expect(expectedKeys).toContain(key);
+      });
+    });
+
+    test('должен игнорировать неподдерживаемые параметры без падения', () => {
+      const adapter = new OpenAICompatibleAdapter();
+      
+      // Создаем запрос с дополнительными параметрами, которые могут не поддерживаться
+      const request: any = {
+        prompt: 'Test prompt',
+        model: 'test-model',
+        temperature: 0.7,
+        maxTokens: 100,
+        // Эти параметры могут не поддерживаться некоторыми сервисами
+        top_p: 0.9,
+        frequency_penalty: 0.5,
+        presence_penalty: 0.3,
+        stop: ['END'],
+        logit_bias: { '50256': -100 }
+      };
+      
+      const buildMethod = (adapter as any).buildChatCompletionRequest.bind(adapter);
+      
+      // Не должно быть ошибок при построении запроса
+      expect(() => {
+        const chatRequest = buildMethod(request);
+        expect(chatRequest).toBeDefined();
+      }).not.toThrow();
+    });
+
+    test('должен корректно обрабатывать ответы с ошибками о неподдерживаемых параметрах', () => {
+      const adapter = new OpenAICompatibleAdapter();
+      
+      // Мокируем console.warn
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      
+      // Различные варианты ошибок о неподдерживаемых параметрах
+      const parameterErrors = [
+        'Invalid parameter: top_p is not supported',
+        'Unknown field: frequency_penalty',
+        'Parameter logit_bias is not implemented',
+        'Unsupported parameter: stop'
+      ];
+      
+      parameterErrors.forEach(errorMessage => {
+        const error = new Error(errorMessage) as Error & { status: number };
+        error.status = 400;
+        
+        const adapterError = adapter.handleError(error);
+        
+        // Адаптер должен обработать ошибку без падения
+        expect(adapterError).toBeDefined();
+        expect(adapterError.code).toBe('ADAPTER_INVALID_REQUEST');
+        expect(adapterError.retryable).toBe(false);
+      });
+      
+      // Проверяем, что были залогированы предупреждения
+      expect(consoleWarnSpy).toHaveBeenCalled();
+      
+      consoleWarnSpy.mockRestore();
+    });
+
+    test('должен продолжать работу после ошибки валидации параметра', async () => {
+      const adapter = new OpenAICompatibleAdapter({
+        baseUrl: 'http://localhost:1234/v1'
+      });
+      
+      // Мокируем fetch для первого запроса с ошибкой валидации
+      let callCount = 0;
+      global.fetch = jest.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          // Первый запрос возвращает ошибку валидации
+          return Promise.resolve({
+            status: 400,
+            statusText: 'Bad Request',
+            headers: new Map(),
+            text: async () => JSON.stringify({
+              error: {
+                message: 'Invalid parameter: top_p is not supported',
+                type: 'invalid_request_error'
+              }
+            })
+          });
+        } else {
+          // Второй запрос успешен
+          return Promise.resolve({
+            status: 200,
+            statusText: 'OK',
+            headers: new Map(),
+            text: async () => JSON.stringify({
+              id: 'test-id',
+              object: 'chat.completion',
+              created: Date.now(),
+              model: 'test-model',
+              choices: [{
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content: 'Test response'
+                },
+                finish_reason: 'stop'
+              }]
+            })
+          });
+        }
+      });
+      
+      // Первый запрос должен вернуть AdapterError
+      try {
+        await adapter.execute({
+          prompt: 'Test prompt'
+        });
+        fail('Должна была быть выброшена ошибка');
+      } catch (error: any) {
+        // Проверяем, что это AdapterError
+        expect(error.code).toBe('ADAPTER_INVALID_REQUEST');
+        expect(error.retryable).toBe(false);
+      }
+      
+      // Второй запрос должен быть успешным (адаптер продолжает работать)
+      const response = await adapter.execute({
+        prompt: 'Test prompt'
+      });
+      
+      expect(response).toBeDefined();
+      expect(response.content).toBe('Test response');
+    });
   });
 });
