@@ -51,14 +51,11 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
   constructor(config?: Partial<AdapterConfig>) {
     // Конфигурация по умолчанию для Codex CLI
     // Используем команду exec для неинтерактивного выполнения
-    // Флаг '-' указывает на чтение промпта из stdin
+    // Промпт будет передан как аргумент командной строки
     const defaultConfig: AdapterConfig = {
       name: 'codex-cli',
       command: 'codex',
-      args: [
-        'exec',
-        '-'
-      ],
+      args: ['exec'], // Базовая команда, промпт добавится динамически
       env: {},
       parser: 'json',
       timeout: 300000 // 5 минут
@@ -156,9 +153,9 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
       }
     }
     
-    // Добавляем флаг '-' для чтения промпта из stdin
-    // Это позволяет передавать многострочные промпты безопасно
-    args.push('-');
+    // Добавляем промпт как последний аргумент
+    // Промпт передается в кавычках для корректной обработки пробелов и спецсимволов
+    args.push(codexRequest.prompt);
     
     return args;
   }

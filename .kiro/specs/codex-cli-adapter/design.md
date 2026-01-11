@@ -64,7 +64,7 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
 {
   name: 'codex-cli',
   command: 'codex',
-  args: ['exec', '-'],  // Читаем промпт из stdin
+  args: ['exec'],  // Промпт добавляется динамически как последний аргумент
   env: {},
   parser: 'json',
   timeout: 300000  // 5 минут
@@ -81,11 +81,11 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
 4. Если указан режим full-auto: добавляется `['--full-auto']`
 5. Если указана рабочая директория: добавляется `['--cd', directory]`
 6. Если указан профиль: добавляется `['-p', profile]`
-7. Промпт передается через stdin: `['-']`
+7. Промпт добавляется как последний аргумент
 
 Пример результата:
 ```typescript
-['exec', '-m', 'gpt-4', '--json', '--full-auto', '-']
+['exec', '-m', 'gpt-4', '--json', '--full-auto', 'Your prompt here']
 ```
 
 ### Парсинг ответа
