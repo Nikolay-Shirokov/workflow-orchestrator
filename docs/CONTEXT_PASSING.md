@@ -347,6 +347,8 @@ workflow-orchestrator dry-run workflow.yaml --verbose
 
 ## Дополнительные ресурсы
 
+- [Вложенные подстановки](NESTED_SUBSTITUTIONS.md) - Детальное руководство по вложенным переменным
+- [Выбор способа передачи данных](DATA_PASSING_GUIDE.md) - Быстрый гид с блок-схемой
 - [DSL синтаксис](DSL_SYNTAX.md) - Полная документация по синтаксису
 - [Примеры с тегами](../examples/prompts/dual-design/examples_with_tags.txt) - Практические примеры
 - [Начало работы](GETTING_STARTED.md) - Базовое руководство

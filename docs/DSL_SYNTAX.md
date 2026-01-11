@@ -705,3 +705,11 @@ workflow-orchestrator dsl --help
 ```bash
 workflow-orchestrator dsl docs
 ```
+
+## Дополнительные ресурсы
+
+- [Передача контекста](CONTEXT_PASSING.md) - Три способа передачи данных между шагами
+- [Вложенные подстановки](NESTED_SUBSTITUTIONS.md) - Детальное руководство по динамической загрузке
+- [Выбор способа передачи данных](DATA_PASSING_GUIDE.md) - Быстрый гид с блок-схемой
+- [Примеры с тегами](../examples/prompts/dual-design/examples_with_tags.txt) - Практические примеры обрамления контекста
+- [Начало работы](GETTING_STARTED.md) - Базовое руководство по системе

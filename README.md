@@ -368,6 +368,11 @@ workflow-orchestrator/
 - 🚀 **[Быстрый старт](docs/GETTING_STARTED.md)** - создайте свой первый workflow за 5 минут
 - 📦 **[Установка и настройка](docs/INSTALLATION.md)** - детальное руководство по установке
 
+### Передача данных между шагами
+- 📊 **[Руководство по передаче контекста](docs/CONTEXT_PASSING.md)** - три способа передачи данных
+- 🔗 **[Вложенные подстановки](docs/NESTED_SUBSTITUTIONS.md)** - динамическая загрузка артефактов
+- 🎯 **[Выбор способа передачи данных](docs/DATA_PASSING_GUIDE.md)** - быстрый гид по выбору
+
 ### Разработка
 - 🔌 **[Создание пользовательских адаптеров](docs/CUSTOM_ADAPTERS.md)** - система плагинов
 - 📝 **[DSL синтаксис](docs/DSL_SYNTAX.md)** - упрощенный язык для описания процессов
@@ -379,6 +384,7 @@ workflow-orchestrator/
 - 🔧 [Процесс с MCP](examples/mcp-workflow-example.yaml) - использование MCP-инструментов
 - ⚙️ [Конфигурации адаптеров](examples/cli-adapters-config.yaml) - настройка AI-моделей
 - 📤 [Экспорт/импорт](examples/export-import-example.md) - совместная работа над конфигурациями
+- 🏷️ [Примеры с тегами](examples/prompts/dual-design/examples_with_tags.txt) - обрамление контекста
 
 ### Для участников
 - 🤝 **[Руководство по внесению вклада](CONTRIBUTING.md)** - как помочь проекту
