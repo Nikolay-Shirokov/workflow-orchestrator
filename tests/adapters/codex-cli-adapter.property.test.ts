@@ -14,6 +14,10 @@ class TestableCodexCLIAdapter extends CodexCLIAdapter {
   public testPrepareArguments(request: AdapterRequest): string[] {
     return this.prepareArguments(request);
   }
+  
+  public testParseResponse(rawOutput: string): string {
+    return this.parseResponse(rawOutput);
+  }
 }
 
 describe('Codex CLI Adapter Property Tests', () => {
@@ -625,6 +629,569 @@ describe('Codex CLI Adapter Property Tests', () => {
             
             // Флаг '-' всегда последний
             expect(args[args.length - 1]).toBe('-');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
+
+  /**
+   * Feature: codex-cli-adapter, Property 4: Парсинг JSON-вывода
+   * Validates: Requirements 4.2
+   * 
+   * Для любого корректного JSONL-вывода, содержащего события типа `message` 
+   * с ролью `assistant`, парсер должен извлечь контент последнего сообщения ассистента.
+   */
+  describe('Property 4: Парсинг JSON-вывода', () => {
+    test('должен извлекать контент последнего сообщения ассистента из JSONL', () => {
+      fc.assert(
+        fc.property(
+          // Генерируем массив сообщений ассистента
+          fc.array(
+            fc.string({ minLength: 1, maxLength: 200 }),
+            { minLength: 1, maxLength: 10 }
+          ),
+          (messages) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            // Формируем JSONL-вывод с событиями
+            const jsonlLines = messages.map(content => 
+              JSON.stringify({
+                type: 'message',
+                role: 'assistant',
+                content
+              })
+            );
+            
+            const rawOutput = jsonlLines.join('\n');
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Должен вернуть последнее сообщение
+            expect(result).toBe(messages[messages.length - 1]);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен игнорировать события других типов и извлекать только сообщения ассистента', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }), // Сообщение ассистента
+          fc.array(
+            fc.record({
+              type: fc.constantFrom('status', 'tool_use', 'error'),
+              message: fc.string({ minLength: 1, maxLength: 100 })
+            }),
+            { minLength: 0, maxLength: 5 }
+          ),
+          (assistantMessage, otherEvents) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            // Формируем JSONL с разными типами событий
+            const lines: string[] = [];
+            
+            // Добавляем другие события
+            for (const event of otherEvents) {
+              lines.push(JSON.stringify(event));
+            }
+            
+            // Добавляем сообщение ассистента
+            lines.push(JSON.stringify({
+              type: 'message',
+              role: 'assistant',
+              content: assistantMessage
+            }));
+            
+            // Добавляем еще несколько других событий после
+            for (const event of otherEvents.slice(0, 2)) {
+              lines.push(JSON.stringify(event));
+            }
+            
+            const rawOutput = lines.join('\n');
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Должен вернуть сообщение ассистента, игнорируя остальные события
+            expect(result).toBe(assistantMessage);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен игнорировать сообщения пользователя и извлекать только сообщения ассистента', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }), // Сообщение ассистента
+          fc.array(
+            fc.string({ minLength: 1, maxLength: 100 }),
+            { minLength: 0, maxLength: 5 }
+          ), // Сообщения пользователя
+          (assistantMessage, userMessages) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const lines: string[] = [];
+            
+            // Добавляем сообщения пользователя
+            for (const userMsg of userMessages) {
+              lines.push(JSON.stringify({
+                type: 'message',
+                role: 'user',
+                content: userMsg
+              }));
+            }
+            
+            // Добавляем сообщение ассистента
+            lines.push(JSON.stringify({
+              type: 'message',
+              role: 'assistant',
+              content: assistantMessage
+            }));
+            
+            const rawOutput = lines.join('\n');
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Должен вернуть только сообщение ассистента
+            expect(result).toBe(assistantMessage);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать множественные сообщения ассистента и возвращать последнее', () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.string({ minLength: 1, maxLength: 200 }),
+            { minLength: 2, maxLength: 10 }
+          ),
+          (messages) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            // Формируем JSONL с несколькими сообщениями ассистента
+            const lines = messages.map(content =>
+              JSON.stringify({
+                type: 'message',
+                role: 'assistant',
+                content
+              })
+            );
+            
+            const rawOutput = lines.join('\n');
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Должен вернуть именно последнее сообщение
+            expect(result).toBe(messages[messages.length - 1]);
+            
+            // Не должен вернуть первое сообщение, если оно отличается от последнего
+            if (messages.length > 1 && messages[0] !== messages[messages.length - 1]) {
+              expect(result).not.toBe(messages[0]);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать JSONL с пустыми строками', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }),
+          fc.integer({ min: 0, max: 5 }), // Количество пустых строк до
+          fc.integer({ min: 0, max: 5 }), // Количество пустых строк после
+          (message, emptyBefore, emptyAfter) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const lines: string[] = [];
+            
+            // Добавляем пустые строки до
+            for (let i = 0; i < emptyBefore; i++) {
+              lines.push('');
+            }
+            
+            // Добавляем сообщение
+            lines.push(JSON.stringify({
+              type: 'message',
+              role: 'assistant',
+              content: message
+            }));
+            
+            // Добавляем пустые строки после
+            for (let i = 0; i < emptyAfter; i++) {
+              lines.push('');
+            }
+            
+            const rawOutput = lines.join('\n');
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Должен корректно извлечь сообщение, игнорируя пустые строки
+            expect(result).toBe(message);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать специальные символы в контенте', () => {
+      fc.assert(
+        fc.property(
+          fc.oneof(
+            fc.string({ minLength: 1, maxLength: 200 }), // Обычная строка
+            fc.stringMatching(/.*\n.*/), // Многострочная строка
+            fc.stringMatching(/.*['"\\].*/), // Строка со спецсимволами
+            fc.unicodeString({ minLength: 1, maxLength: 200 }), // Unicode строка
+            fc.constant('{"nested": "json"}'), // JSON внутри строки
+            fc.constant('Line 1\nLine 2\nLine 3') // Явно многострочная
+          ),
+          (content) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const jsonlLine = JSON.stringify({
+              type: 'message',
+              role: 'assistant',
+              content
+            });
+            
+            const result = adapter.testParseResponse(jsonlLine);
+            
+            // Контент должен быть сохранен без изменений
+            expect(result).toBe(content);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать смешанный JSONL с валидными и невалидными строками', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }), // Сообщение ассистента
+          fc.array(
+            fc.string({ minLength: 1, maxLength: 50 }),
+            { minLength: 0, maxLength: 3 }
+          ), // Невалидные JSON строки
+          (message, invalidLines) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const lines: string[] = [];
+            
+            // Добавляем невалидные строки
+            for (const invalid of invalidLines) {
+              lines.push(invalid);
+            }
+            
+            // Добавляем валидное сообщение
+            lines.push(JSON.stringify({
+              type: 'message',
+              role: 'assistant',
+              content: message
+            }));
+            
+            // Добавляем еще невалидные строки
+            for (const invalid of invalidLines.slice(0, 1)) {
+              lines.push(invalid);
+            }
+            
+            const rawOutput = lines.join('\n');
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Должен извлечь валидное сообщение, игнорируя невалидные строки
+            expect(result).toBe(message);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
+
+  /**
+   * Feature: codex-cli-adapter, Property 5: Парсинг текстового вывода
+   * Validates: Requirements 4.3, 4.5
+   * 
+   * Для любого текстового вывода, содержащего ответ ассистента, парсер должен 
+   * извлечь чистый текст ответа без служебной информации и ANSI-кодов.
+   */
+  describe('Property 5: Парсинг текстового вывода', () => {
+    test('должен удалять ANSI escape-коды из текста', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 5, maxLength: 200 }).filter(s => s.trim().length > 0),
+          fc.constantFrom(
+            '\x1b[0m',    // Reset
+            '\x1b[1m',    // Bold
+            '\x1b[31m',   // Red
+            '\x1b[32m',   // Green
+            '\x1b[33m',   // Yellow
+            '\x1b[34m',   // Blue
+            '\x1b[35m',   // Magenta
+            '\x1b[36m',   // Cyan
+            '\x1b[37m'    // White
+          ),
+          (message, ansiCode) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            // Добавляем ANSI-код в начало и конец
+            const textWithAnsi = `${ansiCode}${message}${ansiCode}`;
+            
+            const result = adapter.testParseResponse(textWithAnsi);
+            
+            // Результат не должен содержать ANSI-коды
+            expect(result).not.toMatch(/\x1b\[[0-9;]*m/);
+            
+            // Результат должен содержать оригинальный текст
+            expect(result).toContain(message.trim());
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен извлекать текст после маркера "Assistant response:"', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }), // Текст до
+          fc.string({ minLength: 1, maxLength: 200 }), // Ответ ассистента
+          (textBefore, assistantResponse) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const rawOutput = `${textBefore}\n\nAssistant response:\n${assistantResponse}`;
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Результат должен содержать ответ ассистента
+            expect(result).toContain(assistantResponse.trim());
+            
+            // Результат не должен содержать текст до маркера
+            // (если только он не повторяется в ответе)
+            if (!assistantResponse.includes(textBefore)) {
+              expect(result).not.toContain(textBefore);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен извлекать текст после маркера "Assistant:"', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }), // Текст до
+          fc.string({ minLength: 1, maxLength: 200 }), // Ответ ассистента
+          (textBefore, assistantResponse) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const rawOutput = `${textBefore}\n\nAssistant:\n${assistantResponse}`;
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Результат должен содержать ответ ассистента
+            expect(result).toContain(assistantResponse.trim());
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен использовать последний маркер если их несколько', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 100 }), // Первый ответ
+          fc.string({ minLength: 1, maxLength: 100 }), // Второй ответ
+          fc.string({ minLength: 1, maxLength: 100 }), // Третий ответ
+          (response1, response2, response3) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const rawOutput = `
+              Assistant: ${response1}
+              
+              Some other text
+              
+              Assistant response: ${response2}
+              
+              More text
+              
+              Response: ${response3}
+            `;
+            
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Должен вернуть текст после последнего маркера
+            expect(result).toContain(response3.trim());
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен удалять служебные префиксы вида [Tool: ...]', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }), // Ответ ассистента
+          fc.array(
+            fc.record({
+              tool: fc.constantFrom('bash', 'python', 'node', 'git'),
+              command: fc.string({ minLength: 1, maxLength: 50 })
+            }),
+            { minLength: 0, maxLength: 3 }
+          ),
+          (assistantResponse, toolCalls) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            // Формируем вывод с служебными префиксами
+            let rawOutput = '';
+            for (const call of toolCalls) {
+              rawOutput += `[Tool: ${call.tool}] ${call.command}\n`;
+            }
+            rawOutput += `\nAssistant response:\n${assistantResponse}`;
+            
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Результат не должен содержать служебные префиксы
+            expect(result).not.toMatch(/^\[Tool:.*?\].*$/m);
+            
+            // Результат должен содержать ответ ассистента
+            expect(result).toContain(assistantResponse.trim());
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен удалять служебные префиксы вида [Status: ...]', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }), // Ответ ассистента
+          fc.array(
+            fc.string({ minLength: 1, maxLength: 50 }),
+            { minLength: 0, maxLength: 3 }
+          ), // Статусные сообщения
+          (assistantResponse, statusMessages) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            // Формируем вывод со статусными сообщениями
+            let rawOutput = '';
+            for (const status of statusMessages) {
+              rawOutput += `[Status: ${status}]\n`;
+            }
+            rawOutput += `\nAssistant response:\n${assistantResponse}`;
+            
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Результат не должен содержать статусные префиксы
+            expect(result).not.toMatch(/^\[Status:.*?\].*$/m);
+            
+            // Результат должен содержать ответ ассистента
+            expect(result).toContain(assistantResponse.trim());
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен удалять избыточные пустые строки', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 5, maxLength: 200 }).filter(s => s.trim().length > 0 && !s.trim().startsWith('[')),
+          fc.integer({ min: 3, max: 10 }), // Количество пустых строк
+          (message, emptyLines) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            // Создаем текст с множественными пустыми строками
+            const emptyBlock = '\n'.repeat(emptyLines);
+            const rawOutput = `Assistant response:${emptyBlock}${message}${emptyBlock}`;
+            
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Результат не должен содержать более двух последовательных переводов строк
+            expect(result).not.toMatch(/\n{3,}/);
+            
+            // Результат должен содержать сообщение
+            expect(result).toContain(message.trim());
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать многострочный текст', () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.string({ minLength: 3, maxLength: 100 }).filter(s => s.trim().length > 0 && !s.trim().startsWith('[')),
+            { minLength: 2, maxLength: 10 }
+          ),
+          (lines) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            const multilineMessage = lines.join('\n');
+            const rawOutput = `Assistant response:\n${multilineMessage}`;
+            
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Результат должен содержать все строки
+            for (const line of lines) {
+              if (line.trim()) {
+                expect(result).toContain(line.trim());
+              }
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать комбинацию ANSI-кодов и служебных префиксов', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }),
+          (message) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            // Создаем сложный вывод с ANSI-кодами и служебными префиксами
+            const rawOutput = `
+              \x1b[32m[Tool: bash]\x1b[0m ls -la
+              \x1b[33m[Status: Running...]\x1b[0m
+              
+              \x1b[1mAssistant response:\x1b[0m
+              \x1b[36m${message}\x1b[0m
+            `;
+            
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Результат не должен содержать ANSI-коды
+            expect(result).not.toMatch(/\x1b\[[0-9;]*m/);
+            
+            // Результат не должен содержать служебные префиксы
+            expect(result).not.toMatch(/^\[Tool:.*?\].*$/m);
+            expect(result).not.toMatch(/^\[Status:.*?\].*$/m);
+            
+            // Результат должен содержать чистое сообщение
+            expect(result).toContain(message.trim());
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен возвращать весь текст если маркеры не найдены', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }),
+          (message) => {
+            const adapter = new TestableCodexCLIAdapter();
+            
+            // Текст без маркеров
+            const rawOutput = message;
+            
+            const result = adapter.testParseResponse(rawOutput);
+            
+            // Результат должен содержать оригинальный текст (очищенный)
+            expect(result.trim()).toBeTruthy();
+            
+            // Если в оригинале нет служебной информации, результат должен быть близок к оригиналу
+            if (!message.match(/\[.*?\]/) && !message.match(/\x1b\[[0-9;]*m/)) {
+              expect(result.trim()).toBe(message.trim());
+            }
           }
         ),
         { numRuns: 100 }

@@ -27,6 +27,19 @@ export interface CodexAdapterRequest extends AdapterRequest {
 }
 
 /**
+ * Структура события в JSONL-выводе Codex CLI
+ */
+interface JSONLEvent {
+  type: 'status' | 'tool_use' | 'message' | 'error';
+  message?: string;
+  role?: 'user' | 'assistant';
+  content?: string;
+  tool?: string;
+  input?: any;
+  timestamp?: string;
+}
+
+/**
  * Адаптер для Codex CLI
  * Поддерживает взаимодействие с моделями OpenAI через консольную утилиту codex-cli
  * Использует неинтерактивный режим exec для выполнения запросов
@@ -133,5 +146,121 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
     args.push('-');
     
     return args;
+  }
+
+  /**
+   * Парсинг ответа от Codex CLI
+   * Поддерживает два режима: JSON (JSONL) и текстовый
+   * @param rawOutput - Сырой вывод от CLI
+   * @returns string - Распарсенный контент ответа ассистента
+   */
+  parseResponse(rawOutput: string): string {
+    // Пытаемся распарсить как JSON (JSONL формат)
+    try {
+      return this.parseJSONResponse(rawOutput);
+    } catch (jsonError) {
+      // Если не получилось распарсить как JSON, пробуем текстовый режим
+      return this.parseTextResponse(rawOutput);
+    }
+  }
+
+  /**
+   * Парсинг JSON-вывода (JSONL формат)
+   * Извлекает финальное сообщение ассистента из потока событий
+   * @param rawOutput - Сырой вывод в формате JSONL
+   * @returns string - Контент последнего сообщения ассистента
+   */
+  private parseJSONResponse(rawOutput: string): string {
+    // Разбиваем вывод по строкам
+    const lines = rawOutput.trim().split('\n');
+    
+    // Собираем все сообщения ассистента
+    const assistantMessages: string[] = [];
+    
+    for (const line of lines) {
+      // Пропускаем пустые строки
+      if (!line.trim()) {
+        continue;
+      }
+      
+      try {
+        // Парсим строку как JSON
+        const event = JSON.parse(line) as JSONLEvent;
+        
+        // Фильтруем события типа 'message' с ролью 'assistant'
+        if (event.type === 'message' && event.role === 'assistant' && event.content) {
+          assistantMessages.push(event.content);
+        }
+      } catch (parseError) {
+        // Если строка не является валидным JSON, пропускаем её
+        continue;
+      }
+    }
+    
+    // Если нашли сообщения ассистента, возвращаем последнее
+    if (assistantMessages.length > 0) {
+      return assistantMessages[assistantMessages.length - 1];
+    }
+    
+    // Если не нашли сообщений ассистента, выбрасываем ошибку
+    throw new Error('Не найдено сообщений ассистента в JSON-выводе');
+  }
+
+  /**
+   * Парсинг текстового вывода
+   * Извлекает финальное сообщение ассистента из форматированного текста
+   * @param rawOutput - Сырой текстовый вывод
+   * @returns string - Чистый текст ответа ассистента
+   */
+  private parseTextResponse(rawOutput: string): string {
+    // Удаляем ANSI escape-коды
+    let cleanOutput = this.removeANSICodes(rawOutput);
+    
+    // Ищем финальное сообщение ассистента
+    // Обычно оно идет после маркеров типа "Assistant response:", "Assistant:", или просто в конце
+    const assistantMarkers = [
+      'Assistant response:',
+      'Assistant:',
+      'Response:',
+      '---' // Разделитель в некоторых форматах
+    ];
+    
+    let lastMarkerIndex = -1;
+    let usedMarker = '';
+    
+    for (const marker of assistantMarkers) {
+      const index = cleanOutput.lastIndexOf(marker);
+      if (index > lastMarkerIndex) {
+        lastMarkerIndex = index;
+        usedMarker = marker;
+      }
+    }
+    
+    // Если нашли маркер, извлекаем текст после него
+    if (lastMarkerIndex !== -1) {
+      cleanOutput = cleanOutput.substring(lastMarkerIndex + usedMarker.length);
+    }
+    
+    // Удаляем служебные префиксы и метаданные
+    // Например, строки вида "[Tool: bash]", "[Status: ...]", и т.д.
+    // Но только если они в начале строки и содержат двоеточие
+    cleanOutput = cleanOutput.replace(/^\[.*?:.*?\].*$/gm, '');
+    
+    // Удаляем лишние пустые строки
+    cleanOutput = cleanOutput.replace(/\n{3,}/g, '\n\n');
+    
+    // Возвращаем очищенный текст
+    return cleanOutput.trim();
+  }
+
+  /**
+   * Удаление ANSI escape-кодов из текста
+   * @param text - Текст с ANSI-кодами
+   * @returns string - Текст без ANSI-кодов
+   */
+  private removeANSICodes(text: string): string {
+    // Регулярное выражение для удаления ANSI escape-кодов
+    // eslint-disable-next-line no-control-regex
+    return text.replace(/\x1b\[[0-9;]*m/g, '');
   }
 }

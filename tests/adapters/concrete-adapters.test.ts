@@ -416,6 +416,252 @@ describe('CodexCLIAdapter', () => {
     expect(config.command).toBe('custom-codex');
     expect(config.timeout).toBe(60000);
   });
+
+  // Unit-тесты для граничных случаев парсинга
+  // Требования: 4.4
+
+  describe('Парсинг граничных случаев', () => {
+    it('должен обрабатывать пустой вывод', () => {
+      // Требования: 4.4
+      const adapter = new CodexCLIAdapter();
+      const rawOutput = '';
+      
+      // Пустой вывод должен вернуть пустую строку
+      const result = adapter.parseResponse(rawOutput);
+      expect(result).toBe('');
+    });
+
+    it('должен обрабатывать вывод только с пробелами', () => {
+      // Требования: 4.4
+      const adapter = new CodexCLIAdapter();
+      const rawOutput = '   \n\n   \t\t   ';
+      
+      // Вывод только с пробелами должен вернуть пустую строку
+      const result = adapter.parseResponse(rawOutput);
+      expect(result).toBe('');
+    });
+
+    it('должен обрабатывать многострочный вывод', () => {
+      // Требования: 4.4
+      const adapter = new CodexCLIAdapter();
+      const rawOutput = `Line 1
+Line 2
+Line 3
+Line 4`;
+      
+      const result = adapter.parseResponse(rawOutput);
+      
+      // Результат должен содержать все строки
+      expect(result).toContain('Line 1');
+      expect(result).toContain('Line 2');
+      expect(result).toContain('Line 3');
+      expect(result).toContain('Line 4');
+    });
+
+    it('должен обрабатывать вывод с ANSI-кодами', () => {
+      // Требования: 4.4
+      const adapter = new CodexCLIAdapter();
+      const rawOutput = '\x1b[32mGreen text\x1b[0m and \x1b[31mRed text\x1b[0m';
+      
+      const result = adapter.parseResponse(rawOutput);
+      
+      // ANSI-коды должны быть удалены
+      expect(result).not.toMatch(/\x1b\[[0-9;]*m/);
+      expect(result).toContain('Green text');
+      expect(result).toContain('Red text');
+    });
+
+    it('должен обрабатывать JSON-вывод с одним сообщением', () => {
+      // Требования: 4.1, 4.2
+      const adapter = new CodexCLIAdapter();
+      const rawOutput = JSON.stringify({
+        type: 'message',
+        role: 'assistant',
+        content: 'Simple response'
+      });
+      
+      const result = adapter.parseResponse(rawOutput);
+      expect(result).toBe('Simple response');
+    });
+
+    it('должен обрабатывать JSONL-вывод с множественными событиями', () => {
+      // Требования: 4.1, 4.2
+      const adapter = new CodexCLIAdapter();
+      const events = [
+        { type: 'status', message: 'Starting...' },
+        { type: 'tool_use', tool: 'bash', input: 'ls -la' },
+        { type: 'message', role: 'assistant', content: 'First message' },
+        { type: 'message', role: 'assistant', content: 'Second message' },
+        { type: 'status', message: 'Done' }
+      ];
+      
+      const rawOutput = events.map(e => JSON.stringify(e)).join('\n');
+      const result = adapter.parseResponse(rawOutput);
+      
+      // Должен вернуть последнее сообщение ассистента
+      expect(result).toBe('Second message');
+    });
+
+    it('должен обрабатывать JSONL с пустыми строками', () => {
+      // Требования: 4.4
+      const adapter = new CodexCLIAdapter();
+      const rawOutput = `
+${JSON.stringify({ type: 'status', message: 'Starting' })}
+
+${JSON.stringify({ type: 'message', role: 'assistant', content: 'Response' })}
+
+`;
+      
+      const result = adapter.parseResponse(rawOutput);
+      expect(result).toBe('Response');
+    });
+
+    it('должен обрабатывать смешанный вывод (JSON и текст)', () => {
+      // Требования: 4.4
+      const adapter = new CodexCLIAdapter();
+      const rawOutput = `Some text before
+${JSON.stringify({ type: 'message', role: 'assistant', content: 'JSON response' })}
+Some text after`;
+      
+      const result = adapter.parseResponse(rawOutput);
+      
+      // Должен попытаться распарсить как JSON и вернуть сообщение
+      expect(result).toContain('JSON response');
+    });
+
+    it('должен обрабатывать текстовый вывод с маркером Assistant response:', () => {
+      // Требования: 4.3, 4.5
+      const adapter = new CodexCLIAdapter();
+      const rawOutput = `[Tool: bash] ls -la
+[Status: Running...]
+
+Assistant response:
+Here is the result of the command.`;
+      
+      const result = adapter.parseResponse(rawOutput);
+      
+      // Должен извлечь текст после маркера и удалить служебные префиксы
+      expect(result).toContain('Here is the result');
+      expect(result).not.toMatch(/^\[Tool:.*?\].*$/m);
+      expect(result).not.toMatch(/^\[Status:.*?\].*$/m);
+    });
+
+    it('должен обрабатывать текстовый вывод с множественными маркерами', () => {
+      // Требования: 4.3, 4.5
+      const adapter = new CodexCLIAdapter();
+      const rawOutput = `Assistant: First response
+
+Some other text
+
+Assistant response: Second response
+
+More text
+
+Response: Final response`;
+      
+      const result = adapter.parseResponse(rawOutput);
+      
+      // Должен использовать последний маркер
+      expect(result).toContain('Final response');
+    });
+
+    it('должен обрабатывать вывод с избыточными пустыми строками', () => {
+      // Требования: 4.4
+      const adapter = new CodexCLIAdapter();
+      const rawOutput = `Assistant response:
+
+
+Line 1
+
+
+Line 2
+
+
+Line 3
+
+
+`;
+      
+      const result = adapter.parseResponse(rawOutput);
+      
+      // Избыточные пустые строки должны быть удалены
+      expect(result).not.toMatch(/\n{3,}/);
+      expect(result).toContain('Line 1');
+      expect(result).toContain('Line 2');
+      expect(result).toContain('Line 3');
+    });
+
+    it('должен обрабатывать невалидный JSON как текст', () => {
+      // Требования: 4.4
+      const adapter = new CodexCLIAdapter();
+      const rawOutput = '{ invalid json without closing brace';
+      
+      const result = adapter.parseResponse(rawOutput);
+      
+      // Должен вернуть текст как есть (очищенный)
+      expect(result).toBeTruthy();
+      expect(result.trim()).toBe(rawOutput.trim());
+    });
+
+    it('должен обрабатывать JSON без сообщений ассистента', () => {
+      // Требования: 4.4
+      const adapter = new CodexCLIAdapter();
+      const events = [
+        { type: 'status', message: 'Starting...' },
+        { type: 'tool_use', tool: 'bash', input: 'ls -la' },
+        { type: 'status', message: 'Done' }
+      ];
+      
+      const rawOutput = events.map(e => JSON.stringify(e)).join('\n');
+      
+      // Должен попытаться распарсить как текст, так как нет сообщений ассистента
+      const result = adapter.parseResponse(rawOutput);
+      expect(result).toBeTruthy();
+    });
+
+    it('должен обрабатывать Unicode символы', () => {
+      // Требования: 4.4
+      const adapter = new CodexCLIAdapter();
+      const rawOutput = JSON.stringify({
+        type: 'message',
+        role: 'assistant',
+        content: 'Привет! 你好! مرحبا! 🚀'
+      });
+      
+      const result = adapter.parseResponse(rawOutput);
+      expect(result).toBe('Привет! 你好! مرحبا! 🚀');
+    });
+
+    it('должен обрабатывать специальные символы в тексте', () => {
+      // Требования: 4.4
+      const adapter = new CodexCLIAdapter();
+      const rawOutput = JSON.stringify({
+        type: 'message',
+        role: 'assistant',
+        content: 'Text with "quotes" and \'apostrophes\' and \\backslashes\\'
+      });
+      
+      const result = adapter.parseResponse(rawOutput);
+      expect(result).toContain('quotes');
+      expect(result).toContain('apostrophes');
+      expect(result).toContain('backslashes');
+    });
+
+    it('должен обрабатывать вложенный JSON в контенте', () => {
+      // Требования: 4.4
+      const adapter = new CodexCLIAdapter();
+      const nestedJson = { key: 'value', nested: { data: 'test' } };
+      const rawOutput = JSON.stringify({
+        type: 'message',
+        role: 'assistant',
+        content: JSON.stringify(nestedJson)
+      });
+      
+      const result = adapter.parseResponse(rawOutput);
+      expect(result).toContain('key');
+      expect(result).toContain('value');
+    });
+  });
 });
 
 describe('Интеграция адаптеров с реестром', () => {
