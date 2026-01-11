@@ -12,9 +12,9 @@ Workflow Orchestrator включает несколько встроенных �
 
 ### CLI-адаптеры (наследуются от BaseCLIAdapter)
 - **claude-cli-adapter** - для Claude через `claude-cli`
-- **openai-cli-adapter** - для OpenAI через `openai-cli`
+- **codex-cli-adapter** - для OpenAI через официальную утилиту `codex` (Codex CLI, апрель 2025)
+- **openai-cli-adapter** - для OpenAI через старую Python-based утилиту `openai`
 - **gemini-cli-adapter** - для Gemini через `gemini-cli`
-- **codex-cli-adapter** - для Codex через `codex-cli`
 
 ### HTTP API адаптеры (реализуют CLIAdapter напрямую)
 - **openai-compatible-adapter** - для OpenAI-совместимых HTTP API

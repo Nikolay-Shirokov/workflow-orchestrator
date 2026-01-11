@@ -252,11 +252,9 @@ workflow-orchestrator import \
 Система поддерживает различные AI-модели через CLI-адаптеры:
 
 - **Claude** (Anthropic) - через `claude-cli`
-- **GPT** (OpenAI) - через `openai-cli`
+- **OpenAI** - через официальную утилиту `codex` (Codex CLI) или старую Python-based утилиту `openai`
 - **Gemini** (Google) - через `gemini-cli`
 - **OpenAI-совместимые API** - прямая интеграция через HTTP (LM Studio, LocalAI, Ollama, Text Generation WebUI)
-- **Ollama** - для локальных моделей
-- **Azure OpenAI** - через Azure CLI
 - **Пользовательские адаптеры** - через curl или другие утилиты
 
 См. примеры конфигураций в [examples/cli-adapters-config.yaml](examples/cli-adapters-config.yaml) и [examples/openai-compatible-config.yaml](examples/openai-compatible-config.yaml)
