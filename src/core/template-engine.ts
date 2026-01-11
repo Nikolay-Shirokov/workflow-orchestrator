@@ -556,6 +556,22 @@ export class DefaultTemplateEngine implements TemplateEngine {
     const value = this.getVariableValue(expression, context);
     
     if (value === undefined || value === null) {
+      // Получаем список доступных переменных
+      const availableVariables = Object.keys(context.variables);
+      
+      // Формируем детальные предложения
+      const suggestions = [
+        `Определите переменную "${expression}" в контексте рабочего процесса`,
+        'Проверьте опечатки в имени переменной',
+        `Доступные переменные: ${availableVariables.join(', ')}`
+      ];
+      
+      // Добавляем предложение о похожих переменных (простая эвристика)
+      const similarVars = this.findSimilarVariables(expression, availableVariables);
+      if (similarVars.length > 0) {
+        suggestions.push(`Возможно, вы имели в виду: ${similarVars.join(', ')}`);
+      }
+      
       throw new WorkflowErrorClass({
         code: 'UNDEFINED_VARIABLE',
         category: 'execution',
@@ -563,18 +579,62 @@ export class DefaultTemplateEngine implements TemplateEngine {
         message: `Переменная не определена: ${expression}`,
         context: {
           variable: expression,
-          availableVariables: Object.keys(context.variables)
+          availableVariables: availableVariables
         },
         recoverable: false,
-        suggestions: [
-          `Определите переменную "${expression}" в контексте рабочего процесса`,
-          'Проверьте опечатки в имени переменной',
-          `Доступные переменные: ${Object.keys(context.variables).join(', ')}`
-        ]
+        suggestions: suggestions
       });
     }
     
     return String(value);
+  }
+  
+  /**
+   * Поиск похожих переменных (простая эвристика на основе расстояния Левенштейна)
+   */
+  private findSimilarVariables(target: string, available: string[]): string[] {
+    const maxDistance = 2; // Максимальное расстояние для считания переменной похожей
+    const similar: string[] = [];
+    
+    for (const varName of available) {
+      const distance = this.levenshteinDistance(target.toLowerCase(), varName.toLowerCase());
+      if (distance <= maxDistance && distance > 0) {
+        similar.push(varName);
+      }
+    }
+    
+    return similar.slice(0, 3); // Возвращаем максимум 3 похожих переменных
+  }
+  
+  /**
+   * Вычисление расстояния Левенштейна между двумя строками
+   */
+  private levenshteinDistance(str1: string, str2: string): number {
+    const len1 = str1.length;
+    const len2 = str2.length;
+    const matrix: number[][] = [];
+    
+    // Инициализация матрицы
+    for (let i = 0; i <= len1; i++) {
+      matrix[i] = [i];
+    }
+    for (let j = 0; j <= len2; j++) {
+      matrix[0][j] = j;
+    }
+    
+    // Заполнение матрицы
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,      // Удаление
+          matrix[i][j - 1] + 1,      // Вставка
+          matrix[i - 1][j - 1] + cost // Замена
+        );
+      }
+    }
+    
+    return matrix[len1][len2];
   }
   
   /**

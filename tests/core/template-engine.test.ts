@@ -279,6 +279,300 @@ describe('TemplateEngine Unit Tests', () => {
       expect(resetCounters.cacheMisses).toBe(0);
     });
   });
+  
+  describe('Обработка ошибок', () => {
+    it('должен выбрасывать ошибку UNDEFINED_VARIABLE с контекстом', () => {
+      const template = '${undefined_variable}';
+      const context = createTemplateContext(
+        { 
+          available_var1: 'value1',
+          available_var2: 'value2',
+          available_var3: 'value3'
+        },
+        () => ''
+      );
+      
+      expect(() => engine.render(template, context)).toThrow();
+      
+      try {
+        engine.render(template, context);
+        fail('Должна была быть выброшена ошибка');
+      } catch (error: any) {
+        // Проверяем код ошибки
+        expect(error.code).toBe('UNDEFINED_VARIABLE');
+        
+        // Проверяем сообщение об ошибке
+        expect(error.message).toContain('Переменная не определена');
+        expect(error.message).toContain('undefined_variable');
+        
+        // Проверяем контекст ошибки
+        expect(error.context).toBeDefined();
+        expect(error.context.variable).toBe('undefined_variable');
+        expect(error.context.availableVariables).toEqual(['available_var1', 'available_var2', 'available_var3']);
+        
+        // Проверяем категорию и серьезность
+        expect(error.category).toBe('execution');
+        expect(error.severity).toBe('error');
+        
+        // Проверяем наличие предложений
+        expect(error.suggestions).toBeDefined();
+        expect(error.suggestions.length).toBeGreaterThan(0);
+        expect(error.suggestions.some((s: string) => s.includes('undefined_variable'))).toBe(true);
+        expect(error.suggestions.some((s: string) => s.includes('available_var1'))).toBe(true);
+      }
+    });
+    
+    it('должен выбрасывать ошибку ARTIFACT_NOT_FOUND с контекстом', () => {
+      const nonexistentPath = path.join(tempDir, 'nonexistent-artifact.txt');
+      const template = '${artifact:${file_path}}';
+      const context = createTemplateContext(
+        { file_path: nonexistentPath },
+        (filePath: string) => {
+          const error: any = new Error(`ENOENT: no such file or directory, open '${filePath}'`);
+          error.code = 'ENOENT';
+          throw error;
+        }
+      );
+      
+      expect(() => engine.render(template, context)).toThrow();
+      
+      try {
+        engine.render(template, context);
+        fail('Должна была быть выброшена ошибка');
+      } catch (error: any) {
+        // Проверяем код ошибки
+        expect(error.code).toBe('ARTIFACT_LOAD_ERROR');
+        
+        // Проверяем сообщение об ошибке
+        expect(error.message).toContain('Не удалось загрузить артефакт');
+        expect(error.message).toContain(nonexistentPath);
+        
+        // Проверяем контекст ошибки
+        expect(error.context).toBeDefined();
+        expect(error.context.path).toBe(nonexistentPath);
+        
+        // Проверяем категорию и серьезность
+        expect(error.category).toBe('execution');
+        expect(error.severity).toBe('error');
+        
+        // Проверяем наличие предложений
+        expect(error.suggestions).toBeDefined();
+        expect(error.suggestions.length).toBeGreaterThan(0);
+        expect(error.suggestions.some((s: string) => s.includes('артефакт существует'))).toBe(true);
+      }
+    });
+    
+    it('должен выбрасывать ошибку ARTIFACT_READ_ERROR при ошибке чтения', () => {
+      const testFilePath = path.join(tempDir, 'unreadable-file.txt');
+      const template = '${artifact:${file_path}}';
+      const context = createTemplateContext(
+        { file_path: testFilePath },
+        (filePath: string) => {
+          const error: any = new Error(`EACCES: permission denied, open '${filePath}'`);
+          error.code = 'EACCES';
+          throw error;
+        }
+      );
+      
+      expect(() => engine.render(template, context)).toThrow();
+      
+      try {
+        engine.render(template, context);
+        fail('Должна была быть выброшена ошибка');
+      } catch (error: any) {
+        // Проверяем код ошибки
+        expect(error.code).toBe('ARTIFACT_LOAD_ERROR');
+        
+        // Проверяем сообщение об ошибке
+        expect(error.message).toContain('Не удалось загрузить артефакт');
+        expect(error.message).toContain(testFilePath);
+        
+        // Проверяем контекст ошибки
+        expect(error.context).toBeDefined();
+        expect(error.context.path).toBe(testFilePath);
+        expect(error.context.error).toBeDefined();
+        
+        // Проверяем категорию и серьезность
+        expect(error.category).toBe('execution');
+        expect(error.severity).toBe('error');
+        
+        // Проверяем наличие предложений
+        expect(error.suggestions).toBeDefined();
+        expect(error.suggestions.length).toBeGreaterThan(0);
+      }
+    });
+    
+    it('должен выбрасывать ошибку MAX_ITERATIONS_EXCEEDED при циклических зависимостях', () => {
+      // Создаем шаблон с циклической зависимостью
+      // var1 -> var2 -> var3 -> var1 (цикл)
+      const template = '${var1}';
+      const context = createTemplateContext(
+        {
+          var1: '${var2}',
+          var2: '${var3}',
+          var3: '${var1}'
+        },
+        () => ''
+      );
+      
+      expect(() => engine.render(template, context)).toThrow();
+      
+      try {
+        engine.render(template, context);
+        fail('Должна была быть выброшена ошибка');
+      } catch (error: any) {
+        // Проверяем код ошибки
+        expect(error.code).toBe('MAX_TEMPLATE_ITERATIONS');
+        
+        // Проверяем сообщение об ошибке
+        expect(error.message).toContain('Превышено максимальное количество итераций');
+        expect(error.message).toContain('циклическая зависимость');
+        
+        // Проверяем контекст ошибки
+        expect(error.context).toBeDefined();
+        expect(error.context.maxIterations).toBe(10);
+        expect(error.context.unresolvedVariables).toBeDefined();
+        expect(error.context.unresolvedVariables.length).toBeGreaterThan(0);
+        
+        // Проверяем категорию и серьезность
+        expect(error.category).toBe('execution');
+        expect(error.severity).toBe('error');
+        
+        // Проверяем наличие предложений
+        expect(error.suggestions).toBeDefined();
+        expect(error.suggestions.length).toBeGreaterThan(0);
+        expect(error.suggestions.some((s: string) => s.includes('циклические зависимости'))).toBe(true);
+      }
+    });
+    
+    it('должен предоставлять полезные предложения для UNDEFINED_VARIABLE', () => {
+      const template = '${user_nme}'; // Опечатка в имени переменной
+      const context = createTemplateContext(
+        { 
+          user_name: 'John',
+          user_email: 'john@example.com',
+          user_id: '123'
+        },
+        () => ''
+      );
+      
+      try {
+        engine.render(template, context);
+        fail('Должна была быть выброшена ошибка');
+      } catch (error: any) {
+        expect(error.code).toBe('UNDEFINED_VARIABLE');
+        
+        // Проверяем, что предложения содержат список доступных переменных
+        const suggestionsText = error.suggestions.join(' ');
+        expect(suggestionsText).toContain('user_name');
+        expect(suggestionsText).toContain('user_email');
+        expect(suggestionsText).toContain('user_id');
+        
+        // Проверяем, что есть предложение проверить опечатки
+        expect(error.suggestions.some((s: string) => 
+          s.toLowerCase().includes('опечатк') || s.toLowerCase().includes('имени переменной')
+        )).toBe(true);
+        
+        // Проверяем, что есть предложение похожей переменной (user_name похожа на user_nme)
+        expect(error.suggestions.some((s: string) => 
+          s.includes('user_name') && s.toLowerCase().includes('имели в виду')
+        )).toBe(true);
+      }
+    });
+    
+    it('должен предоставлять полезные предложения для ARTIFACT_LOAD_ERROR', () => {
+      const missingPath = path.join(tempDir, 'missing-artifact.txt');
+      const template = '${artifact:${file_path}}';
+      const context = createTemplateContext(
+        { file_path: missingPath },
+        (filePath: string) => {
+          const error: any = new Error(`File not found: ${filePath}`);
+          error.code = 'ENOENT';
+          throw error;
+        }
+      );
+      
+      try {
+        engine.render(template, context);
+        fail('Должна была быть выброшена ошибка');
+      } catch (error: any) {
+        expect(error.code).toBe('ARTIFACT_LOAD_ERROR');
+        
+        // Проверяем, что предложения содержат полезные советы
+        const suggestionsText = error.suggestions.join(' ').toLowerCase();
+        expect(suggestionsText).toContain('артефакт');
+        expect(
+          suggestionsText.includes('существует') || suggestionsText.includes('путь')
+        ).toBe(true);
+        
+        // Проверяем, что есть предложение проверить предыдущий шаг
+        expect(error.suggestions.some((s: string) => 
+          s.toLowerCase().includes('предыдущий шаг') || s.toLowerCase().includes('создал')
+        )).toBe(true);
+      }
+    });
+    
+    it('должен корректно обрабатывать вложенные ошибки', () => {
+      // Создаем шаблон с вложенной переменной, которая не определена
+      const template = '${artifact:${undefined_path_var}}';
+      const context = createTemplateContext(
+        { some_other_var: 'value' },
+        () => ''
+      );
+      
+      try {
+        engine.render(template, context);
+        fail('Должна была быть выброшена ошибка');
+      } catch (error: any) {
+        // Должна быть ошибка UNDEFINED_VARIABLE для внутренней переменной
+        expect(error.code).toBe('UNDEFINED_VARIABLE');
+        expect(error.context.variable).toBe('undefined_path_var');
+        expect(error.context.availableVariables).toContain('some_other_var');
+      }
+    });
+    
+    it('должен предоставлять recoverable флаг для разных типов ошибок', () => {
+      // UNDEFINED_VARIABLE - не восстанавливаемая
+      try {
+        const template = '${undefined_var}';
+        const context = createTemplateContext({}, () => '');
+        engine.render(template, context);
+        fail('Должна была быть выброшена ошибка');
+      } catch (error: any) {
+        expect(error.recoverable).toBe(false);
+      }
+      
+      // ARTIFACT_LOAD_ERROR - не восстанавливаемая
+      try {
+        const template = '${artifact:missing.txt}';
+        const context = createTemplateContext(
+          {},
+          () => {
+            const error: any = new Error('File not found');
+            error.code = 'ENOENT';
+            throw error;
+          }
+        );
+        engine.render(template, context);
+        fail('Должна была быть выброшена ошибка');
+      } catch (error: any) {
+        expect(error.recoverable).toBe(false);
+      }
+      
+      // MAX_TEMPLATE_ITERATIONS - не восстанавливаемая
+      try {
+        const template = '${var1}';
+        const context = createTemplateContext(
+          { var1: '${var2}', var2: '${var1}' },
+          () => ''
+        );
+        engine.render(template, context);
+        fail('Должна была быть выброшена ошибка');
+      } catch (error: any) {
+        expect(error.recoverable).toBe(false);
+      }
+    });
+  });
 });
 
 describe('TemplateEngine Property-Based Tests', () => {
