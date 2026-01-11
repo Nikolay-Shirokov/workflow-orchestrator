@@ -638,6 +638,19 @@ export interface AdapterRegistry {
    * @returns CLIAdapter[]
    */
   getAll(): CLIAdapter[];
+  
+  /**
+   * Создание адаптера из конфигурации
+   * @param config - Конфигурация адаптера
+   * @returns CLIAdapter
+   */
+  createFromConfig(config: Partial<AdapterConfig> & { name: string; type?: string; baseUrl?: string; apiKey?: string; defaultModel?: string; headers?: Record<string, string> }): CLIAdapter;
+  
+  /**
+   * Регистрация адаптеров из массива конфигураций
+   * @param configs - Массив конфигураций адаптеров
+   */
+  registerFromConfigs(configs: Array<Partial<AdapterConfig> & { name: string; type?: string; baseUrl?: string; apiKey?: string; defaultModel?: string; headers?: Record<string, string> }>): void;
 }
 
 /**

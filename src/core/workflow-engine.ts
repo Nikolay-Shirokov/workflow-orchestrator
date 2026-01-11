@@ -203,6 +203,13 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
   ): Promise<WorkflowState> {
     this.logger.info(`Начало выполнения процесса: ${config.name} v${config.version}`);
 
+    // Регистрация адаптеров из конфигурации, если они определены
+    if (config.adapters && config.adapters.length > 0) {
+      this.logger.info('Регистрация адаптеров из конфигурации...');
+      this.adapterRegistry.registerFromConfigs(config.adapters);
+      this.logger.info(`Зарегистрировано адаптеров: ${config.adapters.length}`);
+    }
+
     // Загрузка ролей, если они определены
     if (config.roles && this.roleManager) {
       this.logger.info('Загрузка определений ролей...');
@@ -279,6 +286,13 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
    */
   async resume(sessionId: string, config: WorkflowConfig): Promise<WorkflowState> {
     this.logger.info(`Возобновление процесса для сессии ${sessionId}`);
+
+    // Регистрация адаптеров из конфигурации, если они определены
+    if (config.adapters && config.adapters.length > 0) {
+      this.logger.info('Регистрация адаптеров из конфигурации...');
+      this.adapterRegistry.registerFromConfigs(config.adapters);
+      this.logger.info(`Зарегистрировано адаптеров: ${config.adapters.length}`);
+    }
 
     // Загрузка ролей, если они определены
     if (config.roles && this.roleManager) {

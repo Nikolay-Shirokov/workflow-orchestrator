@@ -1,5 +1,8 @@
-# Простой пример конфигурации для тестирования удаленного LM Studio
-# Примечание: Адаптер должен быть зарегистрирован программно перед запуском
+# Пример конфигурации для работы с удаленным LM Studio
+# LM Studio доступен по адресу: http://192.168.50.1:1234/
+# 
+# Использует OpenAI-совместимый адаптер для подключения к удаленному LM Studio
+# Адаптер автоматически создается из конфигурации
 
 workflow:
   name: "test-remote-lm-studio"
@@ -8,12 +11,20 @@ workflow:
   author: "Workflow Orchestrator"
   
   settings:
-    artifacts_dir: "artifacts/session_${timestamp}"
+    artifacts_dir: "session_${timestamp}"
     default_adapter: "lm-studio-remote"
     parallel_execution: false
     max_retries: 2
     timeout: 120
     log_level: "info"
+  
+  # Конфигурация адаптеров
+  adapters:
+    - name: "lm-studio-remote"
+      type: "openai-compatible"
+      baseUrl: "http://192.168.50.1:1234/v1"
+      defaultModel: "local-model"
+      timeout: 120000  # 2 минуты таймаут для удаленного сервера
   
   # Определение ролей
   roles:
@@ -24,6 +35,9 @@ workflow:
         Отвечайте кратко и по существу.
       temperature: 0.7
       max_tokens: 500
+      permissions:
+        - read
+        - edit: "*.md"  # Разрешение на редактирование markdown файлов
   
   # Шаги процесса
   steps:
@@ -33,7 +47,7 @@ workflow:
       type: "model"
       role: "assistant"
       description: "Простой запрос для проверки работы удаленного LM Studio"
-      prompt: |
+      prompt_template: |
         Привет! Это тестовый запрос к удаленному LM Studio.
         
         Пожалуйста, ответь на следующие вопросы:
@@ -53,7 +67,7 @@ workflow:
       depends_on:
         - "step1"
       description: "Тест генерации кода"
-      prompt: |
+      prompt_template: |
         Напиши простую функцию на JavaScript, которая:
         - Принимает массив чисел
         - Возвращает сумму всех четных чисел
@@ -70,10 +84,10 @@ workflow:
       depends_on:
         - "step2"
       description: "Анализ сгенерированного кода"
-      prompt: |
+      prompt_template: |
         Проанализируй следующий код и предложи улучшения:
         
-        ${artifact:${code_response}}
+        ${code_response}
         
         Укажи:
         1. Что можно улучшить
