@@ -1,0 +1,28 @@
+# Пример конфигурации для подключения к удаленному LM Studio
+# LM Studio запущен на другой машине в локальной сети
+
+adapters:
+  - name: lm-studio-remote
+    type: openai-compatible
+    baseUrl: http://192.168.50.1:1234/v1
+    # API ключ не требуется для локального LM Studio
+    # apiKey: не указываем
+    # Модель по умолчанию (можно узнать в LM Studio)
+    defaultModel: local-model
+    # Увеличенный таймаут для сетевых запросов
+    timeout: 120000
+    # Дополнительные заголовки (опционально)
+    headers:
+      User-Agent: workflow-orchestrator/1.0
+
+# Пример использования в workflow
+workflow:
+  name: test-remote-lm-studio
+  steps:
+    - name: test-request
+      role: lm-studio-remote
+      prompt: |
+        Привет! Это тестовый запрос к удаленному LM Studio.
+        Пожалуйста, ответь коротко.
+      temperature: 0.7
+      maxTokens: 100

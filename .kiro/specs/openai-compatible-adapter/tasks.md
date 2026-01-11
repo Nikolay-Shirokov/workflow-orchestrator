@@ -57,7 +57,7 @@
   - **Свойство 4: Ответ корректно парсится**
   - **Validates: Requirements 3.1, 3.2, 3.3, 3.4**
 
-- [ ] 5. Реализовать метод execute
+- [x] 5. Реализовать метод execute
   - Создать основной метод `execute(request: AdapterRequest): Promise<AdapterResponse>`
   - Построить HTTP запрос используя `buildChatCompletionRequest`
   - Добавить заголовок Authorization с API ключом (если указан)
@@ -66,7 +66,7 @@
   - Обработать ошибки и вернуть `AdapterResponse` или `AdapterError`
   - _Requirements: 2.1, 2.2, 7.3, 7.4_
 
-- [ ] 5.1 Написать property-тест для передачи API ключа
+- [x] 5.1 Написать property-тест для передачи API ключа
   - **Свойство 2: API ключ передается в заголовках**
   - **Validates: Requirements 1.2**
 

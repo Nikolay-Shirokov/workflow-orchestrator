@@ -126,6 +126,237 @@ describe('OpenAI Compatible Adapter Property Tests', () => {
   });
 
   /**
+   * Feature: openai-compatible-adapter, Property 2: API ключ передается в заголовках
+   * Validates: Requirements 1.2
+   * 
+   * Для любого API ключа, если он указан в конфигурации, он должен присутствовать
+   * в заголовке Authorization всех HTTP запросов в формате "Bearer {apiKey}".
+   */
+  describe('Property 2: API ключ передается в заголовках', () => {
+    test('должен добавлять Authorization заголовок с API ключом', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 20, maxLength: 100 }),
+          (apiKey) => {
+            const adapter = new OpenAICompatibleAdapter({
+              apiKey
+            });
+            
+            // Используем рефлексию для доступа к приватному методу buildHeaders
+            const buildHeadersMethod = (adapter as any).buildHeaders.bind(adapter);
+            
+            const headers = buildHeadersMethod();
+            
+            // Проверяем, что заголовок Authorization присутствует
+            expect(headers['Authorization']).toBeDefined();
+            
+            // Проверяем формат: "Bearer {apiKey}"
+            expect(headers['Authorization']).toBe(`Bearer ${apiKey}`);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен добавлять Authorization заголовок для любого валидного API ключа', () => {
+      fc.assert(
+        fc.property(
+          fc.oneof(
+            fc.string({ minLength: 20, maxLength: 50 }),
+            fc.stringMatching(/^sk-[a-zA-Z0-9]{32,}$/),
+            fc.stringMatching(/^[a-zA-Z0-9_-]{40,}$/)
+          ),
+          (apiKey) => {
+            const adapter = new OpenAICompatibleAdapter({
+              apiKey
+            });
+            
+            const buildHeadersMethod = (adapter as any).buildHeaders.bind(adapter);
+            const headers = buildHeadersMethod();
+            
+            // Проверяем наличие и формат заголовка
+            expect(headers['Authorization']).toBe(`Bearer ${apiKey}`);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('НЕ должен добавлять Authorization заголовок если API ключ не указан', () => {
+      fc.assert(
+        fc.property(
+          fc.constant(undefined),
+          () => {
+            const adapter = new OpenAICompatibleAdapter({
+              apiKey: undefined
+            });
+            
+            const buildHeadersMethod = (adapter as any).buildHeaders.bind(adapter);
+            const headers = buildHeadersMethod();
+            
+            // Проверяем, что заголовок Authorization отсутствует
+            expect(headers['Authorization']).toBeUndefined();
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен добавлять Authorization заголовок вместе с другими заголовками', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 20, maxLength: 100 }),
+          fc.dictionary(
+            fc.string({ minLength: 1, maxLength: 30 }).filter(key => key !== 'Authorization'),
+            fc.string({ minLength: 1, maxLength: 100 }),
+            { minKeys: 1, maxKeys: 5 }
+          ),
+          (apiKey, customHeaders) => {
+            const adapter = new OpenAICompatibleAdapter({
+              apiKey,
+              headers: customHeaders
+            });
+            
+            const buildHeadersMethod = (adapter as any).buildHeaders.bind(adapter);
+            const headers = buildHeadersMethod();
+            
+            // Проверяем, что Authorization заголовок присутствует
+            expect(headers['Authorization']).toBe(`Bearer ${apiKey}`);
+            
+            // Проверяем, что пользовательские заголовки также присутствуют
+            Object.keys(customHeaders).forEach(key => {
+              expect(headers[key]).toBe(customHeaders[key]);
+            });
+            
+            // Проверяем, что Content-Type также присутствует
+            expect(headers['Content-Type']).toBe('application/json');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен всегда включать Content-Type заголовок', () => {
+      fc.assert(
+        fc.property(
+          fc.option(fc.string({ minLength: 20, maxLength: 100 }), { nil: undefined }),
+          (apiKey) => {
+            const adapter = new OpenAICompatibleAdapter({
+              apiKey
+            });
+            
+            const buildHeadersMethod = (adapter as any).buildHeaders.bind(adapter);
+            const headers = buildHeadersMethod();
+            
+            // Content-Type должен быть всегда
+            expect(headers['Content-Type']).toBe('application/json');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать API ключи с переменными окружения', () => {
+      fc.assert(
+        fc.property(
+          fc.stringMatching(/^[A-Z_][A-Z0-9_]*$/),
+          fc.string({ minLength: 20, maxLength: 100 }),
+          (varName, apiKey) => {
+            // Устанавливаем переменную окружения
+            const originalValue = process.env[varName];
+            process.env[varName] = apiKey;
+            
+            try {
+              const adapter = new OpenAICompatibleAdapter({
+                apiKey: `\${${varName}}`
+              });
+              
+              const buildHeadersMethod = (adapter as any).buildHeaders.bind(adapter);
+              const headers = buildHeadersMethod();
+              
+              // Проверяем, что API ключ подставлен из переменной окружения
+              expect(headers['Authorization']).toBe(`Bearer ${apiKey}`);
+            } finally {
+              // Восстанавливаем оригинальное значение
+              if (originalValue === undefined) {
+                delete process.env[varName];
+              } else {
+                process.env[varName] = originalValue;
+              }
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('НЕ должен добавлять Authorization заголовок для пустого API ключа', () => {
+      fc.assert(
+        fc.property(
+          fc.constant(''),
+          (apiKey) => {
+            const adapter = new OpenAICompatibleAdapter({
+              apiKey
+            });
+            
+            const buildHeadersMethod = (adapter as any).buildHeaders.bind(adapter);
+            const headers = buildHeadersMethod();
+            
+            // Пустой API ключ не должен добавлять заголовок Authorization
+            // (пустая строка считается отсутствием ключа)
+            expect(headers['Authorization']).toBeUndefined();
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен сохранять API ключ без изменений', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 20, maxLength: 100 }),
+          (apiKey) => {
+            const adapter = new OpenAICompatibleAdapter({
+              apiKey
+            });
+            
+            const buildHeadersMethod = (adapter as any).buildHeaders.bind(adapter);
+            const headers = buildHeadersMethod();
+            
+            // API ключ должен быть передан без изменений (кроме префикса Bearer)
+            const extractedKey = headers['Authorization'].replace('Bearer ', '');
+            expect(extractedKey).toBe(apiKey);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать API ключи со специальными символами', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 20, maxLength: 100 }),
+          (baseKey) => {
+            // Добавляем специальные символы, которые могут быть в API ключах
+            const apiKey = `${baseKey}-_+=`;
+            
+            const adapter = new OpenAICompatibleAdapter({
+              apiKey
+            });
+            
+            const buildHeadersMethod = (adapter as any).buildHeaders.bind(adapter);
+            const headers = buildHeadersMethod();
+            
+            // API ключ со специальными символами должен быть корректно передан
+            expect(headers['Authorization']).toBe(`Bearer ${apiKey}`);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
+
+  /**
    * Feature: openai-compatible-adapter, Property 11: Переменные окружения подставляются
    * Validates: Requirements 8.6
    * 
