@@ -8,6 +8,7 @@ import { AdapterRegistry } from '../../src/adapters/adapter-registry.js';
 import { ClaudeCLIAdapter } from '../../src/adapters/claude-cli-adapter.js';
 import { OpenAICLIAdapter } from '../../src/adapters/openai-cli-adapter.js';
 import { GeminiCLIAdapter } from '../../src/adapters/gemini-cli-adapter.js';
+import { CodexCLIAdapter } from '../../src/adapters/codex-cli-adapter.js';
 
 describe('Интеграция адаптеров с реестром', () => {
   let registry: AdapterRegistry;
@@ -40,6 +41,14 @@ describe('Интеграция адаптеров с реестром', () => {
     expect(registry.get('gemini-cli')).toBe(adapter);
   });
 
+  it('должен регистрировать Codex адаптер', () => {
+    const adapter = new CodexCLIAdapter();
+    registry.register(adapter);
+
+    expect(registry.has('codex-cli')).toBe(true);
+    expect(registry.get('codex-cli')).toBe(adapter);
+  });
+
   it('должен регистрировать все три адаптера одновременно', () => {
     const claudeAdapter = new ClaudeCLIAdapter();
     const openaiAdapter = new OpenAICLIAdapter();
@@ -55,20 +64,41 @@ describe('Интеграция адаптеров с реестром', () => {
     expect(registry.has('gemini-cli')).toBe(true);
   });
 
-  it('должен получать все зарегистрированные адаптеры', () => {
+  it('должен регистрировать все четыре адаптера одновременно', () => {
     const claudeAdapter = new ClaudeCLIAdapter();
     const openaiAdapter = new OpenAICLIAdapter();
     const geminiAdapter = new GeminiCLIAdapter();
+    const codexAdapter = new CodexCLIAdapter();
 
     registry.register(claudeAdapter);
     registry.register(openaiAdapter);
     registry.register(geminiAdapter);
+    registry.register(codexAdapter);
+
+    expect(registry.size()).toBe(4);
+    expect(registry.has('claude-cli')).toBe(true);
+    expect(registry.has('openai-cli')).toBe(true);
+    expect(registry.has('gemini-cli')).toBe(true);
+    expect(registry.has('codex-cli')).toBe(true);
+  });
+
+  it('должен получать все зарегистрированные адаптеры', () => {
+    const claudeAdapter = new ClaudeCLIAdapter();
+    const openaiAdapter = new OpenAICLIAdapter();
+    const geminiAdapter = new GeminiCLIAdapter();
+    const codexAdapter = new CodexCLIAdapter();
+
+    registry.register(claudeAdapter);
+    registry.register(openaiAdapter);
+    registry.register(geminiAdapter);
+    registry.register(codexAdapter);
 
     const allAdapters = registry.getAll();
-    expect(allAdapters).toHaveLength(3);
+    expect(allAdapters).toHaveLength(4);
     expect(allAdapters).toContain(claudeAdapter);
     expect(allAdapters).toContain(openaiAdapter);
     expect(allAdapters).toContain(geminiAdapter);
+    expect(allAdapters).toContain(codexAdapter);
   });
 
   it('должен удалять адаптер из реестра', () => {
@@ -167,6 +197,13 @@ describe('Проверка доступности адаптеров', () => {
       process.env.GOOGLE_API_KEY = originalKey;
     }
   }, 30000); // Увеличиваем таймаут до 30 секунд
+
+  it('Codex адаптер должен проверять доступность команды', async () => {
+    const adapter = new CodexCLIAdapter({ env: {} });
+    const available = await adapter.isAvailable();
+    // Результат зависит только от наличия команды в системе
+    expect(typeof available).toBe('boolean');
+  }, 10000); // Увеличиваем таймаут до 10 секунд для проверки доступности CLI
 });
 
 describe('Парсинг ответов адаптеров', () => {
@@ -224,6 +261,31 @@ describe('Парсинг ответов адаптеров', () => {
     const candidates = JSON.stringify([{ text: 'Первый' }, { text: 'Второй' }]);
     expect(adapter.parseResponse(candidates)).toBe('Первый');
   });
+
+  it('Codex должен корректно парсить JSON и текстовый вывод', () => {
+    const adapter = new CodexCLIAdapter();
+
+    // JSON-режим (JSONL)
+    const jsonlOutput = `{"type":"status","message":"Starting..."}
+{"type":"message","role":"assistant","content":"Первый ответ"}
+{"type":"tool_use","tool":"bash","input":"ls"}
+{"type":"message","role":"assistant","content":"Финальный ответ"}`;
+    expect(adapter.parseResponse(jsonlOutput)).toBe('Финальный ответ');
+
+    // Текстовый режим с маркером Assistant response:
+    const textOutput = `Starting task...
+[Tool: bash] ls -la
+
+Assistant response:
+Вот файлы в директории...`;
+    expect(adapter.parseResponse(textOutput)).toBe('Вот файлы в директории...');
+
+    // Простой текст без маркеров
+    expect(adapter.parseResponse('Простой ответ')).toBe('Простой ответ');
+
+    // С пробелами
+    expect(adapter.parseResponse('  \n  Ответ  \n  ')).toBe('Ответ');
+  });
 });
 
 describe('Пользовательская конфигурация адаптеров', () => {
@@ -251,5 +313,15 @@ describe('Пользовательская конфигурация адапте
     });
 
     expect(adapter.name).toBe('gemini-cli');
+  });
+
+  it('должен использовать пользовательскую конфигурацию для Codex', () => {
+    const adapter = new CodexCLIAdapter({
+      command: 'custom-codex-command',
+      timeout: 60000
+    });
+
+    expect(adapter.name).toBe('codex-cli');
+    expect(adapter.version).toBe('1.0.0');
   });
 });
