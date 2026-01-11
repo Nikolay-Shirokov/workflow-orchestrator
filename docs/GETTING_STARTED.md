@@ -199,7 +199,7 @@ workflow:
       prompt_template: |
         На основе следующих требований, предложите план реализации:
         
-        ${artifact:${requirements}}
+        ${requirements}
       inputs:
         requirements: "${requirements}"
       outputs:
@@ -215,12 +215,14 @@ workflow:
       prompt_template: |
         На основе анализа, предоставьте конкретные рекомендации:
         
-        ${artifact:${analysis}}
+        ${analysis}
       inputs:
         analysis: "${analysis}"
       outputs:
         recommendations: "${artifacts_dir}/recommendations.md"
 ```
+
+**Обратите внимание**: В шагах 2 и 3 используется прямое содержимое (`${requirements}`, `${analysis}`) вместо загрузки из файла. Это быстрее и проще, так как содержимое уже доступно в контексте после выполнения предыдущих шагов.
 
 Запустите:
 
@@ -228,6 +230,122 @@ workflow:
 workflow-orchestrator run analysis-workflow.yaml \
   --var user_request="Создать систему управления задачами"
 ```
+
+## Шаг 6.1: Передача контекста между шагами
+
+Система поддерживает несколько способов передачи данных между шагами:
+
+### Способ 1: Прямое содержимое (рекомендуется)
+
+Когда шаг создает артефакт, его содержимое автоматически доступно в контексте:
+
+```yaml
+steps:
+  - id: "step1"
+    outputs:
+      result: "${artifacts_dir}/result.md"
+  
+  - id: "step2"
+    depends_on: ["step1"]
+    prompt_template: |
+      Используйте результат предыдущего шага:
+      ${result}
+```
+
+**Преимущества:**
+- ⚡ Быстро (нет чтения файла)
+- 📝 Простой синтаксис
+- 💾 Данные уже в памяти
+
+### Способ 2: Загрузка из файла
+
+Если нужна гарантия актуальности данных или файл может быть изменен:
+
+```yaml
+steps:
+  - id: "step1"
+    outputs:
+      result: "${artifacts_dir}/result.md"
+  
+  - id: "step2"
+    depends_on: ["step1"]
+    prompt_template: |
+      Используйте результат из файла:
+      ${artifact:${result_file}}
+```
+
+**Когда использовать:**
+- 📂 Файл может быть изменен внешним процессом
+- ✅ Нужна гарантия актуальности
+- 💾 Данные слишком большие для памяти
+
+### Способ 3: С обрамлением в теги
+
+Для четкого разграничения больших объемов данных:
+
+```yaml
+steps:
+  - id: "step1"
+    outputs:
+      result: "${artifacts_dir}/result.md"
+  
+  - id: "step2"
+    depends_on: ["step1"]
+    prompt_template: |
+      Проанализируйте следующие данные:
+      
+      ${artifact:${result_file}:analysis_data}
+      
+      Предоставьте рекомендации.
+```
+
+**Результат:**
+```
+Проанализируйте следующие данные:
+
+<analysis_data>
+[содержимое файла]
+</analysis_data>
+
+Предоставьте рекомендации.
+```
+
+**Когда использовать:**
+- 📊 Большие объемы данных (> 1000 символов)
+- 🔀 Несколько артефактов в одном промпте
+- 🏷️ Нужны четкие границы для AI-модели
+- 📋 Структурированные данные (JSON, YAML, код)
+
+### Пример с множественными артефактами
+
+```yaml
+steps:
+  - id: "parallel_analysis"
+    type: "parallel"
+    steps:
+      - id: "technical"
+        outputs:
+          tech_analysis: "${artifacts_dir}/technical.md"
+      
+      - id: "business"
+        outputs:
+          biz_analysis: "${artifacts_dir}/business.md"
+  
+  - id: "merge"
+    depends_on: ["parallel_analysis"]
+    prompt_template: |
+      Объедините следующие анализы:
+      
+      ## Технический анализ
+      ${artifact:${tech_analysis_file}:technical}
+      
+      ## Бизнес-анализ
+      ${artifact:${biz_analysis_file}:business}
+      
+      Создайте единый документ.
+```
+
+**Подробнее**: См. [примеры с тегами](../examples/prompts/dual-design/examples_with_tags.txt)
 
 ## Шаг 7: Использование DSL
 
