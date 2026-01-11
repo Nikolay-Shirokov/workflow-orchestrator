@@ -623,9 +623,20 @@ export class DefaultStepExecutor implements StepExecutor {
         
         artifacts.push(artifactPath);
         
-        // Обновление контекста
+        // ДВОЙНАЯ ПЕРЕДАЧА КОНТЕКСТА:
+        // 1. Содержимое напрямую (для быстрого доступа)
         context.state.context[outputName] = result.stdout;
+        
+        // 2. Путь к файлу (для явной загрузки)
+        context.state.context[`${outputName}_file`] = artifactPath;
+        
+        // 3. Сохраняем в artifacts для отслеживания
         context.state.artifacts[outputName] = artifactPath;
+        
+        context.logger.debug(
+          `Добавлено в контекст: ${outputName} (${result.stdout.length} символов), ` +
+          `${outputName}_file (${artifactPath})`
+        );
       }
     }
     
