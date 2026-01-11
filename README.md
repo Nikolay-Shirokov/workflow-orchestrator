@@ -254,11 +254,12 @@ workflow-orchestrator import \
 - **Claude** (Anthropic) - через `claude-cli`
 - **GPT** (OpenAI) - через `openai-cli`
 - **Gemini** (Google) - через `gemini-cli`
+- **OpenAI-совместимые API** - прямая интеграция через HTTP (LM Studio, LocalAI, Ollama, Text Generation WebUI)
 - **Ollama** - для локальных моделей
 - **Azure OpenAI** - через Azure CLI
 - **Пользовательские адаптеры** - через curl или другие утилиты
 
-См. примеры конфигураций в [examples/cli-adapters-config.yaml](examples/cli-adapters-config.yaml)
+См. примеры конфигураций в [examples/cli-adapters-config.yaml](examples/cli-adapters-config.yaml) и [examples/openai-compatible-config.yaml](examples/openai-compatible-config.yaml)
 
 ### Создание пользовательских адаптеров
 
@@ -311,6 +312,62 @@ const adapter = pluginManager.createAdapter('my-adapter', {
 ```
 
 Подробное руководство см. в [docs/CUSTOM_ADAPTERS.md](docs/CUSTOM_ADAPTERS.md)
+
+### OpenAI-совместимый адаптер
+
+Для работы с локальными и облачными OpenAI-совместимыми API используйте встроенный `openai-compatible` адаптер. Он поддерживает:
+
+- **LM Studio** - локальный сервер для запуска LLM моделей
+- **LocalAI** - самостоятельно размещаемая альтернатива OpenAI
+- **Ollama** - в OpenAI-совместимом режиме
+- **Text Generation WebUI** (oobabooga) - с OpenAI API расширением
+- **Официальный OpenAI API** - для облачных моделей
+- Любые другие сервисы, реализующие OpenAI API спецификацию
+
+📖 **Быстрый старт:** [examples/openai-compatible-quickstart.md](examples/openai-compatible-quickstart.md)
+
+#### Пример конфигурации для LM Studio
+
+```yaml
+adapters:
+  - name: "lm-studio"
+    type: "openai-compatible"
+    baseUrl: "http://localhost:1234/v1"
+    defaultModel: "local-model"
+    timeout: 60000
+
+roles:
+  assistant:
+    adapter: "lm-studio"
+    model: "local-model"
+```
+
+#### Пример конфигурации для OpenAI API
+
+```yaml
+adapters:
+  - name: "openai"
+    type: "openai-compatible"
+    baseUrl: "https://api.openai.com/v1"
+    apiKey: "${OPENAI_API_KEY}"
+    defaultModel: "gpt-4"
+    timeout: 120000
+
+roles:
+  assistant:
+    adapter: "openai"
+    model: "gpt-4"
+```
+
+#### Параметры конфигурации
+
+- `baseUrl` - базовый URL API (например, `http://localhost:1234/v1`)
+- `apiKey` - API ключ для аутентификации (опционально, поддерживает переменные окружения `${VAR_NAME}`)
+- `defaultModel` - модель по умолчанию
+- `timeout` - таймаут запросов в миллисекундах
+- `headers` - дополнительные HTTP заголовки (опционально)
+
+Полные примеры см. в [examples/openai-compatible-config.yaml](examples/openai-compatible-config.yaml)
 
 ## Структура проекта
 
@@ -375,6 +432,7 @@ workflow-orchestrator/
 
 ### Разработка
 - 🔌 **[Создание пользовательских адаптеров](docs/CUSTOM_ADAPTERS.md)** - система плагинов
+- 🌐 **[OpenAI-совместимый адаптер](docs/OPENAI_COMPATIBLE_ADAPTER.md)** - работа с локальными и облачными API
 - 📝 **[DSL синтаксис](docs/DSL_SYNTAX.md)** - упрощенный язык для описания процессов
 - 🔒 **[Безопасность](docs/SECURITY.md)** - рекомендации по безопасности
 - ⚡ **[Оптимизация производительности](docs/PERFORMANCE_OPTIMIZATIONS.md)** - советы по оптимизации
