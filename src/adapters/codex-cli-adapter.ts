@@ -89,6 +89,21 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
     // Начинаем с базовой команды exec
     const args: string[] = ['exec'];
     
+    // Если указан resumeSession или resumeLast, формируем команду resume
+    if (codexRequest.resumeSession || codexRequest.resumeLast) {
+      args.push('resume');
+      
+      // Если указан ID сессии, добавляем его
+      if (codexRequest.resumeSession) {
+        args.push(codexRequest.resumeSession);
+      }
+      
+      // Если указан флаг --last, добавляем его
+      if (codexRequest.resumeLast) {
+        args.push('--last');
+      }
+    }
+    
     // Если указана модель, добавляем флаг -m
     if (codexRequest.model) {
       args.push('-m', codexRequest.model);

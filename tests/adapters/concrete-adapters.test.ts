@@ -662,6 +662,185 @@ Line 3
       expect(result).toContain('value');
     });
   });
+
+  // Unit-тесты для возобновления сессий
+  // Требования: 5.1, 5.3
+
+  describe('Возобновление сессий', () => {
+    it('должен формировать команду resume с ID сессии', () => {
+      // Требования: 5.1, 5.2
+      const adapter = new CodexCLIAdapter();
+      const sessionId = '12345-abcde-67890';
+      
+      const args = (adapter as any).prepareArguments({
+        prompt: 'Continue the conversation',
+        resumeSession: sessionId
+      });
+      
+      // Структура: ['exec', 'resume', sessionId, '-']
+      expect(args[0]).toBe('exec');
+      expect(args[1]).toBe('resume');
+      expect(args[2]).toBe(sessionId);
+      expect(args[args.length - 1]).toBe('-');
+    });
+
+    it('должен формировать команду resume с флагом --last', () => {
+      // Требования: 5.1, 5.3
+      const adapter = new CodexCLIAdapter();
+      
+      const args = (adapter as any).prepareArguments({
+        prompt: 'Continue the last conversation',
+        resumeLast: true
+      });
+      
+      // Структура: ['exec', 'resume', '--last', '-']
+      expect(args[0]).toBe('exec');
+      expect(args[1]).toBe('resume');
+      expect(args).toContain('--last');
+      expect(args[args.length - 1]).toBe('-');
+    });
+
+    it('должен комбинировать resume с ID и флагом --last', () => {
+      // Требования: 5.1, 5.2, 5.3
+      const adapter = new CodexCLIAdapter();
+      const sessionId = 'test-session-id';
+      
+      const args = (adapter as any).prepareArguments({
+        prompt: 'Continue',
+        resumeSession: sessionId,
+        resumeLast: true
+      });
+      
+      // Должны присутствовать и ID, и флаг --last
+      expect(args[1]).toBe('resume');
+      expect(args[2]).toBe(sessionId);
+      expect(args).toContain('--last');
+      expect(args[args.length - 1]).toBe('-');
+    });
+
+    it('должен комбинировать resume с другими флагами', () => {
+      // Требования: 5.1, 5.2, 5.4
+      const adapter = new CodexCLIAdapter();
+      const sessionId = 'session-123';
+      
+      const args = (adapter as any).prepareArguments({
+        prompt: 'Continue with model',
+        resumeSession: sessionId,
+        model: 'gpt-4',
+        fullAuto: true,
+        jsonOutput: true
+      });
+      
+      // Проверяем наличие команды resume
+      expect(args[1]).toBe('resume');
+      expect(args[2]).toBe(sessionId);
+      
+      // Проверяем наличие других флагов
+      expect(args).toContain('-m');
+      expect(args).toContain('gpt-4');
+      expect(args).toContain('--full-auto');
+      expect(args).toContain('--json');
+      
+      // Флаг '-' всегда последний
+      expect(args[args.length - 1]).toBe('-');
+    });
+
+    it('должен поддерживать передачу промпта при возобновлении', () => {
+      // Требования: 5.4
+      const adapter = new CodexCLIAdapter();
+      const sessionId = 'session-456';
+      const prompt = 'Additional message for resumed session';
+      
+      const args = (adapter as any).prepareArguments({
+        prompt,
+        resumeSession: sessionId
+      });
+      
+      // Команда resume должна быть на месте
+      expect(args[1]).toBe('resume');
+      expect(args[2]).toBe(sessionId);
+      
+      // Флаг '-' для передачи промпта через stdin
+      expect(args[args.length - 1]).toBe('-');
+    });
+
+    it('не должен добавлять resume если не указаны resumeSession и resumeLast', () => {
+      // Требования: 5.1
+      const adapter = new CodexCLIAdapter();
+      
+      const args = (adapter as any).prepareArguments({
+        prompt: 'Regular prompt without resume'
+      });
+      
+      // Команда resume не должна присутствовать
+      expect(args).not.toContain('resume');
+      
+      // Должна быть только базовая команда exec
+      expect(args[0]).toBe('exec');
+      expect(args[1]).not.toBe('resume');
+    });
+
+    it('должен обрабатывать различные форматы ID сессий', () => {
+      // Требования: 5.2
+      const adapter = new CodexCLIAdapter();
+      
+      // UUID формат
+      const uuidSession = '550e8400-e29b-41d4-a716-446655440000';
+      const argsUuid = (adapter as any).prepareArguments({
+        prompt: 'test',
+        resumeSession: uuidSession
+      });
+      expect(argsUuid[2]).toBe(uuidSession);
+      
+      // Короткий ID
+      const shortSession = 'abc123';
+      const argsShort = (adapter as any).prepareArguments({
+        prompt: 'test',
+        resumeSession: shortSession
+      });
+      expect(argsShort[2]).toBe(shortSession);
+      
+      // Длинный ID
+      const longSession = 'very-long-session-id-with-many-characters-12345678901234567890';
+      const argsLong = (adapter as any).prepareArguments({
+        prompt: 'test',
+        resumeSession: longSession
+      });
+      expect(argsLong[2]).toBe(longSession);
+    });
+
+    it('должен корректно позиционировать флаги при возобновлении', () => {
+      // Требования: 5.1, 5.2, 5.4
+      const adapter = new CodexCLIAdapter();
+      const sessionId = 'pos-test-session';
+      
+      const args = (adapter as any).prepareArguments({
+        prompt: 'test',
+        resumeSession: sessionId,
+        model: 'gpt-4',
+        workingDirectory: '/tmp',
+        profile: 'dev'
+      });
+      
+      // Порядок: ['exec', 'resume', sessionId, '-m', 'gpt-4', '--cd', '/tmp', '-p', 'dev', '-']
+      expect(args[0]).toBe('exec');
+      expect(args[1]).toBe('resume');
+      expect(args[2]).toBe(sessionId);
+      
+      // Флаги модели, директории и профиля должны идти после resume
+      const resumeIndex = args.indexOf('resume');
+      const modelIndex = args.indexOf('-m');
+      const cdIndex = args.indexOf('--cd');
+      const profileIndex = args.indexOf('-p');
+      
+      expect(modelIndex).toBeGreaterThan(resumeIndex);
+      expect(cdIndex).toBeGreaterThan(resumeIndex);
+      expect(profileIndex).toBeGreaterThan(resumeIndex);
+      
+      // Флаг '-' всегда последний
+      expect(args[args.length - 1]).toBe('-');
+    });
+  });
 });
 
 describe('Интеграция адаптеров с реестром', () => {

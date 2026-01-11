@@ -1198,4 +1198,370 @@ describe('Codex CLI Adapter Property Tests', () => {
       );
     });
   });
+
+  /**
+   * Feature: codex-cli-adapter, Property 6: Возобновление сессии с ID
+   * Validates: Requirements 5.2
+   * 
+   * Для любого запроса с указанным ID сессии, подготовленные аргументы должны 
+   * содержать команду `resume` и ID сессии.
+   */
+  describe('Property 6: Возобновление сессии с ID', () => {
+    test('должен формировать команду resume с ID сессии', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 100 }), // Промпт
+          fc.uuid(), // ID сессии (UUID)
+          (prompt, sessionId) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { 
+              prompt, 
+              resumeSession: sessionId 
+            };
+            
+            const args = adapter.testPrepareArguments(request);
+            
+            // Аргументы должны начинаться с 'exec'
+            expect(args[0]).toBe('exec');
+            
+            // Аргументы должны содержать команду 'resume'
+            expect(args[1]).toBe('resume');
+            
+            // Аргументы должны содержать ID сессии
+            expect(args[2]).toBe(sessionId);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать различные форматы ID сессий', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 100 }), // Промпт
+          fc.oneof(
+            fc.uuid(), // UUID формат
+            fc.stringMatching(/^[a-zA-Z0-9-_]+$/), // Буквенно-цифровой ID
+            fc.stringMatching(/^[0-9]+$/), // Числовой ID
+            fc.string({ minLength: 8, maxLength: 64 }) // Произвольный ID
+          ),
+          (prompt, sessionId) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { 
+              prompt, 
+              resumeSession: sessionId 
+            };
+            
+            const args = adapter.testPrepareArguments(request);
+            
+            // Команда resume должна быть на второй позиции
+            expect(args[1]).toBe('resume');
+            
+            // ID сессии должен быть сохранен без изменений
+            expect(args[2]).toBe(sessionId);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен добавлять флаг - для промпта после ID сессии', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 100 }), // Промпт
+          fc.uuid(), // ID сессии
+          (prompt, sessionId) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { 
+              prompt, 
+              resumeSession: sessionId 
+            };
+            
+            const args = adapter.testPrepareArguments(request);
+            
+            // Флаг '-' должен быть в конце для чтения промпта из stdin
+            expect(args[args.length - 1]).toBe('-');
+            
+            // Структура: ['exec', 'resume', sessionId, ..., '-']
+            expect(args.length).toBeGreaterThanOrEqual(4);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен комбинировать resume с другими флагами', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 100 }), // Промпт
+          fc.uuid(), // ID сессии
+          fc.record({
+            model: fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
+            fullAuto: fc.option(fc.boolean(), { nil: undefined }),
+            jsonOutput: fc.option(fc.boolean(), { nil: undefined })
+          }),
+          (prompt, sessionId, options) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { 
+              prompt, 
+              resumeSession: sessionId,
+              ...options
+            };
+            
+            const args = adapter.testPrepareArguments(request);
+            
+            // Команда resume должна быть на второй позиции
+            expect(args[1]).toBe('resume');
+            expect(args[2]).toBe(sessionId);
+            
+            // Проверяем наличие других флагов
+            if (options.model) {
+              expect(args).toContain('-m');
+              const modelIndex = args.indexOf('-m');
+              expect(args[modelIndex + 1]).toBe(options.model);
+            }
+            
+            if (options.fullAuto) {
+              expect(args).toContain('--full-auto');
+            }
+            
+            if (options.jsonOutput) {
+              expect(args).toContain('--json');
+            }
+            
+            // Флаг '-' всегда последний
+            expect(args[args.length - 1]).toBe('-');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('не должен добавлять resume если resumeSession не указан', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 100 }), // Промпт
+          (prompt) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { prompt };
+            
+            const args = adapter.testPrepareArguments(request);
+            
+            // Команда resume не должна присутствовать
+            expect(args).not.toContain('resume');
+            
+            // Должна быть только базовая команда exec
+            expect(args[0]).toBe('exec');
+            expect(args[1]).not.toBe('resume');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
+
+  /**
+   * Feature: codex-cli-adapter, Property 7: Передача промпта при возобновлении
+   * Validates: Requirements 5.4
+   * 
+   * Для любого запроса на возобновление сессии с дополнительным промптом, 
+   * промпт должен быть передан в аргументах команды.
+   */
+  describe('Property 7: Передача промпта при возобновлении', () => {
+    test('должен передавать промпт через stdin при возобновлении с ID', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }), // Промпт
+          fc.uuid(), // ID сессии
+          (prompt, sessionId) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { 
+              prompt, 
+              resumeSession: sessionId 
+            };
+            
+            const args = adapter.testPrepareArguments(request);
+            
+            // Структура: ['exec', 'resume', sessionId, ..., '-']
+            expect(args[0]).toBe('exec');
+            expect(args[1]).toBe('resume');
+            expect(args[2]).toBe(sessionId);
+            
+            // Флаг '-' должен быть в конце для передачи промпта через stdin
+            expect(args[args.length - 1]).toBe('-');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен передавать промпт через stdin при возобновлении последней сессии', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }), // Промпт
+          (prompt) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { 
+              prompt, 
+              resumeLast: true 
+            };
+            
+            const args = adapter.testPrepareArguments(request);
+            
+            // Структура: ['exec', 'resume', '--last', ..., '-']
+            expect(args[0]).toBe('exec');
+            expect(args[1]).toBe('resume');
+            expect(args).toContain('--last');
+            
+            // Флаг '-' должен быть в конце для передачи промпта через stdin
+            expect(args[args.length - 1]).toBe('-');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать различные типы промптов при возобновлении', () => {
+      fc.assert(
+        fc.property(
+          fc.oneof(
+            fc.string({ minLength: 1, maxLength: 100 }), // Обычная строка
+            fc.stringMatching(/.*\n.*/), // Многострочная строка
+            fc.stringMatching(/.*['"\\].*/), // Строка со спецсимволами
+            fc.unicodeString({ minLength: 1, maxLength: 100 }) // Unicode строка
+          ),
+          fc.uuid(), // ID сессии
+          (prompt, sessionId) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { 
+              prompt, 
+              resumeSession: sessionId 
+            };
+            
+            const args = adapter.testPrepareArguments(request);
+            
+            // Команда resume должна быть на месте
+            expect(args[1]).toBe('resume');
+            expect(args[2]).toBe(sessionId);
+            
+            // Флаг '-' всегда в конце, независимо от типа промпта
+            expect(args[args.length - 1]).toBe('-');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен комбинировать промпт с другими флагами при возобновлении', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }), // Промпт
+          fc.uuid(), // ID сессии
+          fc.record({
+            model: fc.option(fc.string({ minLength: 1, maxLength: 50 }), { nil: undefined }),
+            fullAuto: fc.option(fc.boolean(), { nil: undefined }),
+            jsonOutput: fc.option(fc.boolean(), { nil: undefined }),
+            workingDirectory: fc.option(fc.string({ minLength: 1, maxLength: 100 }), { nil: undefined })
+          }),
+          (prompt, sessionId, options) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { 
+              prompt, 
+              resumeSession: sessionId,
+              ...options
+            };
+            
+            const args = adapter.testPrepareArguments(request);
+            
+            // Команда resume должна быть на месте
+            expect(args[1]).toBe('resume');
+            expect(args[2]).toBe(sessionId);
+            
+            // Проверяем наличие других флагов
+            if (options.model) {
+              expect(args).toContain('-m');
+            }
+            
+            if (options.fullAuto) {
+              expect(args).toContain('--full-auto');
+            }
+            
+            if (options.jsonOutput) {
+              expect(args).toContain('--json');
+            }
+            
+            if (options.workingDirectory) {
+              expect(args).toContain('--cd');
+            }
+            
+            // Флаг '-' всегда последний для передачи промпта
+            expect(args[args.length - 1]).toBe('-');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен поддерживать возобновление с ID и флагом --last одновременно', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 200 }), // Промпт
+          fc.uuid(), // ID сессии
+          (prompt, sessionId) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { 
+              prompt, 
+              resumeSession: sessionId,
+              resumeLast: true
+            };
+            
+            const args = adapter.testPrepareArguments(request);
+            
+            // Команда resume должна быть на месте
+            expect(args[1]).toBe('resume');
+            
+            // ID сессии должен быть указан
+            expect(args[2]).toBe(sessionId);
+            
+            // Флаг --last также должен присутствовать
+            expect(args).toContain('--last');
+            
+            // Флаг '-' всегда последний
+            expect(args[args.length - 1]).toBe('-');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать пустые и специальные промпты при возобновлении', () => {
+      fc.assert(
+        fc.property(
+          fc.oneof(
+            fc.constant(''), // Пустая строка
+            fc.constant(' '), // Пробел
+            fc.constant('\n'), // Перевод строки
+            fc.constant('\t'), // Табуляция
+            fc.constant('   \n\t   ') // Смесь пробельных символов
+          ),
+          fc.uuid(), // ID сессии
+          (prompt, sessionId) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { 
+              prompt, 
+              resumeSession: sessionId 
+            };
+            
+            const args = adapter.testPrepareArguments(request);
+            
+            // Даже для пустых промптов структура должна быть корректной
+            expect(args[1]).toBe('resume');
+            expect(args[2]).toBe(sessionId);
+            expect(args[args.length - 1]).toBe('-');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
 });
