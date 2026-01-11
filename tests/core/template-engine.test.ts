@@ -954,4 +954,156 @@ describe('TemplateEngine Property-Based Tests', () => {
       { numRuns: 100 }
     );
   });
+
+  /**
+   * Feature: fix-context-passing, Property 5: Обратная совместимость
+   * 
+   * Свойство: Для любого существующего шаблона, использующего синтаксис ${variable}, 
+   * ${artifact:path}, или ${if:condition:then:else}, рендеринг должен работать 
+   * без изменений после обновления системы.
+   * 
+   * Validates: Requirements 6.1, 6.2, 6.3, 6.4
+   */
+  it('Property 5: Обратная совместимость', () => {
+    fc.assert(
+      fc.property(
+        // Генератор для простых переменных ${variable}
+        fc.record({
+          simpleVars: fc.dictionary(
+            fc.string({ minLength: 1, maxLength: 10 })
+              .filter(s => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(s))
+              .filter(s => !['__proto__', 'constructor', 'prototype'].includes(s)),
+            fc.string({ minLength: 0, maxLength: 30 })
+              .filter(s => !s.includes('${') && !s.includes('}')),
+            { minKeys: 1, maxKeys: 5 }
+          ),
+          // Генератор для артефактов ${artifact:path}
+          artifacts: fc.array(
+            fc.record({
+              path: fc.string({ minLength: 1, maxLength: 20 })
+                .filter(s => !s.includes('${') && !s.includes('}') && !s.includes('{') && !s.includes('$') && !s.includes(':') && s.trim().length > 0),
+              content: fc.string({ minLength: 0, maxLength: 30 })
+                .filter(s => !s.includes('${') && !s.includes('}') && !s.includes('{') && !s.includes('$'))
+            }),
+            { minLength: 0, maxLength: 3 }
+          ),
+          // Генератор для условных блоков ${if:condition:then:else}
+          conditionals: fc.array(
+            fc.record({
+              conditionVar: fc.string({ minLength: 1, maxLength: 10 })
+                .filter(s => /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(s))
+                .filter(s => !['__proto__', 'constructor', 'prototype'].includes(s)),
+              conditionValue: fc.boolean(),
+              thenText: fc.string({ minLength: 1, maxLength: 15 })
+                .filter(s => !s.includes(':') && !s.includes('}') && !s.includes('{') && !s.includes('$') && s.trim().length > 0),
+              elseText: fc.string({ minLength: 1, maxLength: 15 })
+                .filter(s => !s.includes(':') && !s.includes('}') && !s.includes('{') && !s.includes('$') && s.trim().length > 0)
+            }),
+            { minLength: 0, maxLength: 3 }
+          )
+        }),
+        (testData) => {
+          // Очищаем кэш перед каждой итерацией
+          engine.clearArtifactCache();
+          
+          const { simpleVars, artifacts, conditionals } = testData;
+          
+          // Пропускаем если нет данных для тестирования
+          if (Object.keys(simpleVars).length === 0 && artifacts.length === 0 && conditionals.length === 0) {
+            return;
+          }
+          
+          // Создаем уникальные артефакты
+          const uniqueArtifacts = new Map<string, string>();
+          for (const artifact of artifacts) {
+            const trimmedPath = artifact.path.trim();
+            if (!uniqueArtifacts.has(trimmedPath)) {
+              uniqueArtifacts.set(trimmedPath, artifact.content);
+            }
+          }
+          
+          // Создаем уникальные условные блоки
+          const uniqueConditionals = new Map<string, { value: boolean; thenText: string; elseText: string; template: string }>();
+          for (const cond of conditionals) {
+            // Пропускаем если then и else одинаковые
+            if (cond.thenText === cond.elseText) {
+              continue;
+            }
+            
+            // Пропускаем если переменная уже используется
+            if (uniqueConditionals.has(cond.conditionVar)) {
+              continue;
+            }
+            
+            // Создаем уникальный шаблон для этого условного блока
+            const template = `\${if:${cond.conditionVar}:${cond.thenText}:${cond.elseText}}`;
+            
+            uniqueConditionals.set(cond.conditionVar, {
+              value: cond.conditionValue,
+              thenText: cond.thenText,
+              elseText: cond.elseText,
+              template
+            });
+          }
+          
+          // Строим шаблон со старым синтаксисом
+          const templateParts: string[] = [];
+          const expectedResults: string[] = [];
+          
+          // Получаем список переменных, используемых в условных блоках
+          const conditionalVars = new Set(uniqueConditionals.keys());
+          
+          // 1. Простые переменные: ${variable} (исключаем переменные из условных блоков)
+          for (const [varName, value] of Object.entries(simpleVars)) {
+            if (!conditionalVars.has(varName)) {
+              templateParts.push(`\${${varName}}`);
+              expectedResults.push(String(value));
+            }
+          }
+          
+          // 2. Прямые пути к артефактам: ${artifact:path}
+          for (const [path, content] of uniqueArtifacts) {
+            templateParts.push(`\${artifact:${path}}`);
+            expectedResults.push(content);
+          }
+          
+          // 3. Условные блоки: ${if:condition:then:else}
+          for (const [, { value, thenText, elseText, template }] of uniqueConditionals) {
+            templateParts.push(template);
+            expectedResults.push(value ? thenText : elseText);
+          }
+          
+          const template = templateParts.join(' ');
+          const expectedResult = expectedResults.join(' ');
+          
+          // Создаем контекст с переменными
+          const variables: Record<string, unknown> = { ...simpleVars };
+          for (const [condVar, { value }] of uniqueConditionals) {
+            variables[condVar] = value;
+          }
+          
+          // Создаем функцию загрузки артефактов
+          const artifactLoader = (path: string) => {
+            const content = uniqueArtifacts.get(path);
+            if (content === undefined) {
+              throw new Error(`Artifact not found: ${path}`);
+            }
+            return content;
+          };
+          
+          const context = createTemplateContext(variables, artifactLoader);
+          
+          // Рендерим шаблон
+          const result = engine.render(template, context);
+          
+          // Проверяем, что результат совпадает с ожидаемым
+          expect(result).toBe(expectedResult);
+          
+          // Проверяем, что в результате нет неразрешенных переменных
+          expect(result).not.toMatch(/\$\{[^}]+\}/);
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
 });
