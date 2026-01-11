@@ -8,19 +8,19 @@
 ${user_request}
 
 ${if:web_research:### Результаты веб-исследования
-${artifact:${web_research_file}}:}
+${artifact:${web_research_file}:web_research}:}
 
 ### Вопросы архитектора
-${artifact:${architect_questions_file}}
+${artifact:${architect_questions_file}:architect_questions}
 
 ### Вопросы второго пилота
-${artifact:${copilot_questions_file}}
+${artifact:${copilot_questions_file}:copilot_questions}
 
 ### Финальные вопросы
-${artifact:${final_questions_file}}
+${artifact:${final_questions_file}:final_questions}
 
 ### Ответы пользователя
-${artifact:${user_answers_file}}
+${artifact:${user_answers_file}:user_answers}
 
 ## Задача
 

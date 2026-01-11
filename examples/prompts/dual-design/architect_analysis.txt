@@ -4,7 +4,7 @@
 
 ## Вопросы второго пилота
 
-${copilot_questions}
+${artifact:${copilot_questions_file}:copilot_questions}
 
 ## Задача
 

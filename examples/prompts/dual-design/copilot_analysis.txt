@@ -4,7 +4,7 @@
 
 ## Вопросы архитектора
 
-${architect_questions}
+${artifact:${architect_questions_file}:architect_questions}
 
 ## Задача
 
