@@ -121,7 +121,7 @@
   - **Свойство 10: Адаптер устойчив к неподдерживаемым параметрам**
   - **Validates: Requirements 6.6**
 
-- [ ] 10. Интеграция с AdapterRegistry
+- [x] 10. Интеграция с AdapterRegistry
   - Экспортировать класс из `src/adapters/index.ts`
   - Обновить `AdapterRegistry` для поддержки типа 'openai-compatible'
   - Добавить фабричный метод для создания адаптера из конфигурации
