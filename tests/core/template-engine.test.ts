@@ -75,7 +75,9 @@ describe('TemplateEngine Unit Tests', () => {
       try {
         engine.render(template, context);
       } catch (error: any) {
-        expect(error.message).toContain('Файл не найден');
+        // Проверяем, что это ошибка загрузки артефакта
+        expect(error.code).toBe('ARTIFACT_LOAD_ERROR');
+        expect(error.message).toContain('Не удалось загрузить артефакт');
         expect(error.message).toContain(nonexistentPath);
       }
     });
@@ -130,6 +132,151 @@ describe('TemplateEngine Unit Tests', () => {
       
       const result = engine.render(template, context);
       expect(result).toBe('<empty_tag>\n\n</empty_tag>');
+    });
+  });
+  
+  describe('Кэширование артефактов', () => {
+    it('должен кэшировать артефакт при повторной загрузке', () => {
+      // Создаем тестовый файл
+      const testFilePath = path.join(tempDir, 'cached-artifact.txt');
+      const testContent = 'Содержимое для кэширования';
+      fs.writeFileSync(testFilePath, testContent, 'utf-8');
+      
+      let loadCount = 0;
+      const artifactLoader = (filePath: string) => {
+        loadCount++;
+        return fs.readFileSync(filePath, 'utf-8');
+      };
+      
+      // Очищаем счетчики и кэш
+      engine.resetReadCounters();
+      engine.clearArtifactCache();
+      
+      const template = '${artifact:${file_path}} ${artifact:${file_path}}';
+      const context = createTemplateContext(
+        { file_path: testFilePath },
+        artifactLoader
+      );
+      
+      const result = engine.render(template, context);
+      
+      // Проверяем, что содержимое загружено дважды в результат
+      expect(result).toBe(`${testContent} ${testContent}`);
+      
+      // Проверяем, что файл был прочитан только один раз (второй раз из кэша)
+      expect(loadCount).toBe(1);
+      
+      // Проверяем счетчики
+      const counters = engine.getReadCounters();
+      expect(counters.fileReads).toBe(1); // Один раз из файла
+      expect(counters.cacheHits).toBe(1); // Один раз из кэша
+      expect(counters.cacheMisses).toBe(1); // Один промах (первая загрузка)
+    });
+    
+    it('должен истекать кэш после TTL', async () => {
+      // Создаем тестовый файл
+      const testFilePath = path.join(tempDir, 'expiring-artifact.txt');
+      fs.writeFileSync(testFilePath, 'Исходное содержимое', 'utf-8');
+      
+      let loadCount = 0;
+      const artifactLoader = (filePath: string) => {
+        loadCount++;
+        return fs.readFileSync(filePath, 'utf-8');
+      };
+      
+      // Очищаем счетчики и кэш
+      engine.resetReadCounters();
+      engine.clearArtifactCache();
+      
+      const template = '${artifact:${file_path}}';
+      const context = createTemplateContext(
+        { file_path: testFilePath },
+        artifactLoader
+      );
+      
+      // Первая загрузка
+      const result1 = engine.render(template, context);
+      expect(result1).toBe('Исходное содержимое');
+      expect(loadCount).toBe(1);
+      
+      // Вторая загрузка сразу (должна быть из кэша)
+      const result2 = engine.render(template, context);
+      expect(result2).toBe('Исходное содержимое');
+      expect(loadCount).toBe(1); // Не увеличилось
+      
+      // Проверяем счетчики после кэширования
+      let counters = engine.getReadCounters();
+      expect(counters.cacheHits).toBe(1);
+      expect(counters.cacheMisses).toBe(1);
+      expect(counters.fileReads).toBe(1);
+      
+      // Изменяем файл
+      fs.writeFileSync(testFilePath, 'Обновленное содержимое', 'utf-8');
+      
+      // Третья загрузка сразу (все еще из кэша, файл не перечитывается)
+      const result3 = engine.render(template, context);
+      expect(result3).toBe('Исходное содержимое'); // Старое содержимое из кэша
+      expect(loadCount).toBe(1);
+      
+      // Очищаем кэш вручную (имитируем истечение TTL)
+      engine.clearArtifactCache();
+      
+      // Четвертая загрузка после очистки кэша
+      const result4 = engine.render(template, context);
+      expect(result4).toBe('Обновленное содержимое'); // Новое содержимое
+      expect(loadCount).toBe(2); // Увеличилось
+      
+      // Проверяем финальные счетчики
+      counters = engine.getReadCounters();
+      expect(counters.fileReads).toBe(2); // Два чтения из файла
+      expect(counters.cacheHits).toBe(2); // Два попадания в кэш
+      expect(counters.cacheMisses).toBe(2); // Два промаха
+    });
+    
+    it('должен корректно отслеживать счетчики операций чтения', () => {
+      // Создаем несколько тестовых файлов
+      const file1 = path.join(tempDir, 'file1.txt');
+      const file2 = path.join(tempDir, 'file2.txt');
+      const file3 = path.join(tempDir, 'file3.txt');
+      
+      fs.writeFileSync(file1, 'Содержимое 1', 'utf-8');
+      fs.writeFileSync(file2, 'Содержимое 2', 'utf-8');
+      fs.writeFileSync(file3, 'Содержимое 3', 'utf-8');
+      
+      const artifactLoader = (filePath: string) => {
+        return fs.readFileSync(filePath, 'utf-8');
+      };
+      
+      // Очищаем счетчики и кэш
+      engine.resetReadCounters();
+      engine.clearArtifactCache();
+      
+      // Загружаем file1 дважды, file2 трижды, file3 один раз
+      const template = '${artifact:${f1}} ${artifact:${f1}} ${artifact:${f2}} ${artifact:${f2}} ${artifact:${f2}} ${artifact:${f3}}';
+      const context = createTemplateContext(
+        { f1: file1, f2: file2, f3: file3 },
+        artifactLoader
+      );
+      
+      engine.render(template, context);
+      
+      const counters = engine.getReadCounters();
+      
+      // Должно быть 3 чтения из файлов (по одному для каждого уникального файла)
+      expect(counters.fileReads).toBe(3);
+      
+      // Должно быть 3 промаха кэша (первая загрузка каждого файла)
+      expect(counters.cacheMisses).toBe(3);
+      
+      // Должно быть 3 попадания в кэш (file1: 1, file2: 2, file3: 0)
+      expect(counters.cacheHits).toBe(3);
+      
+      // Сбрасываем счетчики
+      engine.resetReadCounters();
+      const resetCounters = engine.getReadCounters();
+      expect(resetCounters.fileReads).toBe(0);
+      expect(resetCounters.cacheHits).toBe(0);
+      expect(resetCounters.cacheMisses).toBe(0);
     });
   });
 });
@@ -422,6 +569,92 @@ describe('TemplateEngine Property-Based Tests', () => {
           for (const { content } of uniqueArtifacts.values()) {
             expect(result).toContain(content);
           }
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Feature: fix-context-passing, Property 3: Кэширование артефактов
+   * 
+   * Свойство: Для любого артефакта, загруженного из файла, повторная загрузка 
+   * в течение времени жизни кэша должна вернуть закэшированное содержимое без 
+   * повторного чтения файла.
+   * 
+   * Validates: Requirements 3.2, 3.3
+   */
+  it('Property 3: Кэширование артефактов', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            path: fc.string({ minLength: 1, maxLength: 20 })
+              .filter(s => !s.includes('${') && !s.includes('}') && !s.includes('{') && !s.includes(':') && s.trim().length > 0),
+            content: fc.string({ minLength: 0, maxLength: 50 }),
+            repeatCount: fc.integer({ min: 1, max: 5 })
+          }),
+          { minLength: 1, maxLength: 5 }
+        ),
+        (artifacts) => {
+          // Очищаем кэш и счетчики перед каждой итерацией
+          engine.clearArtifactCache();
+          engine.resetReadCounters();
+          
+          // Создаем уникальные артефакты
+          const uniqueArtifacts = new Map<string, { content: string; repeatCount: number }>();
+          for (const artifact of artifacts) {
+            const trimmedPath = artifact.path.trim();
+            if (!uniqueArtifacts.has(trimmedPath)) {
+              uniqueArtifacts.set(trimmedPath, {
+                content: artifact.content,
+                repeatCount: artifact.repeatCount
+              });
+            }
+          }
+          
+          // Счетчик вызовов загрузчика для каждого пути
+          const loadCounts = new Map<string, number>();
+          
+          // Создаем функцию загрузки артефактов
+          const artifactLoader = (path: string) => {
+            loadCounts.set(path, (loadCounts.get(path) || 0) + 1);
+            const artifact = uniqueArtifacts.get(path);
+            if (!artifact) {
+              throw new Error(`Artifact not found: ${path}`);
+            }
+            return artifact.content;
+          };
+          
+          const context = createTemplateContext({}, artifactLoader);
+          
+          // Загружаем каждый артефакт несколько раз
+          for (const [path, { content, repeatCount }] of uniqueArtifacts) {
+            for (let i = 0; i < repeatCount; i++) {
+              const template = `\${artifact:${path}}`;
+              const result = engine.render(template, context);
+              
+              // Проверяем, что содержимое корректно
+              expect(result).toBe(content);
+            }
+            
+            // Проверяем, что файл был загружен только один раз (остальные из кэша)
+            expect(loadCounts.get(path)).toBe(1);
+          }
+          
+          // Проверяем счетчики
+          const counters = engine.getReadCounters();
+          
+          // Количество чтений из файла должно равняться количеству уникальных артефактов
+          expect(counters.fileReads).toBe(uniqueArtifacts.size);
+          
+          // Количество промахов кэша должно равняться количеству уникальных артефактов
+          expect(counters.cacheMisses).toBe(uniqueArtifacts.size);
+          
+          // Количество попаданий в кэш = общее количество загрузок - количество промахов
+          const totalLoads = Array.from(uniqueArtifacts.values())
+            .reduce((sum, { repeatCount }) => sum + repeatCount, 0);
+          expect(counters.cacheHits).toBe(totalLoads - uniqueArtifacts.size);
         }
       ),
       { numRuns: 100 }

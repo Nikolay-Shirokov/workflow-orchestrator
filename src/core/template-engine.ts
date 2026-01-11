@@ -107,6 +107,15 @@ export class DefaultTemplateEngine implements TemplateEngine {
   private readonly ARTIFACT_CACHE_TTL = 5 * 60 * 1000;
   
   /**
+   * Счетчики операций чтения для мониторинга
+   */
+  private readCounters = {
+    cacheHits: 0,      // Количество попаданий в кэш
+    cacheMisses: 0,    // Количество промахов кэша
+    fileReads: 0       // Количество чтений из файла
+  };
+  
+  /**
    * Логгер (опциональный)
    */
   private logger?: Logger;
@@ -456,26 +465,42 @@ export class DefaultTemplateEngine implements TemplateEngine {
   private loadArtifactContent(artifactPath: string, context: TemplateContext): string {
     // Проверяем кэш артефактов
     const cached = this.artifactCache.get(artifactPath);
-    const now = Date.now();
     
-    if (cached && (now - cached.timestamp) < this.ARTIFACT_CACHE_TTL) {
+    if (cached && !this.isCacheExpired(cached.timestamp)) {
       // Возвращаем закэшированное содержимое
+      this.readCounters.cacheHits++;
       this.logger?.debug('Артефакт загружен из кэша', { 
         path: artifactPath,
         contentLength: cached.content.length,
-        cacheAge: now - cached.timestamp
+        cacheAge: Date.now() - cached.timestamp,
+        cacheHits: this.readCounters.cacheHits
       });
       return cached.content;
     }
     
+    // Кэш промах или истек
+    if (cached) {
+      this.logger?.debug('Кэш артефакта истек', { 
+        path: artifactPath,
+        cacheAge: Date.now() - cached.timestamp
+      });
+    }
+    
+    this.readCounters.cacheMisses++;
+    this.readCounters.fileReads++;
+    
     // Загружаем артефакт
-    this.logger?.debug('Загрузка артефакта из файла', { path: artifactPath });
+    this.logger?.debug('Загрузка артефакта из файла', { 
+      path: artifactPath,
+      cacheMisses: this.readCounters.cacheMisses,
+      fileReads: this.readCounters.fileReads
+    });
     const content = context.loadArtifact(artifactPath);
     
     // Кэшируем содержимое
     this.artifactCache.set(artifactPath, {
       content,
-      timestamp: now
+      timestamp: Date.now()
     });
     
     this.logger?.debug('Артефакт загружен и закэширован', { 
@@ -484,6 +509,33 @@ export class DefaultTemplateEngine implements TemplateEngine {
     });
     
     return content;
+  }
+  
+  /**
+   * Проверка актуальности кэша
+   * @param timestamp - Временная метка создания записи в кэше
+   * @returns true если кэш истек, false если актуален
+   */
+  private isCacheExpired(timestamp: number): boolean {
+    const now = Date.now();
+    const age = now - timestamp;
+    return age >= this.ARTIFACT_CACHE_TTL;
+  }
+  
+  /**
+   * Получение счетчиков операций чтения для мониторинга
+   */
+  getReadCounters(): { cacheHits: number; cacheMisses: number; fileReads: number } {
+    return { ...this.readCounters };
+  }
+  
+  /**
+   * Сброс счетчиков операций чтения
+   */
+  resetReadCounters(): void {
+    this.readCounters.cacheHits = 0;
+    this.readCounters.cacheMisses = 0;
+    this.readCounters.fileReads = 0;
   }
   
   /**
