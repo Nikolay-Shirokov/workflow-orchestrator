@@ -1726,6 +1726,143 @@ describe('OpenAI Compatible Adapter Property Tests', () => {
   });
 
   /**
+   * Тесты для проверки доступности API
+   * Validates: Requirements 4.1, 4.2, 4.3, 4.4, 4.5
+   */
+  describe('Проверка доступности (isAvailable)', () => {
+    test('должен возвращать true при успешном ответе от /models', async () => {
+      // Создаем адаптер с тестовым URL
+      const adapter = new OpenAICompatibleAdapter({
+        name: 'test-adapter',
+        baseUrl: 'http://localhost:1234/v1'
+      });
+      
+      // Мокируем fetch для успешного ответа
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 200,
+        statusText: 'OK',
+        headers: new Map(),
+        text: async () => JSON.stringify({ data: [] })
+      });
+      
+      const result = await adapter.isAvailable();
+      
+      expect(result).toBe(true);
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://localhost:1234/v1/models',
+        expect.objectContaining({
+          method: 'GET'
+        })
+      );
+    });
+
+    test('должен возвращать false при ошибке сети', async () => {
+      const adapter = new OpenAICompatibleAdapter({
+        name: 'test-adapter',
+        baseUrl: 'http://localhost:1234/v1'
+      });
+      
+      // Мокируем fetch для ошибки сети
+      global.fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+      
+      const result = await adapter.isAvailable();
+      
+      expect(result).toBe(false);
+    });
+
+    test('должен возвращать false при не-200 статусе', async () => {
+      const adapter = new OpenAICompatibleAdapter({
+        name: 'test-adapter',
+        baseUrl: 'http://localhost:1234/v1'
+      });
+      
+      // Мокируем fetch для ошибки 404
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 404,
+        statusText: 'Not Found',
+        headers: new Map(),
+        text: async () => 'Not Found'
+      });
+      
+      const result = await adapter.isAvailable();
+      
+      expect(result).toBe(false);
+    });
+
+    test('должен использовать короткий таймаут (5 секунд)', async () => {
+      const adapter = new OpenAICompatibleAdapter({
+        name: 'test-adapter',
+        baseUrl: 'http://localhost:1234/v1'
+      });
+      
+      // Мокируем fetch для проверки таймаута
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 200,
+        statusText: 'OK',
+        headers: new Map(),
+        text: async () => JSON.stringify({ data: [] })
+      });
+      
+      await adapter.isAvailable();
+      
+      // Проверяем, что был передан signal с таймаутом
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          method: 'GET'
+        })
+      );
+    });
+
+    test('должен логировать причину недоступности при ошибке', async () => {
+      const adapter = new OpenAICompatibleAdapter({
+        name: 'test-adapter',
+        baseUrl: 'http://localhost:1234/v1'
+      });
+      
+      // Мокируем console.warn
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      
+      // Мокируем fetch для ошибки
+      global.fetch = jest.fn().mockRejectedValue(new Error('Connection refused'));
+      
+      await adapter.isAvailable();
+      
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Ошибка проверки доступности')
+      );
+      
+      consoleWarnSpy.mockRestore();
+    });
+
+    test('должен логировать причину недоступности при не-200 статусе', async () => {
+      const adapter = new OpenAICompatibleAdapter({
+        name: 'test-adapter',
+        baseUrl: 'http://localhost:1234/v1'
+      });
+      
+      // Мокируем console.warn
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      
+      // Мокируем fetch для не-200 статуса
+      global.fetch = jest.fn().mockResolvedValue({
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: new Map(),
+        text: async () => 'Service Unavailable'
+      });
+      
+      await adapter.isAvailable();
+      
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('API недоступен')
+      );
+      
+      consoleWarnSpy.mockRestore();
+    });
+  });
+
+  /**
    * Тесты для обработки ошибок
    * Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7
    * 
