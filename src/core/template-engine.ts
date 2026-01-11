@@ -16,6 +16,18 @@ import {
   ValidationWarning,
   WorkflowErrorClass
 } from './types.js';
+import { Logger } from './logger.js';
+
+/**
+ * Специальная ошибка для отложенного разрешения переменных
+ * Используется когда переменная еще не готова к разрешению (например, содержит вложенные переменные)
+ */
+class DeferredResolutionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DeferredResolutionError';
+  }
+}
 
 /**
  * Реализация движка шаблонов
@@ -27,8 +39,57 @@ export class DefaultTemplateEngine implements TemplateEngine {
    * - ${variable} - простая переменная
    * - ${artifact:path} - загрузка артефакта
    * - ${if:condition:then:else} - условный блок
+   * 
+   * Примечание: Это выражение используется для начального поиска переменных.
+   * Для вложенных переменных используется специальная логика парсинга.
    */
   private readonly VARIABLE_PATTERN = /\$\{([^}]+)\}/g;
+  
+  /**
+   * Извлечение переменных с учетом вложенных скобок
+   * Возвращает массив объектов { match: полное совпадение, expression: выражение внутри скобок, start: позиция начала, end: позиция конца }
+   */
+  private extractVariablesWithNesting(template: string): Array<{ match: string; expression: string; start: number; end: number }> {
+    const variables: Array<{ match: string; expression: string; start: number; end: number }> = [];
+    let i = 0;
+    
+    while (i < template.length) {
+      // Ищем начало переменной
+      if (template[i] === '$' && template[i + 1] === '{') {
+        const start = i;
+        i += 2; // Пропускаем ${
+        
+        // Подсчитываем вложенные скобки
+        let depth = 1;
+        let expression = '';
+        
+        while (i < template.length && depth > 0) {
+          if (template[i] === '{') {
+            depth++;
+            expression += template[i];
+          } else if (template[i] === '}') {
+            depth--;
+            if (depth > 0) {
+              expression += template[i];
+            }
+          } else {
+            expression += template[i];
+          }
+          i++;
+        }
+        
+        if (depth === 0) {
+          // Нашли полное выражение
+          const match = template.substring(start, i);
+          variables.push({ match, expression, start, end: i });
+        }
+      } else {
+        i++;
+      }
+    }
+    
+    return variables;
+  }
   
   /**
    * Кэш загруженных шаблонов (ленивая загрузка)
@@ -46,10 +107,28 @@ export class DefaultTemplateEngine implements TemplateEngine {
   private readonly ARTIFACT_CACHE_TTL = 5 * 60 * 1000;
   
   /**
+   * Логгер (опциональный)
+   */
+  private logger?: Logger;
+  
+  /**
+   * Конструктор
+   * @param logger - Опциональный логгер для отладки
+   */
+  constructor(logger?: Logger) {
+    this.logger = logger;
+  }
+  
+  /**
    * Рендеринг шаблона с подстановкой переменных
    * Поддерживает вложенные переменные через несколько проходов
    */
   render(template: string, context: TemplateContext): string {
+    this.logger?.debug('Начало рендеринга шаблона', { 
+      templateLength: template.length,
+      availableVariables: Object.keys(context.variables)
+    });
+    
     let result = template;
     let previousResult = '';
     const maxIterations = 10; // Максимум 10 уровней вложенности
@@ -59,27 +138,62 @@ export class DefaultTemplateEngine implements TemplateEngine {
     while (result !== previousResult && iteration < maxIterations) {
       previousResult = result;
       
-      // Обрабатываем все переменные в шаблоне
-      result = result.replace(this.VARIABLE_PATTERN, (match, expression) => {
-        try {
-          return this.evaluateExpression(expression, context);
-        } catch (error) {
-          // Если переменная не может быть разрешена, оставляем как есть
-          // Это позволит разрешить её на следующей итерации
-          return match;
-        }
+      this.logger?.debug(`Итерация рендеринга ${iteration + 1}`, {
+        hasUnresolvedVariables: result.includes('${')
       });
+      
+      // Извлекаем переменные с учетом вложенных скобок
+      const variables = this.extractVariablesWithNesting(result);
+      
+      // Обрабатываем переменные в обратном порядке (чтобы не сбивать индексы)
+      for (let i = variables.length - 1; i >= 0; i--) {
+        const { expression, start, end } = variables[i];
+        
+        try {
+          const resolved = this.evaluateExpression(expression, context);
+          this.logger?.debug('Переменная разрешена', { 
+            expression, 
+            resolvedLength: resolved.length 
+          });
+          
+          // Заменяем переменную на разрешенное значение
+          result = result.substring(0, start) + resolved + result.substring(end);
+        } catch (error) {
+          // Перехватываем только DeferredResolutionError - это означает, что переменная еще не готова
+          // Все остальные ошибки (например, UNDEFINED_VARIABLE) должны быть выброшены
+          if (error instanceof DeferredResolutionError) {
+            this.logger?.debug('Переменная отложена на следующую итерацию', { 
+              expression,
+              error: error.message
+            });
+          } else {
+            // Выбрасываем ошибку дальше
+            throw error;
+          }
+        }
+      }
       
       iteration++;
     }
     
     if (iteration >= maxIterations) {
+      const unresolvedVars = this.extractVariablesWithNesting(result);
+      
+      this.logger?.error('Превышен лимит итераций рендеринга', undefined, {
+        maxIterations: maxIterations,
+        unresolvedVariables: unresolvedVars.map(v => v.match)
+      });
+      
       throw new WorkflowErrorClass({
         code: 'MAX_TEMPLATE_ITERATIONS',
         category: 'execution',
         severity: 'error',
         message: 'Превышено максимальное количество итераций рендеринга шаблона (возможно, циклическая зависимость)',
-        context: { template, maxIterations },
+        context: { 
+          template, 
+          maxIterations: maxIterations,
+          unresolvedVariables: unresolvedVars.map(v => v.match)
+        },
         recoverable: false,
         suggestions: [
           'Проверьте шаблон на циклические зависимости переменных',
@@ -87,6 +201,11 @@ export class DefaultTemplateEngine implements TemplateEngine {
         ]
       });
     }
+    
+    this.logger?.debug('Рендеринг завершен', { 
+      iterations: iteration,
+      resultLength: result.length 
+    });
     
     return result;
   }
@@ -196,20 +315,16 @@ export class DefaultTemplateEngine implements TemplateEngine {
    * Извлечение всех переменных из шаблона
    */
   extractVariables(template: string): string[] {
-    const variables: string[] = [];
-    const matches = template.matchAll(this.VARIABLE_PATTERN);
-    
-    for (const match of matches) {
-      variables.push(match[0]);
-    }
-    
-    return variables;
+    const variables = this.extractVariablesWithNesting(template);
+    return variables.map(v => v.match);
   }
   
   /**
    * Вычисление выражения
    */
   private evaluateExpression(expression: string, context: TemplateContext): string {
+    this.logger?.debug('Вычисление выражения', { expression });
+    
     // Обработка условных блоков: if:condition:then:else
     if (expression.startsWith('if:')) {
       return this.evaluateConditional(expression, context);
@@ -280,11 +395,18 @@ export class DefaultTemplateEngine implements TemplateEngine {
   
   /**
    * Вычисление загрузки артефакта с кэшированием
+   * Поддерживает синтаксис:
+   * - ${artifact:path} - загрузка без тегов
+   * - ${artifact:${variable}} - загрузка с вложенной переменной
+   * - ${artifact:${variable}:tag_name} - загрузка с обрамлением в теги
    */
   private evaluateArtifact(expression: string, context: TemplateContext): string {
-    const artifactPath = expression.slice(9).trim();
+    // Парсим выражение: artifact:path[:tag]
+    const parts = expression.slice(9).split(':');
+    let pathExpression = parts[0].trim();
+    const tagName = parts.length > 1 ? parts.slice(1).join(':').trim() : undefined;
     
-    if (!artifactPath) {
+    if (!pathExpression) {
       throw new WorkflowErrorClass({
         code: 'MISSING_ARTIFACT_PATH',
         category: 'execution',
@@ -294,27 +416,60 @@ export class DefaultTemplateEngine implements TemplateEngine {
         recoverable: false,
         suggestions: [
           'Используйте формат: ${artifact:path/to/file}',
+          'Или: ${artifact:${variable}}',
+          'Или: ${artifact:${variable}:tag_name}',
           'Укажите путь к файлу артефакта'
         ]
       });
     }
     
-    // Проверяем, содержит ли путь еще не разрешенные переменные
-    if (artifactPath.includes('${')) {
-      // Возвращаем выражение как есть, чтобы оно было обработано на следующей итерации
-      throw new Error(`Переменная в пути артефакта еще не разрешена: ${artifactPath}`);
+    // Если путь содержит переменные, разрешаем их рекурсивно
+    if (pathExpression.includes('${')) {
+      this.logger?.debug('Разрешение вложенных переменных в пути артефакта', { 
+        pathExpression 
+      });
+      
+      // Разрешаем переменные в пути
+      pathExpression = pathExpression.replace(this.VARIABLE_PATTERN, (_match, innerExpression) => {
+        return this.evaluateExpression(innerExpression, context);
+      });
+      
+      this.logger?.debug('Путь артефакта разрешен', { 
+        resolvedPath: pathExpression 
+      });
     }
     
+    // Загружаем содержимое артефакта
+    const content = this.loadArtifactContent(pathExpression, context);
+    
+    // Обрамляем в теги, если указано
+    if (tagName) {
+      return this.wrapInTags(content, tagName);
+    }
+    
+    return content;
+  }
+  
+  /**
+   * Загрузка содержимого артефакта с кэшированием
+   */
+  private loadArtifactContent(artifactPath: string, context: TemplateContext): string {
     // Проверяем кэш артефактов
     const cached = this.artifactCache.get(artifactPath);
     const now = Date.now();
     
     if (cached && (now - cached.timestamp) < this.ARTIFACT_CACHE_TTL) {
       // Возвращаем закэшированное содержимое
+      this.logger?.debug('Артефакт загружен из кэша', { 
+        path: artifactPath,
+        contentLength: cached.content.length,
+        cacheAge: now - cached.timestamp
+      });
       return cached.content;
     }
     
     // Загружаем артефакт
+    this.logger?.debug('Загрузка артефакта из файла', { path: artifactPath });
     const content = context.loadArtifact(artifactPath);
     
     // Кэшируем содержимое
@@ -323,7 +478,23 @@ export class DefaultTemplateEngine implements TemplateEngine {
       timestamp: now
     });
     
+    this.logger?.debug('Артефакт загружен и закэширован', { 
+      path: artifactPath,
+      contentLength: content.length
+    });
+    
     return content;
+  }
+  
+  /**
+   * Обрамление содержимого в парные теги
+   * Экранирует специальные символы в имени тега
+   */
+  private wrapInTags(content: string, tagName: string): string {
+    // Экранируем специальные символы в имени тега
+    // Разрешены только буквы, цифры, дефис и подчеркивание
+    const safeName = tagName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    return `<${safeName}>\n${content}\n</${safeName}>`;
   }
   
   /**
