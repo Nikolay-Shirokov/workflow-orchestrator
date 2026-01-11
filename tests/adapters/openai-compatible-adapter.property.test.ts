@@ -1428,6 +1428,304 @@ describe('OpenAI Compatible Adapter Property Tests', () => {
   });
 
   /**
+   * Feature: openai-compatible-adapter, Property 5: HTTP статусы маппятся на коды ошибок
+   * Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 5.6
+   * 
+   * Для любого HTTP ответа с ошибкой, код ошибки должен определяться следующим образом:
+   * - Сетевые ошибки (ECONNREFUSED, ETIMEDOUT и т.д.) → ADAPTER_NETWORK_ERROR
+   * - Статус 401 или 403 → ADAPTER_AUTH_ERROR
+   * - Статус 404 → ADAPTER_NOT_FOUND
+   * - Статус 429 → ADAPTER_RATE_LIMIT
+   * - Таймаут → ADAPTER_TIMEOUT
+   * - Статус 500 или 503 → ADAPTER_SERVER_ERROR
+   */
+  describe('Property 5: HTTP статусы маппятся на коды ошибок', () => {
+    test('должен маппить любой HTTP статус на соответствующий код ошибки', () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 400, max: 599 }),
+          fc.string({ minLength: 1, maxLength: 200 }),
+          (status, errorMessage) => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            // Создаем ошибку с HTTP статусом
+            const error = new Error(errorMessage) as Error & { status: number };
+            error.status = status;
+            
+            const adapterError = adapter.handleError(error);
+            
+            // Проверяем, что ошибка обработана
+            expect(adapterError).toBeDefined();
+            expect(adapterError.code).toBeDefined();
+            expect(adapterError.message).toBeDefined();
+            expect(adapterError.originalError).toBe(error);
+            
+            // Проверяем корректный маппинг статуса на код ошибки
+            if (status === 401 || status === 403) {
+              expect(adapterError.code).toBe('ADAPTER_AUTH_ERROR');
+              expect(adapterError.retryable).toBe(false);
+              expect(adapterError.message).toContain('аутентификации');
+              expect(adapterError.message).toContain(status.toString());
+            } else if (status === 404) {
+              expect(adapterError.code).toBe('ADAPTER_NOT_FOUND');
+              expect(adapterError.retryable).toBe(false);
+              expect(adapterError.message).toContain('не найден');
+              expect(adapterError.message).toContain('404');
+            } else if (status === 429) {
+              expect(adapterError.code).toBe('ADAPTER_RATE_LIMIT');
+              expect(adapterError.retryable).toBe(true);
+              expect(adapterError.message).toContain('лимит');
+              expect(adapterError.message).toContain('429');
+            } else if (status >= 500) {
+              expect(adapterError.code).toBe('ADAPTER_SERVER_ERROR');
+              expect(adapterError.retryable).toBe(true);
+              expect(adapterError.message).toContain('сервера');
+              expect(adapterError.message).toContain(status.toString());
+            } else if (status >= 400 && status < 500) {
+              expect(adapterError.code).toBe('ADAPTER_INVALID_REQUEST');
+              expect(adapterError.retryable).toBe(false);
+              expect(adapterError.message).toContain('Неверный запрос');
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен маппить сетевые ошибки на ADAPTER_NETWORK_ERROR', () => {
+      fc.assert(
+        fc.property(
+          fc.constantFrom(
+            'ECONNREFUSED',
+            'ENOTFOUND',
+            'ETIMEDOUT',
+            'fetch failed',
+            'network error'
+          ),
+          (errorType) => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            // Создаем сетевую ошибку с правильным сообщением
+            const error = new Error(errorType);
+            
+            const adapterError = adapter.handleError(error);
+            
+            // Проверяем маппинг
+            expect(adapterError.code).toBe('ADAPTER_NETWORK_ERROR');
+            expect(adapterError.retryable).toBe(true);
+            expect(adapterError.message).toContain('Ошибка сети');
+            expect(adapterError.originalError).toBe(error);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен маппить таймауты на ADAPTER_TIMEOUT', () => {
+      fc.assert(
+        fc.property(
+          fc.constantFrom('aborted', 'request aborted'),
+          (errorMessage) => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            // Создаем ошибку таймаута
+            const error = new Error(errorMessage);
+            error.name = 'AbortError';
+            
+            const adapterError = adapter.handleError(error);
+            
+            // Проверяем маппинг
+            expect(adapterError.code).toBe('ADAPTER_TIMEOUT');
+            expect(adapterError.retryable).toBe(true);
+            expect(adapterError.message).toContain('таймаут');
+            expect(adapterError.originalError).toBe(error);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно устанавливать флаг retryable для всех типов ошибок', () => {
+      fc.assert(
+        fc.property(
+          fc.oneof(
+            // Retryable ошибки
+            fc.record({
+              type: fc.constantFrom('network', 'timeout', 'rate_limit', 'server_error'),
+              status: fc.option(fc.constantFrom(429, 500, 503, 502, 504), { nil: undefined })
+            }),
+            // Non-retryable ошибки
+            fc.record({
+              type: fc.constantFrom('auth', 'not_found', 'invalid_request'),
+              status: fc.constantFrom(401, 403, 404, 400, 422)
+            })
+          ),
+          (errorConfig) => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            let error: Error & { status?: number };
+            
+            // Создаем ошибку в зависимости от типа
+            switch (errorConfig.type) {
+              case 'network':
+                error = new Error('ECONNREFUSED');
+                break;
+              case 'timeout':
+                error = new Error('aborted');
+                error.name = 'AbortError';
+                break;
+              case 'rate_limit':
+                error = new Error('Rate limit exceeded') as Error & { status: number };
+                error.status = 429;
+                break;
+              case 'server_error':
+                error = new Error('Server error') as Error & { status: number };
+                error.status = errorConfig.status || 500;
+                break;
+              case 'auth':
+                error = new Error('Unauthorized') as Error & { status: number };
+                error.status = errorConfig.status;
+                break;
+              case 'not_found':
+                error = new Error('Not found') as Error & { status: number };
+                error.status = 404;
+                break;
+              case 'invalid_request':
+                error = new Error('Bad request') as Error & { status: number };
+                error.status = errorConfig.status;
+                break;
+              default:
+                error = new Error('Unknown error');
+            }
+            
+            const adapterError = adapter.handleError(error);
+            
+            // Проверяем флаг retryable
+            const shouldBeRetryable = ['network', 'timeout', 'rate_limit', 'server_error'].includes(errorConfig.type);
+            expect(adapterError.retryable).toBe(shouldBeRetryable);
+            
+            // Проверяем, что код ошибки установлен
+            expect(adapterError.code).toBeDefined();
+            expect(adapterError.code).not.toBe('ADAPTER_UNKNOWN_ERROR');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен сохранять оригинальное сообщение об ошибке для всех типов', () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 400, max: 599 }),
+          fc.string({ minLength: 10, maxLength: 100 }),
+          (status, originalMessage) => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            const error = new Error(originalMessage) as Error & { status: number };
+            error.status = status;
+            
+            const adapterError = adapter.handleError(error);
+            
+            // Проверяем, что оригинальное сообщение присутствует в итоговом сообщении
+            expect(adapterError.message).toContain(originalMessage);
+            expect(adapterError.originalError).toBe(error);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать все 4xx статусы', () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 400, max: 499 }),
+          (status) => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            const error = new Error('Client error') as Error & { status: number };
+            error.status = status;
+            
+            const adapterError = adapter.handleError(error);
+            
+            // Проверяем маппинг 4xx статусов
+            if (status === 401 || status === 403) {
+              expect(adapterError.code).toBe('ADAPTER_AUTH_ERROR');
+              expect(adapterError.retryable).toBe(false);
+            } else if (status === 404) {
+              expect(adapterError.code).toBe('ADAPTER_NOT_FOUND');
+              expect(adapterError.retryable).toBe(false);
+            } else if (status === 429) {
+              expect(adapterError.code).toBe('ADAPTER_RATE_LIMIT');
+              expect(adapterError.retryable).toBe(true);
+            } else {
+              expect(adapterError.code).toBe('ADAPTER_INVALID_REQUEST');
+              expect(adapterError.retryable).toBe(false);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен корректно обрабатывать все 5xx статусы', () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 500, max: 599 }),
+          (status) => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            const error = new Error('Server error') as Error & { status: number };
+            error.status = status;
+            
+            const adapterError = adapter.handleError(error);
+            
+            // Все 5xx статусы должны маппиться на ADAPTER_SERVER_ERROR
+            expect(adapterError.code).toBe('ADAPTER_SERVER_ERROR');
+            expect(adapterError.retryable).toBe(true);
+            expect(adapterError.message).toContain('сервера');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен обрабатывать комбинации статусов и сообщений', () => {
+      fc.assert(
+        fc.property(
+          fc.record({
+            status: fc.integer({ min: 400, max: 599 }),
+            message: fc.string({ minLength: 5, maxLength: 200 }),
+            includeStatusInMessage: fc.boolean()
+          }),
+          (config) => {
+            const adapter = new OpenAICompatibleAdapter();
+            
+            const errorMessage = config.includeStatusInMessage 
+              ? `HTTP ${config.status}: ${config.message}`
+              : config.message;
+            
+            const error = new Error(errorMessage) as Error & { status: number };
+            error.status = config.status;
+            
+            const adapterError = adapter.handleError(error);
+            
+            // Проверяем, что ошибка обработана корректно
+            expect(adapterError).toBeDefined();
+            expect(adapterError.code).toBeDefined();
+            expect(adapterError.message).toBeDefined();
+            expect(adapterError.retryable).toBeDefined();
+            expect(adapterError.originalError).toBe(error);
+            
+            // Проверяем, что сообщение содержит оригинальный текст
+            expect(adapterError.message).toContain(config.message);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
+
+  /**
    * Тесты для обработки ошибок
    * Validates: Requirements 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7
    * 
