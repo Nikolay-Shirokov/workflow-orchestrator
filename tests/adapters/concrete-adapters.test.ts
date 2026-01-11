@@ -7,6 +7,7 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import { ClaudeCLIAdapter } from '../../src/adapters/claude-cli-adapter.js';
 import { OpenAICLIAdapter } from '../../src/adapters/openai-cli-adapter.js';
 import { GeminiCLIAdapter } from '../../src/adapters/gemini-cli-adapter.js';
+import { CodexCLIAdapter } from '../../src/adapters/codex-cli-adapter.js';
 
 describe('ClaudeCLIAdapter', () => {
   let adapter: ClaudeCLIAdapter;
@@ -372,11 +373,57 @@ describe('GeminiCLIAdapter', () => {
   });
 });
 
+describe('CodexCLIAdapter', () => {
+  let adapter: CodexCLIAdapter;
+
+  beforeEach(() => {
+    adapter = new CodexCLIAdapter();
+  });
+
+  it('должен иметь правильное имя и версию', () => {
+    // Требования: 1.2, 1.5
+    expect(adapter.name).toBe('codex-cli');
+    expect(adapter.version).toBe('1.0.0');
+  });
+
+  it('должен использовать команду codex exec в конфигурации', () => {
+    // Требования: 1.2, 1.5
+    const config = (adapter as any).config;
+    expect(config.command).toBe('codex');
+    expect(config.args).toEqual(['exec', '-']);
+  });
+
+  it('должен использовать JSON парсер по умолчанию', () => {
+    // Требования: 1.2
+    const config = (adapter as any).config;
+    expect(config.parser).toBe('json');
+  });
+
+  it('должен использовать таймаут 5 минут по умолчанию', () => {
+    // Требования: 1.2
+    const config = (adapter as any).config;
+    expect(config.timeout).toBe(300000);
+  });
+
+  it('должен использовать пользовательскую конфигурацию', () => {
+    const customAdapter = new CodexCLIAdapter({
+      command: 'custom-codex',
+      timeout: 60000
+    });
+    
+    expect(customAdapter.name).toBe('codex-cli');
+    const config = (customAdapter as any).config;
+    expect(config.command).toBe('custom-codex');
+    expect(config.timeout).toBe(60000);
+  });
+});
+
 describe('Интеграция адаптеров с реестром', () => {
   it('все адаптеры должны быть совместимы с реестром', () => {
     const claudeAdapter = new ClaudeCLIAdapter();
     const openaiAdapter = new OpenAICLIAdapter();
     const geminiAdapter = new GeminiCLIAdapter();
+    const codexAdapter = new CodexCLIAdapter();
 
     // Проверяем, что все адаптеры имеют необходимые свойства
     expect(claudeAdapter.name).toBeDefined();
@@ -399,5 +446,12 @@ describe('Интеграция адаптеров с реестром', () => {
     expect(typeof geminiAdapter.execute).toBe('function');
     expect(typeof geminiAdapter.parseResponse).toBe('function');
     expect(typeof geminiAdapter.handleError).toBe('function');
+
+    expect(codexAdapter.name).toBeDefined();
+    expect(codexAdapter.version).toBeDefined();
+    expect(typeof codexAdapter.isAvailable).toBe('function');
+    expect(typeof codexAdapter.execute).toBe('function');
+    expect(typeof codexAdapter.parseResponse).toBe('function');
+    expect(typeof codexAdapter.handleError).toBe('function');
   });
 });

@@ -9,4 +9,5 @@ export { MockCLIAdapter, type MockResponse } from './mock-cli-adapter.js';
 export { ClaudeCLIAdapter } from './claude-cli-adapter.js';
 export { OpenAICLIAdapter } from './openai-cli-adapter.js';
 export { GeminiCLIAdapter } from './gemini-cli-adapter.js';
+export { CodexCLIAdapter } from './codex-cli-adapter.js';
 export { PluginManager } from './plugin-manager.js';
