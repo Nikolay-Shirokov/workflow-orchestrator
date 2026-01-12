@@ -162,35 +162,36 @@ export class EditorManager {
       case 'win32':
         return [
           'code',        // Visual Studio Code
+          'kiro',        // Kiro         
+          'cursor',      // Cursor
           'notepad++',   // Notepad++
           'sublime_text', // Sublime Text
-          'atom',        // Atom
           'notepad'      // Notepad (встроенный)
         ];
         
       case 'darwin':
         return [
           'code',        // Visual Studio Code
+          'kiro',        // Kiro    
+          'cursor',      // Cursor
           'subl',        // Sublime Text
-          'atom',        // Atom
           'nano',        // Nano
           'vim',         // Vim
-          'vi',          // Vi
-          'emacs'        // Emacs
+          'vi'           // Vi
         ];
         
       case 'linux':
       default:
         return [
           'code',        // Visual Studio Code
+          'kiro',        // Kiro          
+          'cursor',      // Cursor
           'subl',        // Sublime Text
-          'atom',        // Atom
           'gedit',       // Gedit
           'kate',        // Kate
           'nano',        // Nano
           'vim',         // Vim
-          'vi',          // Vi
-          'emacs'        // Emacs
+          'vi'           // Vi
         ];
     }
   }
