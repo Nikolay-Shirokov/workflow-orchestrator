@@ -46,33 +46,33 @@
     - Генерация случайных конфигураций редактора
     - Проверка корректности запуска или ошибки
 
-- [ ] 3. Реализация TemplateGenerator
-  - [ ] 3.1 Создать файл `src/core/template-generator.ts`
+- [x] 3. Реализация TemplateGenerator
+  - [x] 3.1 Создать файл `src/core/template-generator.ts`
     - Реализовать класс TemplateGenerator
     - Метод generate() для выбора формата
     - Метод extractQuestions() для извлечения вопросов
     - _Requirements: 1.1, 1.2, 1.3, 5.1_
 
-  - [ ] 3.2 Реализовать генераторы для каждого формата
+  - [x] 3.2 Реализовать генераторы для каждого формата
     - generateMarkdownTemplate() - Markdown формат с заголовками
     - generateYAMLTemplate() - YAML формат со структурой
     - generateJSONTemplate() - JSON формат с комментариями
     - generateTextTemplate() - Plain text формат
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5_
 
-  - [ ] 3.3 Написать unit tests для TemplateGenerator
+  - [x] 3.3 Написать unit tests для TemplateGenerator
     - Тест генерации для каждого формата
     - Тест извлечения вопросов
     - Тест включения инструкций
     - Тест корректности структуры
 
-  - [ ] 3.4 Написать property test для генерации шаблонов
+  - [x] 3.4 Написать property test для генерации шаблонов
     - **Property 1: Создание валидного шаблона**
     - **Validates: Requirements 1.1, 1.2, 1.3, 1.4, 1.5**
     - Генерация случайных шагов с вопросами
     - Проверка валидности шаблонов для всех форматов
 
-  - [ ] 3.5 Написать property test для поддержки форматов
+  - [x] 3.5 Написать property test для поддержки форматов
     - **Property 11: Поддержка форматов**
     - **Validates: Requirements 9.1, 9.2, 9.3, 9.4, 9.5**
     - Round-trip тест: генерация → парсинг → сравнение
