@@ -1,0 +1,212 @@
+# Примеры конфигураций OpenAI-совместимых адаптеров
+
+Этот файл демонстрирует настройку адаптеров для различных OpenAI-совместимых сервисов.
+
+## Что такое OpenAI-совместимый адаптер?
+
+OpenAI-совместимый адаптер (`openai-compatible`) - это встроенный адаптер для работы с любыми
+сервисами, реализующими OpenAI API спецификацию. В отличие от CLI-адаптеров, он работает
+напрямую с HTTP API через встроенный HTTP клиент Node.js.
+
+## Поддерживаемые сервисы
+
+### Локальные сервисы (без API ключа):
+- LM Studio - локальное приложение для запуска LLM моделей
+- LocalAI - самостоятельно размещаемая альтернатива OpenAI
+- Ollama - в OpenAI-совместимом режиме (требует флаг --openai-compat)
+- Text Generation WebUI (oobabooga) - с OpenAI API расширением
+- vLLM - высокопроизводительный inference сервер
+- FastChat - платформа для обучения и развертывания LLM
+
+### Облачные сервисы (требуют API ключ):
+- OpenAI API - официальный API OpenAI (GPT-4, GPT-3.5-turbo и др.)
+- Azure OpenAI - OpenAI модели через Azure
+- Другие облачные провайдеры с OpenAI-совместимым API
+
+## Параметры конфигурации
+
+### Обязательные:
+- name: Уникальное имя адаптера
+- type: Должен быть "openai-compatible"
+- baseUrl: Базовый URL API (например, http://localhost:1234/v1)
+
+### Опциональные:
+- apiKey: API ключ для аутентификации (поддерживает ${VAR_NAME})
+- defaultModel: Модель по умолчанию
+- timeout: Таймаут запросов в миллисекундах (по умолчанию 300000)
+- headers: Дополнительные HTTP заголовки
+
+---
+
+workflow:
+  name: "openai-compatible-example"
+  version: "1.0"
+  description: "Пример использования OpenAI-совместимых адаптеров"
+  
+  settings:
+    artifacts_dir: "artifacts/session_${timestamp}"
+    default_adapter: "lm-studio"
+    log_level: "info"
+  
+  # Определение адаптеров
+  adapters:
+    # Адаптер для LM Studio (локальный сервер)
+    - name: "lm-studio"
+      type: "openai-compatible"
+      baseUrl: "http://localhost:1234/v1"
+      defaultModel: "local-model"
+      timeout: 60000
+      description: "Локальный LM Studio сервер"
+    
+    # Адаптер для LocalAI
+    - name: "localai"
+      type: "openai-compatible"
+      baseUrl: "http://localhost:8080/v1"
+      apiKey: "${LOCALAI_API_KEY}"
+      defaultModel: "gpt-3.5-turbo"
+      timeout: 60000
+      description: "LocalAI сервер"
+    
+    # Адаптер для Ollama (OpenAI-совместимый режим)
+    - name: "ollama"
+      type: "openai-compatible"
+      baseUrl: "http://localhost:11434/v1"
+      defaultModel: "llama2"
+      timeout: 120000
+      description: "Ollama в OpenAI-совместимом режиме"
+    
+    # Адаптер для Text Generation WebUI (oobabooga)
+    - name: "text-gen-webui"
+      type: "openai-compatible"
+      baseUrl: "http://localhost:5000/v1"
+      defaultModel: "default"
+      timeout: 90000
+      description: "Text Generation WebUI"
+    
+    # Адаптер для официального OpenAI API
+    - name: "openai"
+      type: "openai-compatible"
+      baseUrl: "https://api.openai.com/v1"
+      apiKey: "${OPENAI_API_KEY}"
+      defaultModel: "gpt-4"
+      timeout: 120000
+      description: "Официальный OpenAI API"
+    
+    # Адаптер с дополнительными заголовками
+    - name: "custom-api"
+      type: "openai-compatible"
+      baseUrl: "http://localhost:8000/v1"
+      apiKey: "${CUSTOM_API_KEY}"
+      defaultModel: "custom-model"
+      timeout: 60000
+      headers:
+        X-Custom-Header: "custom-value"
+        X-Request-ID: "${request_id}"
+      description: "Пользовательский API с дополнительными заголовками"
+  
+  # Определение ролей с использованием адаптеров
+  roles:
+    local_assistant:
+      adapter: "lm-studio"
+      model: "local-model"
+      role_definition: |
+        Вы - локальный AI-ассистент, работающий через LM Studio.
+      temperature: 0.7
+      max_tokens: 2000
+    
+    cloud_assistant:
+      adapter: "openai"
+      model: "gpt-4"
+      role_definition: |
+        Вы - облачный AI-ассистент с доступом к GPT-4.
+      temperature: 0.7
+      max_tokens: 4000
+    
+    code_assistant:
+      adapter: "ollama"
+      model: "codellama"
+      role_definition: |
+        Вы - специализированный ассистент для программирования.
+      temperature: 0.3
+      max_tokens: 3000
+  
+  # Примеры шагов с использованием адаптеров
+  steps:
+    # Шаг 1: Использование локального адаптера
+    - id: "step1"
+      name: "Локальная генерация"
+      type: "model"
+      role: "local_assistant"
+      prompt_template: "Напишите краткое описание проекта: ${project_name}"
+      outputs:
+        local_response: "${artifacts_dir}/step1_local.md"
+    
+    # Шаг 2: Использование облачного адаптера
+    - id: "step2"
+      name: "Облачная генерация"
+      type: "model"
+      role: "cloud_assistant"
+      depends_on:
+        - "step1"
+      prompt_template: |
+        Улучшите следующее описание проекта:
+        
+        ${artifact:${local_response}}
+      outputs:
+        cloud_response: "${artifacts_dir}/step2_cloud.md"
+    
+    # Шаг 3: Использование специализированного адаптера
+    - id: "step3"
+      name: "Генерация кода"
+      type: "model"
+      role: "code_assistant"
+      depends_on:
+        - "step2"
+      prompt_template: |
+        Создайте структуру проекта на основе описания:
+        
+        ${artifact:${cloud_response}}
+      outputs:
+        code_structure: "${artifacts_dir}/step3_code.md"
+    
+    # Шаг 4: Переопределение адаптера для конкретного шага
+    - id: "step4"
+      name: "Специальная задача"
+      type: "model"
+      adapter: "custom-api"  # Переопределяем адаптер для этого шага
+      model: "custom-model"
+      prompt_template: "Выполните специальную задачу: ${task_description}"
+      outputs:
+        special_result: "${artifacts_dir}/step4_special.md"
+
+# Рекомендации по использованию
+
+## Локальные сервисы (без API ключа)
+# - LM Studio: Запустите LM Studio и загрузите модель
+# - LocalAI: Запустите LocalAI сервер
+# - Ollama: Запустите Ollama с флагом --openai-compat
+# - Text Generation WebUI: Включите OpenAI API расширение
+
+## Облачные сервисы (требуют API ключ)
+# - OpenAI: Установите переменную окружения OPENAI_API_KEY
+# - Пользовательские API: Установите соответствующие переменные окружения
+
+## Переменные окружения
+# Используйте формат ${VAR_NAME} для подстановки переменных окружения:
+# - ${OPENAI_API_KEY} - API ключ OpenAI
+# - ${LOCALAI_API_KEY} - API ключ LocalAI
+# - ${CUSTOM_API_KEY} - Пользовательский API ключ
+
+## Таймауты
+# Рекомендуемые значения таймаутов:
+# - Локальные модели: 60000-120000 мс (1-2 минуты)
+# - Облачные API: 120000-300000 мс (2-5 минут)
+# - Большие модели: 300000+ мс (5+ минут)
+
+## Модели по умолчанию
+# Если модель не указана в шаге, используется defaultModel из конфигурации адаптера
+# Модель можно переопределить в роли или в конкретном шаге
+
+## Дополнительные заголовки
+# Используйте параметр headers для добавления пользовательских HTTP заголовков
+# Полезно для аутентификации, трейсинга или других специфичных требований API

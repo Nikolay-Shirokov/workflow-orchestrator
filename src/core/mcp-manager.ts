@@ -336,13 +336,20 @@ export class MCPManager {
     const { promisify } = await import('util');
     const execAsync = promisify(exec);
     
+    // Адаптация команды для Windows
+    let adaptedCommand = command;
+    if (process.platform === 'win32') {
+      // На Windows заменяем 'which' на 'where'
+      adaptedCommand = command.replace(/^which\s+/, 'where ');
+    }
+    
     try {
-      const { stdout, stderr } = await execAsync(command, {
+      const { stdout, stderr } = await execAsync(adaptedCommand, {
         timeout,
         windowsHide: true,
       });
       
-      this.logger.debug(`Команда проверки выполнена: ${command}`);
+      this.logger.debug(`Команда проверки выполнена: ${adaptedCommand}`);
       if (stdout) {
         this.logger.debug(`stdout: ${stdout.trim()}`);
       }
@@ -360,7 +367,7 @@ export class MCPManager {
         }
       }
       
-      this.logger.debug(`Команда проверки завершилась с ошибкой: ${command}`, error);
+      this.logger.debug(`Команда проверки завершилась с ошибкой: ${adaptedCommand}`, error);
       return false;
     }
   }

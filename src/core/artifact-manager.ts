@@ -72,7 +72,7 @@ export class DefaultArtifactManager implements ArtifactManager {
   constructor(config: ArtifactManagerConfig) {
     this.config = {
       baseDir: config.baseDir,
-      sessionDirTemplate: config.sessionDirTemplate || 'session_{sessionId}',
+      sessionDirTemplate: config.sessionDirTemplate !== undefined ? config.sessionDirTemplate : 'session_{sessionId}',
       saveMetadata: config.saveMetadata ?? true,
       streamingThreshold: config.streamingThreshold || 1024 * 1024, // 1MB
       logger: config.logger || console as unknown as Logger,
@@ -110,7 +110,8 @@ export class DefaultArtifactManager implements ArtifactManager {
       this.config.logger.debug(`Использована потоковая передача для артефакта ${artifactPath} (${contentSize} байт)`);
     } else {
       // Обычное сохранение для небольших файлов
-      await fs.writeFile(artifactPath, content, 'utf-8');
+      // Явно указываем UTF-8 для корректной работы на Windows
+      await fs.writeFile(artifactPath, content, { encoding: 'utf-8' });
     }
     
     // Получение размера файла
@@ -144,7 +145,7 @@ export class DefaultArtifactManager implements ArtifactManager {
     // Создаем readable stream из строки
     const readable = Readable.from([content]);
     
-    // Создаем writable stream
+    // Создаем writable stream с явным указанием UTF-8
     const writable = createWriteStream(artifactPath, { encoding: 'utf-8' });
     
     // Используем pipeline для потоковой передачи
@@ -175,8 +176,8 @@ export class DefaultArtifactManager implements ArtifactManager {
         this.config.logger.debug(`Использована потоковая передача для загрузки артефакта ${artifactPath} (${stats.size} байт)`);
         return content;
       } else {
-        // Обычная загрузка для небольших файлов
-        const content = await fs.readFile(artifactPath, 'utf-8');
+        // Обычная загрузка для небольших файлов с явным указанием UTF-8
+        const content = await fs.readFile(artifactPath, { encoding: 'utf-8' });
         this.config.logger.debug(`Загружен артефакт: ${artifactPath}`);
         return content;
       }
@@ -401,6 +402,11 @@ export class DefaultArtifactManager implements ArtifactManager {
    * Получение пути к директории сессии
    */
   private getSessionDir(sessionId: string): string {
+    // Если шаблон пустой, используем baseDir напрямую
+    if (!this.config.sessionDirTemplate || this.config.sessionDirTemplate.trim() === '') {
+      return this.config.baseDir;
+    }
+    
     // Подстановка переменных в шаблон
     const dirName = this.config.sessionDirTemplate
       .replace('{sessionId}', sessionId)
@@ -417,7 +423,8 @@ export class DefaultArtifactManager implements ArtifactManager {
     const content = JSON.stringify(metadata, null, 2);
     
     try {
-      await fs.writeFile(metadataPath, content, 'utf-8');
+      // Явно указываем UTF-8 для корректной работы на Windows
+      await fs.writeFile(metadataPath, content, { encoding: 'utf-8' });
     } catch (error) {
       // Ошибка сохранения метаданных не критична
       this.config.logger.warn(`Не удалось сохранить метаданные: ${metadataPath}`, error);
@@ -431,7 +438,8 @@ export class DefaultArtifactManager implements ArtifactManager {
     const metadataPath = `${artifactPath}.meta.json`;
     
     try {
-      const content = await fs.readFile(metadataPath, 'utf-8');
+      // Явно указываем UTF-8 для корректной работы на Windows
+      const content = await fs.readFile(metadataPath, { encoding: 'utf-8' });
       return JSON.parse(content) as ArtifactMetadata;
     } catch {
       // Метаданные отсутствуют или повреждены

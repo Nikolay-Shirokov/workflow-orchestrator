@@ -1091,4 +1091,264 @@ describe('Step Executor Property Tests', () => {
       }
     });
   });
+
+  /**
+   * Feature: fix-context-passing, Property 2: Двойная передача контекста
+   * Validates: Requirements 2.1, 2.2, 2.3
+   * 
+   * Для любого шага, создающего артефакт с именем output_name, в контексте должны
+   * присутствовать обе переменные: output_name (содержимое) и output_name_file (путь).
+   */
+  describe('Property 2: Двойная передача контекста', () => {
+    test('должен создавать обе переменные для любого output в model шаге', async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          // Генерируем имя output
+          fc.stringMatching(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
+          // Генерируем имя файла
+          fc.stringMatching(/^[a-zA-Z0-9_-]+\.txt$/),
+          async (outputName, fileName) => {
+            const executor = new DefaultStepExecutor();
+            const context = createTestContext();
+            
+            // Создаем шаг с output
+            const step: WorkflowStep = {
+              id: 'test-model-step',
+              name: 'Test Model Step',
+              type: 'model',
+              prompt_template: 'Generate content',
+              outputs: {
+                [outputName]: fileName
+              }
+            };
+            
+            const result = await executor.executeStep(step, context);
+            
+            // Проверяем успешность выполнения
+            expect(result.status).toBe('success');
+            
+            // Проверяем наличие переменной с содержимым
+            expect(context.state.context[outputName]).toBeDefined();
+            expect(typeof context.state.context[outputName]).toBe('string');
+            
+            // Проверяем наличие переменной с путем
+            const fileVarName = `${outputName}_file`;
+            expect(context.state.context[fileVarName]).toBeDefined();
+            expect(typeof context.state.context[fileVarName]).toBe('string');
+            
+            // Проверяем, что путь содержит имя файла
+            expect(context.state.context[fileVarName]).toContain(fileName);
+            
+            // Проверяем, что обе переменные различны
+            expect(context.state.context[outputName]).not.toBe(context.state.context[fileVarName]);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен создавать обе переменные для любого output в script шаге', async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          // Генерируем имя output
+          fc.stringMatching(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
+          // Генерируем имя файла
+          fc.stringMatching(/^[a-zA-Z0-9_-]+\.txt$/),
+          async (outputName, fileName) => {
+            const executor = new DefaultStepExecutor();
+            const context = createTestContext();
+            
+            // Создаем шаг с output
+            const step: WorkflowStep = {
+              id: 'test-script-step',
+              name: 'Test Script Step',
+              type: 'script',
+              script: 'echo Test Output',
+              shell: 'cmd',
+              outputs: {
+                [outputName]: fileName
+              }
+            };
+            
+            const result = await executor.executeStep(step, context);
+            
+            // Проверяем успешность выполнения
+            expect(result.status).toBe('success');
+            
+            // Проверяем наличие переменной с содержимым
+            expect(context.state.context[outputName]).toBeDefined();
+            expect(typeof context.state.context[outputName]).toBe('string');
+            
+            // Проверяем наличие переменной с путем
+            const fileVarName = `${outputName}_file`;
+            expect(context.state.context[fileVarName]).toBeDefined();
+            expect(typeof context.state.context[fileVarName]).toBe('string');
+            
+            // Проверяем, что путь содержит имя файла
+            expect(context.state.context[fileVarName]).toContain(fileName);
+            
+            // Проверяем, что обе переменные различны
+            expect(context.state.context[outputName]).not.toBe(context.state.context[fileVarName]);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    }, 15000); // Увеличен таймаут для script шагов
+
+    test('должен создавать обе переменные для множественных outputs', async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          // Генерируем массив имен outputs
+          fc.array(
+            fc.stringMatching(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
+            { minLength: 1, maxLength: 5 }
+          ).filter((arr) => arr.length === new Set(arr).size), // Уникальные имена
+          async (outputNames) => {
+            const executor = new DefaultStepExecutor();
+            const context = createTestContext();
+            
+            // Создаем outputs
+            const outputs: Record<string, string> = {};
+            outputNames.forEach((name, index) => {
+              outputs[name] = `output_${index}.txt`;
+            });
+            
+            // Создаем шаг с множественными outputs
+            const step: WorkflowStep = {
+              id: 'multi-output-step',
+              name: 'Multi Output Step',
+              type: 'model',
+              prompt_template: 'Generate content',
+              outputs
+            };
+            
+            const result = await executor.executeStep(step, context);
+            
+            // Проверяем успешность выполнения
+            expect(result.status).toBe('success');
+            
+            // Проверяем наличие обеих переменных для каждого output
+            outputNames.forEach((outputName) => {
+              // Переменная с содержимым
+              expect(context.state.context[outputName]).toBeDefined();
+              expect(typeof context.state.context[outputName]).toBe('string');
+              
+              // Переменная с путем
+              const fileVarName = `${outputName}_file`;
+              expect(context.state.context[fileVarName]).toBeDefined();
+              expect(typeof context.state.context[fileVarName]).toBe('string');
+              
+              // Проверяем, что обе переменные различны
+              expect(context.state.context[outputName]).not.toBe(context.state.context[fileVarName]);
+            });
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен сохранять содержимое в переменной с именем output', async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          // Генерируем имя output
+          fc.stringMatching(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
+          async (outputName) => {
+            const executor = new DefaultStepExecutor();
+            const context = createTestContext();
+            
+            // Настраиваем mock-адаптер для возврата специфичного контента
+            const mockAdapter = context.adapters.get('mock-adapter') as MockCLIAdapter;
+            const expectedContent = 'Test response';
+            mockAdapter.setResponse(/.*/, expectedContent);
+            
+            // Создаем шаг
+            const step: WorkflowStep = {
+              id: 'content-test-step',
+              name: 'Content Test Step',
+              type: 'model',
+              prompt_template: 'Generate content',
+              outputs: {
+                [outputName]: 'output.txt'
+              }
+            };
+            
+            await executor.executeStep(step, context);
+            
+            // Проверяем, что содержимое сохранено в переменной
+            expect(context.state.context[outputName]).toBe(expectedContent);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен сохранять путь к файлу в переменной с суффиксом _file', async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          // Генерируем имя output
+          fc.stringMatching(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
+          // Генерируем имя файла
+          fc.stringMatching(/^[a-zA-Z0-9_-]+\.txt$/),
+          async (outputName, fileName) => {
+            const executor = new DefaultStepExecutor();
+            const context = createTestContext();
+            
+            // Создаем шаг
+            const step: WorkflowStep = {
+              id: 'path-test-step',
+              name: 'Path Test Step',
+              type: 'model',
+              prompt_template: 'Generate content',
+              outputs: {
+                [outputName]: fileName
+              }
+            };
+            
+            await executor.executeStep(step, context);
+            
+            // Проверяем, что путь сохранен в переменной с суффиксом _file
+            const fileVarName = `${outputName}_file`;
+            expect(context.state.context[fileVarName]).toBeDefined();
+            expect(context.state.context[fileVarName]).toContain(fileName);
+            
+            // Проверяем, что это действительно путь (содержит разделители)
+            const filePath = context.state.context[fileVarName] as string;
+            expect(filePath.includes('\\') || filePath.includes('/')).toBe(true);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен сохранять обе переменные в artifacts для отслеживания', async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          // Генерируем имя output
+          fc.stringMatching(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
+          async (outputName) => {
+            const executor = new DefaultStepExecutor();
+            const context = createTestContext();
+            
+            // Создаем шаг
+            const step: WorkflowStep = {
+              id: 'artifacts-test-step',
+              name: 'Artifacts Test Step',
+              type: 'model',
+              prompt_template: 'Generate content',
+              outputs: {
+                [outputName]: 'output.txt'
+              }
+            };
+            
+            await executor.executeStep(step, context);
+            
+            // Проверяем, что артефакт сохранен в state.artifacts
+            expect(context.state.artifacts[outputName]).toBeDefined();
+            expect(typeof context.state.artifacts[outputName]).toBe('string');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
 });

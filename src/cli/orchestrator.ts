@@ -4,7 +4,7 @@
  * Координирует все компоненты системы для выполнения рабочих процессов
  */
 
-import { WorkflowConfig, WorkflowState } from '../core/types.js';
+import { WorkflowConfig, WorkflowState, CLIAdapter } from '../core/types.js';
 import { Logger } from '../core/logger.js';
 import { createWorkflowEngine, WorkflowEngine } from '../core/workflow-engine.js';
 import { createStateManager, StateManager } from '../core/state-manager.js';
@@ -63,6 +63,7 @@ export class WorkflowOrchestrator {
   private logger: Logger;
   private stateManager: StateManager;
   private workflowEngine: WorkflowEngine;
+  private adapterRegistry: AdapterRegistry;
 
   constructor(config: OrchestratorConfig) {
     this.stateDir = config.stateDir || './state';
@@ -76,10 +77,11 @@ export class WorkflowOrchestrator {
     });
 
     const configParser = new WorkflowConfigParser();
-    const adapterRegistry = new AdapterRegistry();
+    this.adapterRegistry = new AdapterRegistry();
     const templateEngine = new DefaultTemplateEngine();
     const artifactManager = createArtifactManager({
       baseDir: this.artifactsDir,
+      sessionDirTemplate: '',  // Не добавляем поддиректорию, используем baseDir напрямую
       logger: this.logger
     });
     
@@ -96,13 +98,29 @@ export class WorkflowOrchestrator {
       configParser,
       stateManager: this.stateManager,
       stepExecutor,
-      adapterRegistry,
+      adapterRegistry: this.adapterRegistry,
       templateEngine,
       artifactManager,
       logger: this.logger,
       roleManager,
       mcpManager
     });
+  }
+
+  /**
+   * Регистрация адаптера
+   * @param adapter - Адаптер для регистрации
+   */
+  registerAdapter(adapter: CLIAdapter): void {
+    this.adapterRegistry.register(adapter);
+  }
+
+  /**
+   * Получение списка зарегистрированных адаптеров
+   * @returns Массив имен адаптеров
+   */
+  getRegisteredAdapters(): string[] {
+    return this.adapterRegistry.getAll().map(a => a.name);
   }
 
   /**

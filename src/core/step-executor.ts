@@ -12,6 +12,7 @@
 
 import { spawn } from 'child_process';
 import { readFileSync } from 'fs';
+import { cpus } from 'os';
 import {
   StepExecutor,
   WorkflowStep,
@@ -253,7 +254,7 @@ export class DefaultStepExecutor implements StepExecutor {
    */
   private getMaxConcurrency(): number {
     // Используем количество CPU ядер, но не более 10
-    const cpuCount = require('os').cpus().length;
+    const cpuCount = cpus().length;
     return Math.min(cpuCount, 10);
   }
   
@@ -433,17 +434,25 @@ export class DefaultStepExecutor implements StepExecutor {
     const adapter = context.adapters.get(adapterName);
     
     if (!adapter) {
+      const allAdapters = context.adapters.getAll();
+      const availableCount = allAdapters.length;
+      const availableNames = allAdapters.map(a => a.name);
+      context.logger.error(`Адаптер "${adapterName}" не найден.`);
+      context.logger.error(`Доступно адаптеров: ${availableCount}`);
+      context.logger.error(`Имена: ${JSON.stringify(availableNames)}`);
+      context.logger.error(`Ищем: "${adapterName}", тип: ${typeof adapterName}`);
+      
       throw new WorkflowErrorClass({
         code: 'ADAPTER_NOT_FOUND',
         category: 'execution',
         severity: 'error',
         message: `Адаптер не найден: ${adapterName}`,
-        context: { stepId: step.id, adapterName },
+        context: { stepId: step.id, adapterName, availableNames, availableCount },
         recoverable: false,
         suggestions: [
           'Проверьте правильность имени адаптера',
           'Убедитесь, что адаптер зарегистрирован',
-          `Доступные адаптеры: ${context.adapters.getAll().map(a => a.name).join(', ')}`
+          `Доступные адаптеры: ${availableNames.join(', ')}`
         ]
       });
     }
@@ -499,6 +508,7 @@ export class DefaultStepExecutor implements StepExecutor {
         
         // Обновление контекста
         context.state.context[outputName] = response.content;
+        context.state.context[`${outputName}_file`] = artifactPath;  // Добавляем путь к файлу
         context.state.artifacts[outputName] = artifactPath;
       }
     }
@@ -613,9 +623,20 @@ export class DefaultStepExecutor implements StepExecutor {
         
         artifacts.push(artifactPath);
         
-        // Обновление контекста
+        // ДВОЙНАЯ ПЕРЕДАЧА КОНТЕКСТА:
+        // 1. Содержимое напрямую (для быстрого доступа)
         context.state.context[outputName] = result.stdout;
+        
+        // 2. Путь к файлу (для явной загрузки)
+        context.state.context[`${outputName}_file`] = artifactPath;
+        
+        // 3. Сохраняем в artifacts для отслеживания
         context.state.artifacts[outputName] = artifactPath;
+        
+        context.logger.debug(
+          `Добавлено в контекст: ${outputName} (${result.stdout.length} символов), ` +
+          `${outputName}_file (${artifactPath})`
+        );
       }
     }
     
@@ -1061,10 +1082,12 @@ export class DefaultStepExecutor implements StepExecutor {
       
       if (shell === 'cmd') {
         command = 'cmd';
-        args = ['/c', script];
+        args = ['/c', 'chcp 65001 >nul && ' + script];
       } else if (shell === 'powershell') {
         command = 'powershell';
-        args = ['-Command', script];
+        // Добавляем команду для установки UTF-8 кодировки
+        const utf8Script = `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${script}`;
+        args = ['-NoProfile', '-Command', utf8Script];
       } else {
         // bash или другой Unix shell
         command = shell;
@@ -1091,12 +1114,12 @@ export class DefaultStepExecutor implements StepExecutor {
 
       // Захват stdout
       child.stdout?.on('data', (data: Buffer) => {
-        stdout += data.toString();
+        stdout += data.toString('utf-8');
       });
 
       // Захват stderr
       child.stderr?.on('data', (data: Buffer) => {
-        stderr += data.toString();
+        stderr += data.toString('utf-8');
       });
 
       // Обработка завершения процесса

@@ -406,18 +406,12 @@ export class WorkflowConfigParser {
     const result: string[] = [];
     const inDegree = new Map<string, number>();
     
-    // Вычисляем входящие степени
-    for (const stepId of steps.keys()) {
-      inDegree.set(stepId, 0);
+    // Вычисляем входящие степени (количество зависимостей для каждого шага)
+    for (const [stepId, deps] of dependencies.entries()) {
+      inDegree.set(stepId, deps.length);
     }
     
-    for (const deps of dependencies.values()) {
-      for (const dep of deps) {
-        inDegree.set(dep, (inDegree.get(dep) || 0) + 1);
-      }
-    }
-    
-    // Очередь узлов без входящих рёбер
+    // Очередь узлов без входящих рёбер (без зависимостей)
     const queue: string[] = [];
     for (const [stepId, degree] of inDegree.entries()) {
       if (degree === 0) {
@@ -430,13 +424,15 @@ export class WorkflowConfigParser {
       const current = queue.shift()!;
       result.push(current);
       
-      const deps = dependencies.get(current) || [];
-      for (const dep of deps) {
-        const newDegree = (inDegree.get(dep) || 0) - 1;
-        inDegree.set(dep, newDegree);
-        
-        if (newDegree === 0) {
-          queue.push(dep);
+      // Уменьшаем степень для всех шагов, которые зависят от текущего
+      for (const [stepId, deps] of dependencies.entries()) {
+        if (deps.includes(current)) {
+          const newDegree = (inDegree.get(stepId) || 0) - 1;
+          inDegree.set(stepId, newDegree);
+          
+          if (newDegree === 0) {
+            queue.push(stepId);
+          }
         }
       }
     }

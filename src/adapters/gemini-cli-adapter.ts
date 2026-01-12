@@ -16,12 +16,11 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
 
   constructor(config?: Partial<AdapterConfig>) {
     // Конфигурация по умолчанию для Gemini CLI
-    // Используем флаг --prompt для headless режима
+    // Используем позиционный аргумент для промпта (новый синтаксис)
     const defaultConfig: AdapterConfig = {
       name: 'gemini-cli',
       command: 'gemini',
       args: [
-        '--prompt',
         '${prompt}'
       ],
       env: {
@@ -51,14 +50,14 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
    * @returns string[] - Массив аргументов
    */
   protected prepareArguments(request: AdapterRequest): string[] {
-    const args: string[] = ['--prompt'];
+    const args: string[] = [];
     
     // Добавляем флаг --model если модель указана
     if (request.model) {
       args.push('--model', request.model);
     }
     
-    // Добавляем промпт
+    // Добавляем промпт как позиционный аргумент (должен быть последним)
     args.push(request.prompt);
     
     return args;

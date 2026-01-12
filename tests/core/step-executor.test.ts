@@ -304,4 +304,171 @@ describe('StepExecutor Unit Tests', () => {
       await expect(executor.executeStep(step, context)).rejects.toThrow('Неизвестный тип шага');
     });
   });
+
+  describe('Двойная передача контекста (содержимое + путь)', () => {
+    it('должен создавать переменную с содержимым для model шага', async () => {
+      const context = createTestContext();
+      
+      const step: WorkflowStep = {
+        id: 'model-output-step',
+        name: 'Model Output Step',
+        type: 'model',
+        prompt_template: 'Generate content',
+        outputs: {
+          test_output: 'test_output.txt'
+        }
+      };
+      
+      const result = await executor.executeStep(step, context);
+      
+      expect(result.status).toBe('success');
+      // Проверяем, что переменная с содержимым создана
+      expect(context.state.context.test_output).toBe('Test response from model');
+    });
+
+    it('должен создавать переменную с путем к файлу для model шага', async () => {
+      const context = createTestContext();
+      
+      const step: WorkflowStep = {
+        id: 'model-file-step',
+        name: 'Model File Step',
+        type: 'model',
+        prompt_template: 'Generate content',
+        outputs: {
+          test_output: 'test_output.txt'
+        }
+      };
+      
+      const result = await executor.executeStep(step, context);
+      
+      expect(result.status).toBe('success');
+      // Проверяем, что переменная с путем создана
+      expect(context.state.context.test_output_file).toBeDefined();
+      expect(typeof context.state.context.test_output_file).toBe('string');
+      expect(context.state.context.test_output_file).toContain('test_output.txt');
+    });
+
+    it('должен одновременно создавать обе переменные (содержимое и путь) для model шага', async () => {
+      const context = createTestContext();
+      
+      const step: WorkflowStep = {
+        id: 'model-both-step',
+        name: 'Model Both Step',
+        type: 'model',
+        prompt_template: 'Generate content',
+        outputs: {
+          result: 'result.txt'
+        }
+      };
+      
+      const result = await executor.executeStep(step, context);
+      
+      expect(result.status).toBe('success');
+      
+      // Проверяем наличие обеих переменных
+      expect(context.state.context.result).toBe('Test response from model');
+      expect(context.state.context.result_file).toBeDefined();
+      expect(typeof context.state.context.result_file).toBe('string');
+      
+      // Проверяем, что обе переменные различны
+      expect(context.state.context.result).not.toBe(context.state.context.result_file);
+    });
+
+    it('должен создавать переменную с содержимым для script шага', async () => {
+      const context = createTestContext();
+      
+      const step: WorkflowStep = {
+        id: 'script-output-step',
+        name: 'Script Output Step',
+        type: 'script',
+        script: 'echo Test Script Output',
+        shell: 'cmd',
+        outputs: {
+          script_result: 'script_result.txt'
+        }
+      };
+      
+      const result = await executor.executeStep(step, context);
+      
+      expect(result.status).toBe('success');
+      // Проверяем, что переменная с содержимым создана
+      expect(context.state.context.script_result).toBeDefined();
+      expect(context.state.context.script_result).toContain('Test Script Output');
+    });
+
+    it('должен создавать переменную с путем к файлу для script шага', async () => {
+      const context = createTestContext();
+      
+      const step: WorkflowStep = {
+        id: 'script-file-step',
+        name: 'Script File Step',
+        type: 'script',
+        script: 'echo Test Script Output',
+        shell: 'cmd',
+        outputs: {
+          script_result: 'script_result.txt'
+        }
+      };
+      
+      const result = await executor.executeStep(step, context);
+      
+      expect(result.status).toBe('success');
+      // Проверяем, что переменная с путем создана
+      expect(context.state.context.script_result_file).toBeDefined();
+      expect(typeof context.state.context.script_result_file).toBe('string');
+      expect(context.state.context.script_result_file).toContain('script_result.txt');
+    });
+
+    it('должен одновременно создавать обе переменные (содержимое и путь) для script шага', async () => {
+      const context = createTestContext();
+      
+      const step: WorkflowStep = {
+        id: 'script-both-step',
+        name: 'Script Both Step',
+        type: 'script',
+        script: 'echo Script Output',
+        shell: 'cmd',
+        outputs: {
+          output: 'output.txt'
+        }
+      };
+      
+      const result = await executor.executeStep(step, context);
+      
+      expect(result.status).toBe('success');
+      
+      // Проверяем наличие обеих переменных
+      expect(context.state.context.output).toBeDefined();
+      expect(context.state.context.output_file).toBeDefined();
+      expect(typeof context.state.context.output_file).toBe('string');
+      
+      // Проверяем, что обе переменные различны
+      expect(context.state.context.output).not.toBe(context.state.context.output_file);
+    });
+
+    it('должен создавать обе переменные для множественных outputs', async () => {
+      const context = createTestContext();
+      
+      const step: WorkflowStep = {
+        id: 'multi-output-step',
+        name: 'Multi Output Step',
+        type: 'model',
+        prompt_template: 'Generate content',
+        outputs: {
+          output1: 'output1.txt',
+          output2: 'output2.txt'
+        }
+      };
+      
+      const result = await executor.executeStep(step, context);
+      
+      expect(result.status).toBe('success');
+      
+      // Проверяем, что для каждого output созданы обе переменные
+      expect(context.state.context.output1).toBe('Test response from model');
+      expect(context.state.context.output1_file).toBeDefined();
+      expect(context.state.context.output2).toBe('Test response from model');
+      expect(context.state.context.output2_file).toBeDefined();
+    });
+  });
 });

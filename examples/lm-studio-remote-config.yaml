@@ -1,0 +1,97 @@
+# Пример конфигурации для работы с удаленным LM Studio
+# LM Studio доступен по адресу: http://192.168.50.1:1234/
+# 
+# Использует OpenAI-совместимый адаптер для подключения к удаленному LM Studio
+# Адаптер автоматически создается из конфигурации
+
+workflow:
+  name: "test-remote-lm-studio"
+  version: "1.0"
+  description: "Тестовый workflow для проверки подключения к удаленному LM Studio"
+  author: "Workflow Orchestrator"
+  
+  settings:
+    artifacts_dir: "session_${timestamp}"
+    default_adapter: "lm-studio-remote"
+    parallel_execution: false
+    max_retries: 2
+    timeout: 120
+    log_level: "info"
+  
+  # Конфигурация адаптеров
+  adapters:
+    - name: "lm-studio-remote"
+      type: "openai-compatible"
+      baseUrl: "http://192.168.50.1:1234/v1"
+      defaultModel: "local-model"
+      timeout: 120000  # 2 минуты таймаут для удаленного сервера
+  
+  # Определение ролей
+  roles:
+    assistant:
+      adapter: "lm-studio-remote"
+      role_definition: |
+        Вы - полезный AI ассистент, работающий через удаленный LM Studio.
+        Отвечайте кратко и по существу.
+      temperature: 0.7
+      max_tokens: 500
+      permissions:
+        - read
+        - edit: "*.md"  # Разрешение на редактирование markdown файлов
+  
+  # Шаги процесса
+  steps:
+    # Шаг 1: Простой тестовый запрос
+    - id: "step1"
+      name: "Тестовый запрос"
+      type: "model"
+      role: "assistant"
+      description: "Простой запрос для проверки работы удаленного LM Studio"
+      prompt_template: |
+        Привет! Это тестовый запрос к удаленному LM Studio.
+        
+        Пожалуйста, ответь на следующие вопросы:
+        1. Как тебя зовут?
+        2. Какая у тебя модель?
+        3. Можешь ли ты помочь с программированием?
+        
+        Ответь кратко, 2-3 предложения на каждый вопрос.
+      outputs:
+        test_response: "${artifacts_dir}/step1_test_response.md"
+    
+    # Шаг 2: Запрос с кодом
+    - id: "step2"
+      name: "Генерация кода"
+      type: "model"
+      role: "assistant"
+      depends_on:
+        - "step1"
+      description: "Тест генерации кода"
+      prompt_template: |
+        Напиши простую функцию на JavaScript, которая:
+        - Принимает массив чисел
+        - Возвращает сумму всех четных чисел
+        
+        Добавь комментарии на русском языке.
+      outputs:
+        code_response: "${artifacts_dir}/step2_code_response.md"
+    
+    # Шаг 3: Анализ результатов
+    - id: "step3"
+      name: "Анализ результатов"
+      type: "model"
+      role: "assistant"
+      depends_on:
+        - "step2"
+      description: "Анализ сгенерированного кода"
+      prompt_template: |
+        Проанализируй следующий код и предложи улучшения:
+        
+        ${code_response}
+        
+        Укажи:
+        1. Что можно улучшить
+        2. Есть ли потенциальные баги
+        3. Как сделать код более эффективным
+      outputs:
+        analysis_response: "${artifacts_dir}/step3_analysis_response.md"

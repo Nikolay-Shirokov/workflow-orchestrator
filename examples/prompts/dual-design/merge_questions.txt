@@ -4,11 +4,11 @@
 
 ## Финальные вопросы архитектора
 
-${artifact:${architect_final_questions}}
+${architect_final_questions}
 
 ## Финальные вопросы второго пилота
 
-${artifact:${copilot_final_questions}}
+${copilot_final_questions}
 
 ## Задача
 

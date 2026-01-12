@@ -6,6 +6,44 @@
 
 Система плагинов позволяет расширять функциональность оркестратора без изменения основного кода. Вы можете создать адаптер для любой CLI-утилиты, которая взаимодействует с AI-моделями.
 
+## Встроенные адаптеры
+
+Workflow Orchestrator включает несколько встроенных адаптеров:
+
+### CLI-адаптеры (наследуются от BaseCLIAdapter)
+- **claude-cli-adapter** - для Claude через `claude-cli`
+- **codex-cli-adapter** - для OpenAI через официальную утилиту `codex` (Codex CLI, апрель 2025)
+- **openai-cli-adapter** - для OpenAI через старую Python-based утилиту `openai`
+- **gemini-cli-adapter** - для Gemini через `gemini-cli`
+
+### HTTP API адаптеры (реализуют CLIAdapter напрямую)
+- **openai-compatible-adapter** - для OpenAI-совместимых HTTP API
+  - Поддерживает: LM Studio, LocalAI, Ollama, Text Generation WebUI, OpenAI API
+  - Работает напрямую с HTTP API без внешних CLI-утилит
+  - См. подробную документацию: [docs/OPENAI_COMPATIBLE_ADAPTER.md](OPENAI_COMPATIBLE_ADAPTER.md)
+
+## Выбор подхода
+
+При создании нового адаптера выберите один из подходов:
+
+### 1. Наследование от BaseCLIAdapter (рекомендуется для CLI-утилит)
+
+**Используйте когда:**
+- Вы интегрируете внешнюю CLI-утилиту
+- Утилита запускается через `child_process`
+- Нужна базовая функциональность (выполнение команд, обработка ошибок)
+
+**Пример:** claude-cli-adapter, openai-cli-adapter
+
+### 2. Прямая реализация CLIAdapter (для HTTP API)
+
+**Используйте когда:**
+- Вы работаете напрямую с HTTP API
+- Не нужно запускать внешние процессы
+- Требуется полный контроль над HTTP запросами
+
+**Пример:** openai-compatible-adapter
+
 ## Структура плагина
 
 Плагин адаптера состоит из:
@@ -315,7 +353,7 @@ metadata: {
 
 ## Примеры
 
-### Адаптер для JSON API
+### Адаптер для JSON API (CLI-подход)
 
 ```javascript
 class JSONAPIAdapter extends BaseCLIAdapter {
@@ -347,6 +385,84 @@ export default {
   createAdapter: (config) => new JSONAPIAdapter(config)
 };
 ```
+
+### Адаптер для HTTP API (прямая реализация)
+
+```javascript
+import { CLIAdapter } from '../core/types.js';
+
+class CustomHTTPAdapter {
+  name = 'custom-http-adapter';
+  version = '1.0.0';
+  
+  constructor(config) {
+    this.baseUrl = config.baseUrl || 'http://localhost:8000';
+    this.apiKey = config.apiKey;
+  }
+  
+  async isAvailable() {
+    try {
+      const response = await fetch(`${this.baseUrl}/health`);
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+  
+  async execute(request) {
+    const response = await fetch(`${this.baseUrl}/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify({
+        prompt: request.prompt,
+        model: request.model,
+        temperature: request.temperature
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    return {
+      content: data.text,
+      model: data.model,
+      tokensUsed: data.tokens,
+      executionTime: data.time
+    };
+  }
+  
+  parseResponse(rawOutput) {
+    return rawOutput.trim();
+  }
+  
+  handleError(error) {
+    return {
+      code: 'ADAPTER_ERROR',
+      message: error.message,
+      retryable: error.message.includes('timeout'),
+      originalError: error
+    };
+  }
+}
+
+export default {
+  metadata: {
+    name: 'custom-http-adapter',
+    version: '1.0.0',
+    minOrchestratorVersion: '1.0.0',
+    description: 'HTTP API адаптер для пользовательского сервиса'
+  },
+  createAdapter: (config) => new CustomHTTPAdapter(config)
+};
+```
+
+**Примечание:** Для полного примера HTTP API адаптера см. встроенный `openai-compatible-adapter` в [src/adapters/openai-compatible-adapter.ts](../src/adapters/openai-compatible-adapter.ts)
 
 ### Адаптер с аутентификацией
 
