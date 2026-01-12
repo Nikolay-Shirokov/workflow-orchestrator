@@ -65,7 +65,6 @@ export interface DryRunOptions {
  */
 export class WorkflowOrchestrator {
   private stateDir: string;
-  private artifactsDir: string;
   private logger: Logger;
   private stateManager: StateManager;
   private workflowEngine: WorkflowEngine;
@@ -73,7 +72,6 @@ export class WorkflowOrchestrator {
 
   constructor(config: OrchestratorConfig) {
     this.stateDir = config.stateDir || './state';
-    this.artifactsDir = config.artifactsDir || './artifacts';
     this.logger = config.logger;
 
     // Инициализация компонентов
@@ -89,9 +87,11 @@ export class WorkflowOrchestrator {
     this.registerDefaultAdapters();
     
     const templateEngine = new DefaultTemplateEngine();
+    // Используем текущую директорию как baseDir, чтобы artifacts_dir из конфигурации
+    // использовался как абсолютный путь от корня проекта
     const artifactManager = createArtifactManager({
-      baseDir: this.artifactsDir,
-      sessionDirTemplate: '',  // Не добавляем поддиректорию, используем baseDir напрямую
+      baseDir: '.',
+      sessionDirTemplate: '',
       logger: this.logger
     });
     
