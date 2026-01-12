@@ -6,14 +6,14 @@
 
 ## Tasks
 
-- [ ] 1. Создание базовых типов и интерфейсов
+- [x] 1. Создание базовых типов и интерфейсов
   - Создать файл `src/core/file-input-types.ts` с новыми типами
   - Определить FileInputResult, UserCommand, EditorConfig, FileFormat
   - Расширить WorkflowStep и WorkflowSettings новыми полями
   - Экспортировать типы из `src/core/types.ts`
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 9.1, 9.2, 9.3, 9.4, 9.5_
 
-- [ ] 1.1 Написать property test для типов
+- [x] 1.1 Написать property test для типов
   - **Property 1: Создание валидного шаблона**
   - **Validates: Requirements 1.1, 1.2, 1.3, 1.4, 1.5**
   - Генерация случайных конфигураций шагов
