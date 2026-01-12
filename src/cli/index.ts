@@ -94,6 +94,12 @@ export function createCLI(): Command {
           logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
           logger.info(`  Создано артефактов: ${Object.keys(state.artifacts).length}`);
           process.exit(0);
+        } else if (state.status === 'paused') {
+          logger.info(`○ Процесс приостановлен (сессия: ${state.sessionId})`);
+          logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+          logger.info(`  Текущий шаг: ${state.currentStep}`);
+          logger.info(`  Для продолжения используйте: resume ${state.sessionId}`);
+          process.exit(0);
         } else {
           logger.error(`✗ Процесс завершился с ошибкой (статус: ${state.status})`);
           if (state.errors.length > 0) {
@@ -145,6 +151,11 @@ export function createCLI(): Command {
         if (state.status === 'completed') {
           logger.info(`✓ Процесс завершен успешно`);
           logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+          process.exit(0);
+        } else if (state.status === 'paused') {
+          logger.info(`○ Процесс снова приостановлен (сессия: ${state.sessionId})`);
+          logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+          logger.info(`  Текущий шаг: ${state.currentStep}`);
           process.exit(0);
         } else {
           logger.error(`✗ Процесс завершился с ошибкой (статус: ${state.status})`);

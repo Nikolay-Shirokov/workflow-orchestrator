@@ -868,16 +868,79 @@ export class DefaultStepExecutor implements StepExecutor {
   /**
    * Выполнение шага ввода пользователя
    * 
-   * Базовая реализация:
-   * - Приостанавливает выполнение процесса (устанавливает статус 'paused')
-   * - Сохраняет информацию о том, что ожидается ввод пользователя
-   * - Возвращает результат с пометкой 'skipped' для текущего выполнения
-   * - При возобновлении процесс должен продолжиться со следующего шага
+   * Логика работы:
+   * - При первом выполнении: приостанавливает процесс и создает заглушку для артефакта
+   * - При возобновлении: загружает данные из артефакта и добавляет в контекст
    */
   private async executeUserInputStep(
     step: WorkflowStep,
     context: ExecutionContext
   ): Promise<StepResult> {
+    // Проверяем, есть ли уже артефакт с ответами пользователя
+    // Если есть - это возобновление после паузы
+    let userInputExists = false;
+    
+    if (step.outputs) {
+      for (const [outputName, outputPath] of Object.entries(step.outputs)) {
+        const renderedPath = context.templateEngine.render(
+          outputPath,
+          this.createTemplateContext(context)
+        );
+        
+        // Проверяем существование файла
+        try {
+          const content = readFileSync(renderedPath, 'utf-8');
+          // Проверяем, что это не заглушка
+          if (!content.includes('Ожидается ввод пользователя')) {
+            userInputExists = true;
+            
+            // Загружаем данные в контекст
+            context.state.context[outputName] = content;
+            context.state.context[`${outputName}_file`] = renderedPath;
+            
+            context.logger.info(
+              `Загружены ответы пользователя из ${renderedPath} (${content.length} символов)`
+            );
+          }
+        } catch (error) {
+          // Файл не существует - это первое выполнение
+        }
+      }
+    }
+    
+    // Если данные уже есть - возвращаем успешный результат
+    if (userInputExists) {
+      context.logger.info(`Шаг ${step.id}: ввод пользователя уже предоставлен, продолжаем выполнение`);
+      
+      // ВАЖНО: сбрасываем статус paused, чтобы процесс продолжился
+      // Это критично для корректного завершения процесса после возобновления
+      if (context.state.status === 'paused') {
+        context.state.status = 'running';
+        context.logger.info(`Статус процесса изменен с 'paused' на 'running' после загрузки ввода пользователя`);
+      }
+      
+      const artifacts: string[] = [];
+      if (step.outputs) {
+        for (const [outputName] of Object.entries(step.outputs)) {
+          if (context.state.context[`${outputName}_file`]) {
+            artifacts.push(context.state.context[`${outputName}_file`] as string);
+          }
+        }
+      }
+      
+      return {
+        stepId: step.id,
+        status: 'success',
+        outputs: {
+          message: 'Ввод пользователя загружен',
+          inputFormat: step.input_format || 'text'
+        },
+        artifacts,
+        executionTime: 0
+      };
+    }
+    
+    // Первое выполнение - приостанавливаем процесс
     context.logger.info(`Шаг ${step.id} требует ввода пользователя. Приостановка выполнения...`);
     
     // Устанавливаем статус процесса как 'paused'

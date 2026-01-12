@@ -394,14 +394,37 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       step => remainingStepIds.includes(step.id)
     );
 
+    // ВАЖНО: Очищаем зависимости на уже выполненные шаги
+    // Это предотвращает ошибки при построении графа зависимостей
+    const cleanedSteps = remainingSteps.map(step => {
+      if (!step.depends_on || step.depends_on.length === 0) {
+        return step;
+      }
+      
+      // Фильтруем зависимости, оставляя только те, которые еще не выполнены
+      const validDependencies = step.depends_on.filter(
+        depId => remainingStepIds.includes(depId)
+      );
+      
+      // Если все зависимости уже выполнены, убираем depends_on
+      if (validDependencies.length === 0) {
+        const { depends_on, ...stepWithoutDeps } = step;
+        return stepWithoutDeps as WorkflowStep;
+      }
+      
+      // Иначе обновляем список зависимостей
+      return {
+        ...step,
+        depends_on: validDependencies
+      };
+    });
+
     // Определяем порядок выполнения только для оставшихся шагов
-    // Это предотвращает проблемы с циклическими зависимостями,
-    // которые могут возникнуть при попытке построить граф для подмножества шагов
     let executionOrder: string[];
     try {
-      executionOrder = this.determineExecutionOrder(remainingSteps);
+      executionOrder = this.determineExecutionOrder(cleanedSteps);
     } catch (error) {
-      // Если не удается построить граф зависимостей (например, из-за отсутствующих зависимостей),
+      // Если не удается построить граф зависимостей (например, из-за циклических зависимостей),
       // используем простой порядок - ID шагов в том порядке, в котором они определены
       this.logger.warn(
         `Не удалось построить граф зависимостей для оставшихся шагов: ${(error as Error).message}. ` +
@@ -572,8 +595,20 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
         // Выполнение шага
         const result = await this.executeStepWithRetries(step, context, config);
 
+        // КРИТИЧЕСКАЯ ПРОВЕРКА: если процесс приостановлен после выполнения шага,
+        // прерываем выполнение ДО обновления состояния
+        // Это важно для шагов user_input, которые устанавливают статус 'paused'
+        const wasPausedByStep = state.status === 'paused';
+
         // Обновление состояния после успешного выполнения
         await this.updateStateAfterStep(state, step, result);
+
+        // Если шаг приостановил процесс, выходим из цикла
+        if (wasPausedByStep) {
+          this.logger.info(`Процесс приостановлен на шаге ${stepId}. Выход из цикла выполнения.`);
+          await this.stateManager.saveState(state);
+          return state;
+        }
 
       } catch (error) {
         this.logger.error(`Ошибка выполнения шага ${stepId}:`, error);

@@ -308,7 +308,11 @@ export class DefaultStateManager implements StateManager {
     stepHistory: StepHistory
   ): Promise<WorkflowState> {
     // Добавление шага в список завершенных
-    if (!state.completedSteps.includes(stepHistory.stepId)) {
+    // НЕ добавляем шаги со статусом 'skipped', если процесс приостановлен
+    // (это означает, что шаг требует ввода пользователя и должен быть выполнен при возобновлении)
+    const shouldAddToCompleted = stepHistory.status !== 'skipped' || state.status !== 'paused';
+    
+    if (shouldAddToCompleted && !state.completedSteps.includes(stepHistory.stepId)) {
       state.completedSteps.push(stepHistory.stepId);
     }
 
