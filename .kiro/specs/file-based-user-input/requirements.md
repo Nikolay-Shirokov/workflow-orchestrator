@@ -38,6 +38,7 @@
 3. WHERE пользователь не указал Editor THEN THE Workflow_Orchestrator SHALL использовать системный редактор по умолчанию
 4. IF Editor не может быть запущен THEN THE Workflow_Orchestrator SHALL вывести путь к файлу и продолжить в интерактивном режиме
 5. THE Workflow_Orchestrator SHALL поддерживать настройку editor в конфигурации процесса
+6. THE Workflow_Orchestrator SHALL проверять доступность Editor перед попыткой запуска только для редакторов, доступных на текущей платформе
 
 ### Requirement 3: Приостановка процесса и ожидание пользователя
 
