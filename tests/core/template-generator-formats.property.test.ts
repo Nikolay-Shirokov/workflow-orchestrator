@@ -148,7 +148,13 @@ describe('TemplateGenerator Format Support Property-Based Tests', () => {
             
             // Даже для пустого промпта должен быть сгенерирован шаблон
             expect(template.length).toBeGreaterThan(0);
-            expect(template).toContain('Test Step');
+            
+            // Проверяем наличие имени с учётом трансформаций
+            if (format === 'text') {
+              expect(template).toContain('TEST STEP');
+            } else {
+              expect(template).toContain('Test Step');
+            }
           }
         ),
         { numRuns: 100 }
@@ -171,13 +177,22 @@ describe('TemplateGenerator Format Support Property-Based Tests', () => {
             const uniqueTemplates = new Set(Object.values(templates));
             expect(uniqueTemplates.size).toBe(4);
             
-            // Каждый шаблон должен содержать имя шага
-            for (const template of Object.values(templates)) {
-              const hasStepName = 
-                template.includes(step.name) ||
-                template.toUpperCase().includes(step.name.toUpperCase());
-              expect(hasStepName).toBe(true);
-            }
+            // Каждый шаблон должен содержать имя шага (с учётом трансформаций)
+            // Markdown, YAML - оригинальное имя
+            expect(templates.markdown).toContain(step.name);
+            expect(templates.yaml).toContain(step.name);
+            
+            // Text - имя в верхнем регистре
+            expect(templates.text).toContain(step.name.toUpperCase());
+            
+            // JSON - имя в экранированном виде
+            const escapedName = step.name
+              .replace(/\\/g, '\\\\')
+              .replace(/"/g, '\\"')
+              .replace(/\n/g, '\\n')
+              .replace(/\r/g, '\\r')
+              .replace(/\t/g, '\\t');
+            expect(templates.json).toContain(escapedName);
           }
         ),
         { numRuns: 100 }

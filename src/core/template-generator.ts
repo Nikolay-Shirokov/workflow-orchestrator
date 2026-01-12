@@ -194,58 +194,47 @@ export class TemplateGenerator {
     step: WorkflowStep,
     _context: ExecutionContext
   ): string {
-    const lines: string[] = [];
-    
-    lines.push('{');
-    lines.push(`  "_comment": "Шаблон для: ${step.name || 'Ввод пользователя'}",`);
+    // Используем объект для безопасного создания JSON
+    const jsonObj: Record<string, unknown> = {
+      _comment: `Шаблон для: ${step.name || 'Ввод пользователя'}`,
+      _instructions: [
+        '1. Заполните поля ниже',
+        '2. Сохраните файл',
+        '3. Вернитесь в терминал и введите \'продолжить\' или \'готово\''
+      ]
+    };
     
     if (step.description) {
-      lines.push(`  "_description": "${this.escapeJSON(step.description)}",`);
+      jsonObj._description = step.description;
     }
     
-    lines.push('  "_instructions": [');
-    lines.push('    "1. Заполните поля ниже",');
-    lines.push('    "2. Сохраните файл",');
-    lines.push('    "3. Вернитесь в терминал и введите \'продолжить\' или \'готово\'"');
-    lines.push('  ],');
-    
     if (step.prompt_message) {
-      const escapedPrompt = this.escapeJSON(step.prompt_message);
-      lines.push(`  "_task": "${escapedPrompt}",`);
+      jsonObj._task = step.prompt_message;
     }
     
     // Извлечение вопросов
     const questions = this.extractQuestions(step.prompt_message || '');
     
     if (questions.length > 0) {
-      lines.push('  "answers": {');
+      const answers: Record<string, unknown> = {};
       
-      for (let i = 0; i < questions.length; i++) {
-        const question = questions[i];
-        const isLast = i === questions.length - 1;
-        
-        lines.push(`    "_question_${question.number}": "${this.escapeJSON(question.text)}",`);
+      for (const question of questions) {
+        answers[`_question_${question.number}`] = question.text;
         
         if (question.options && question.options.length > 0) {
-          const optionsStr = question.options.map(o => `"${this.escapeJSON(o)}"`).join(', ');
-          lines.push(`    "_options_${question.number}": [${optionsStr}],`);
+          answers[`_options_${question.number}`] = question.options;
         }
         
-        lines.push(`    "question_${question.number}": ""${isLast ? '' : ','}`);
-        
-        if (!isLast) {
-          lines.push('');
-        }
+        answers[`question_${question.number}`] = '';
       }
       
-      lines.push('  }');
+      jsonObj.answers = answers;
     } else {
-      lines.push('  "response": ""');
+      jsonObj.response = '';
     }
     
-    lines.push('}');
-    
-    return lines.join('\n');
+    // Используем JSON.stringify для безопасного создания JSON
+    return JSON.stringify(jsonObj, null, 2);
   }
   
   /**
@@ -422,20 +411,5 @@ export class TemplateGenerator {
     }
     
     return questions;
-  }
-  
-  /**
-   * Экранирование специальных символов для JSON
-   * 
-   * @param str - Строка для экранирования
-   * @returns string - Экранированная строка
-   */
-  private escapeJSON(str: string): string {
-    return str
-      .replace(/\\/g, '\\\\')
-      .replace(/"/g, '\\"')
-      .replace(/\n/g, '\\n')
-      .replace(/\r/g, '\\r')
-      .replace(/\t/g, '\\t');
   }
 }
