@@ -41,6 +41,7 @@ export function createCLI(): Command {
     .description('Запустить новый рабочий процесс')
     .argument('<config>', 'Путь к файлу конфигурации процесса (YAML/JSON)')
     .option('-c, --context <json>', 'Начальный контекст в формате JSON')
+    .option('-f, --context-file <file>', 'Путь к файлу с начальным контекстом (JSON)')
     .option('-v, --verbose', 'Подробный вывод логов')
     .option('--log-level <level>', 'Уровень логирования (debug, info, warning, error)', 'info')
     .option('--state-dir <dir>', 'Директория для файлов состояния', './state')
@@ -53,7 +54,19 @@ export function createCLI(): Command {
 
         // Парсинг начального контекста
         let initialContext: Record<string, unknown> = {};
-        if (options.context) {
+        
+        // Приоритет: файл контекста > JSON строка
+        if (options.contextFile) {
+          try {
+            const { readFile } = await import('fs/promises');
+            const contextContent = await readFile(options.contextFile, 'utf-8');
+            initialContext = JSON.parse(contextContent);
+            logger.info(`Контекст загружен из файла: ${options.contextFile}`);
+          } catch (error) {
+            logger.error('Ошибка чтения файла контекста:', error as Error);
+            process.exit(1);
+          }
+        } else if (options.context) {
           try {
             initialContext = JSON.parse(options.context);
           } catch (error) {

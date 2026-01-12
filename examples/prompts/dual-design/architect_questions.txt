@@ -8,7 +8,7 @@ ${user_request}
 
 ${if:web_research:## Результаты веб-исследования
 
-${artifact:${web_research_file}:web_research}:}
+${artifact:${web_research}:web_research}:}
 
 ## Ваша роль
 

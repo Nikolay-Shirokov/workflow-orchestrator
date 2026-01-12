@@ -18,6 +18,12 @@ import { RoleManager } from '../core/role-manager.js';
 import { CLIWorkflowStatus, DryRunResult } from './index.js';
 import { ProgressDisplay } from './progress-display.js';
 
+// Импортируем все доступные адаптеры
+import { ClaudeCLIAdapter } from '../adapters/claude-cli-adapter.js';
+import { OpenAICLIAdapter } from '../adapters/openai-cli-adapter.js';
+import { GeminiCLIAdapter } from '../adapters/gemini-cli-adapter.js';
+import { CodexCLIAdapter } from '../adapters/codex-cli-adapter.js';
+
 /**
  * Конфигурация оркестратора
  */
@@ -78,6 +84,10 @@ export class WorkflowOrchestrator {
 
     const configParser = new WorkflowConfigParser();
     this.adapterRegistry = new AdapterRegistry();
+    
+    // Автоматическая регистрация всех доступных адаптеров
+    this.registerDefaultAdapters();
+    
     const templateEngine = new DefaultTemplateEngine();
     const artifactManager = createArtifactManager({
       baseDir: this.artifactsDir,
@@ -105,6 +115,24 @@ export class WorkflowOrchestrator {
       roleManager,
       mcpManager
     });
+  }
+
+  /**
+   * Регистрация адаптеров по умолчанию
+   * Автоматически регистрирует все доступные CLI-адаптеры
+   */
+  private registerDefaultAdapters(): void {
+    try {
+      // Регистрируем все доступные адаптеры
+      this.adapterRegistry.register(new ClaudeCLIAdapter());
+      this.adapterRegistry.register(new OpenAICLIAdapter());
+      this.adapterRegistry.register(new GeminiCLIAdapter());
+      this.adapterRegistry.register(new CodexCLIAdapter());
+      
+      this.logger.debug(`Зарегистрировано адаптеров: ${this.adapterRegistry.getAll().length}`);
+    } catch (error) {
+      this.logger.warn(`Ошибка при регистрации адаптеров по умолчанию: ${(error as Error).message}`);
+    }
   }
 
   /**

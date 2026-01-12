@@ -9,7 +9,7 @@ workflow:
   
   settings:
     artifacts_dir: "artifacts/session_${timestamp}"
-    default_adapter: "claude-cli"
+    default_adapter: "codex-cli"
     parallel_execution: true
     max_retries: 3
     timeout: 300
@@ -26,8 +26,8 @@ workflow:
   # Определение ролей
   roles:
     architect:
-      adapter: "claude-cli"
-      model: "claude-sonnet-3.5"
+      adapter: "codex-cli"
+      model: "gpt-5.2-codex"
       role_definition: |
         Вы - АРХИТЕКТОР в совместной разработке требований.
         Ваша роль - задавать глубокие технические вопросы и предлагать архитектурные решения.
@@ -44,8 +44,8 @@ workflow:
       max_tokens: 4000
     
     copilot:
-      adapter: "openai-cli"
-      model: "gpt-4"
+      adapter: "codex-cli"
+      model: "gpt-5.2-codex"
       role_definition: |
         Вы - ВТОРОЙ ПИЛОТ, предоставляющий критический анализ и альтернативные перспективы.
         Ваша роль - выявлять потенциальные проблемы, предлагать улучшения и задавать вопросы о бизнес-логике.
@@ -86,7 +86,7 @@ workflow:
       inputs:
         user_request: "${user_request}"
       outputs:
-        research_file: "${artifacts_dir}/step1.5_web_research.md"
+        web_research: "${artifacts_dir}/step1.5_web_research.md"
     
     # Шаги 2-3: Параллельные вопросы от обеих моделей
     - id: "step2_3"
@@ -102,7 +102,7 @@ workflow:
           prompt_template: "examples/prompts/dual-design/architect_questions.txt"
           inputs:
             user_request: "${user_request}"
-            web_research: "${research_file}"
+            web_research: "${web_research}"
           outputs:
             architect_questions: "${artifacts_dir}/step2_architect_questions.md"
         
@@ -114,7 +114,7 @@ workflow:
           prompt_template: "examples/prompts/dual-design/copilot_questions.txt"
           inputs:
             user_request: "${user_request}"
-            web_research: "${research_file}"
+            web_research: "${web_research}"
           outputs:
             copilot_questions: "${artifacts_dir}/step3_copilot_questions.md"
     
@@ -227,7 +227,7 @@ workflow:
       prompt_template: "examples/prompts/dual-design/final_document.txt"
       inputs:
         user_request: "${user_request}"
-        web_research: "${research_file}"
+        web_research: "${web_research}"
         architect_questions: "${architect_questions}"
         copilot_questions: "${copilot_questions}"
         final_questions: "${final_questions}"
