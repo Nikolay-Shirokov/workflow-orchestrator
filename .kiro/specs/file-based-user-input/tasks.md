@@ -19,28 +19,28 @@
   - Генерация случайных конфигураций шагов
   - Проверка валидности типов
 
-- [ ] 2. Реализация EditorManager
-  - [ ] 2.1 Создать файл `src/core/editor-manager.ts`
+- [x] 2. Реализация EditorManager
+  - [x] 2.1 Создать файл `src/core/editor-manager.ts`
     - Реализовать класс EditorManager
     - Метод detectSystemEditor() для определения редактора по умолчанию
     - Метод checkEditorAvailability() для проверки доступности
     - Метод getCommonEditors() для списка популярных редакторов
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-  - [ ] 2.2 Реализовать метод launchEditor()
+  - [x] 2.2 Реализовать метод launchEditor()
     - Формирование команды запуска с аргументами
     - Запуск процесса редактора
     - Обработка ошибок запуска
     - Поддержка wait режима
     - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-  - [ ] 2.3 Написать unit tests для EditorManager
+  - [x] 2.3 Написать unit tests для EditorManager
     - Тест определения системного редактора
     - Тест проверки доступности
     - Тест формирования команды
     - Тест обработки ошибок
 
-  - [ ] 2.4 Написать property test для EditorManager
+  - [x] 2.4 Написать property test для EditorManager
     - **Property 2: Открытие редактора**
     - **Validates: Requirements 2.1, 2.2, 2.3, 2.4**
     - Генерация случайных конфигураций редактора
