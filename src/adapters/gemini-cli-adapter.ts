@@ -50,7 +50,9 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
    * @returns string[] - Массив аргументов
    */
   protected prepareArguments(request: AdapterRequest): string[] {
-    const args: string[] = []; // Без флагов - чистый текстовый режим
+    // Отключаем все инструменты (MCP серверы) передавая пустой список
+    // Это предотвращает использование Gemini инструментов для изменения файлов
+    const args: string[] = ['--allowed-tools', ''];
     
     // Добавляем флаг --model если модель указана
     if (request.model) {
