@@ -220,9 +220,17 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
         windowsHide: true
       });
 
+      // Устанавливаем кодировку для потоков
+      if (child.stdout) {
+        child.stdout.setEncoding('utf8');
+      }
+      if (child.stderr) {
+        child.stderr.setEncoding('utf8');
+      }
+
       // Если нужно передать данные через stdin
       if (stdinData && child.stdin) {
-        child.stdin.write(stdinData);
+        child.stdin.write(stdinData, 'utf8');
         child.stdin.end();
       }
 
@@ -240,13 +248,13 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
       }, timeout);
 
       // Захват stdout
-      child.stdout?.on('data', (data: Buffer) => {
-        stdout += data.toString('utf8');
+      child.stdout?.on('data', (data: string) => {
+        stdout += data;
       });
 
       // Захват stderr
-      child.stderr?.on('data', (data: Buffer) => {
-        stderr += data.toString('utf8');
+      child.stderr?.on('data', (data: string) => {
+        stderr += data;
       });
 
       // Обработка завершения процесса
