@@ -1208,8 +1208,31 @@ export class DefaultStepExecutor implements StepExecutor {
     let template: string;
     
     if (step.prompt_template) {
-      // Если указан путь к файлу, загружаем его
-      if (step.prompt_template.includes('/') || step.prompt_template.includes('\\')) {
+      // Определяем, является ли prompt_template путем к файлу или inline-шаблоном
+      // Путь к файлу должен:
+      // 1. Начинаться с относительного пути (prompts/, examples/, ./,../)
+      // 2. Или быть абсолютным путем (C:\, /home/, etc)
+      // 3. И НЕ содержать переменных шаблона в начале строки
+      const isFilePath = (
+        // Проверяем что это не inline-шаблон с переменными
+        !step.prompt_template.trim().startsWith('${') &&
+        (
+          // Относительные пути
+          step.prompt_template.startsWith('prompts/') ||
+          step.prompt_template.startsWith('examples/') ||
+          step.prompt_template.startsWith('./') ||
+          step.prompt_template.startsWith('../') ||
+          step.prompt_template.startsWith('prompts\\') ||
+          step.prompt_template.startsWith('examples\\') ||
+          step.prompt_template.startsWith('.\\') ||
+          step.prompt_template.startsWith('..\\') ||
+          // Абсолютные пути
+          /^[A-Za-z]:\\/.test(step.prompt_template) || // Windows: C:\
+          step.prompt_template.startsWith('/') // Unix: /home/
+        )
+      );
+      
+      if (isFilePath) {
         template = context.templateEngine.loadTemplate(step.prompt_template);
       } else {
         // Иначе используем как inline-шаблон

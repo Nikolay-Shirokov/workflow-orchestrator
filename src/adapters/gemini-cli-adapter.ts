@@ -53,9 +53,9 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
    * @returns string[] - Массив аргументов
    */
   protected prepareArguments(request: AdapterRequest): string[] {
-    // Используем --yolo для автоподтверждения инструментов
-    // Это позволяет Gemini использовать write_file для создания полных документов
-    const args: string[] = ['--yolo'];
+    // Разрешаем только инструмент write_file и автоподтверждаем его использование
+    // Это позволяет Gemini создавать полные документы, но ограничивает другие действия
+    const args: string[] = ['--allowed-tools', 'write_file', '--yolo'];
     
     // Добавляем флаг --model если модель указана
     if (request.model) {
@@ -86,10 +86,10 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
       tempInputPath = path.join(tmpDir, `gemini-prompt-${timestamp}.txt`);
       
       // Пытаемся извлечь путь к выходному файлу из промпта
-      // Ищем паттерн: "Сохрани результат в файл <путь>" или просто путь к .md файлу
-      const outputFileMatch = request.prompt.match(/[Сс]охрани.*?файл\s+([^\s]+\.md)|файл[:\s]+([^\s]+\.md)/);
+      // Ищем паттерн: "file path: <путь>" или "to file path: <путь>"
+      const outputFileMatch = request.prompt.match(/(?:to )?file path:\s*([^\s\n]+\.md)/i);
       if (outputFileMatch) {
-        outputFilePath = outputFileMatch[1] || outputFileMatch[2];
+        outputFilePath = outputFileMatch[1];
         // Убираем возможные кавычки
         outputFilePath = outputFilePath.replace(/['"]/g, '');
         console.log(`[DEBUG] Обнаружен путь к выходному файлу: ${outputFilePath}`);

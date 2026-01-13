@@ -64,7 +64,8 @@ workflow:
         
         Формат ответа - простой список вопросов без нумерации.
         
-        ВАЖНО: Сохрани результат в файл: ${artifacts_dir}/questions.md
+        CRITICAL: Use write_file tool to save your response to file path: ${artifacts_dir}/questions.md
+        The file path is relative to current working directory.
       inputs:
         user_need: "${user_need}"
       outputs:
@@ -121,7 +122,8 @@ workflow:
         
         Пиши конкретно и структурированно, без воды.
         
-        ВАЖНО: Сохрани результат в файл: ${artifacts_dir}/requirements.md
+        CRITICAL: Use write_file tool to save your response to file path: ${artifacts_dir}/requirements.md
+        The file path is relative to current working directory.
       inputs:
         user_need: "${user_need}"
         questions: "${questions}"
