@@ -265,6 +265,7 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
     state.context = {
       ...initialContext,
       default_adapter: config.settings.default_adapter,
+      default_editor: config.settings.default_editor,
       artifacts_dir: artifactsDir,
       workflow_name: config.name,
       workflow_version: config.version,

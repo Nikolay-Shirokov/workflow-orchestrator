@@ -82,6 +82,8 @@ export class FileInputHandler {
       // 2. Открытие в редакторе
       // Используем редактор из шага, или default_editor из настроек workflow
       const editorConfig = step.editor || (context.state.context.default_editor as EditorConfig | undefined);
+      this.logger.debug(`Конфигурация редактора: ${JSON.stringify(editorConfig)}`);
+      this.logger.debug(`context.state.context.default_editor: ${JSON.stringify(context.state.context.default_editor)}`);
       await this.openInEditor(filePath, editorConfig);
       
       // 3. Ожидание подтверждения пользователя
@@ -462,6 +464,8 @@ export class FileInputHandler {
       this.logger.debug(`Тестовый режим: пропуск запуска редактора для ${filePath}`);
       return;
     }
+    
+    this.logger.debug(`openInEditor вызван с editorConfig: ${JSON.stringify(editorConfig)}`);
     
     // Попытка 1: Использование указанного редактора
     if (editorConfig?.command) {
