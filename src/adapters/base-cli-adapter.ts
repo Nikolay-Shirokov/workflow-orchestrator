@@ -241,12 +241,12 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
 
       // Захват stdout
       child.stdout?.on('data', (data: Buffer) => {
-        stdout += data.toString();
+        stdout += data.toString('utf8');
       });
 
       // Захват stderr
       child.stderr?.on('data', (data: Buffer) => {
-        stderr += data.toString();
+        stderr += data.toString('utf8');
       });
 
       // Обработка завершения процесса
@@ -261,6 +261,14 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
             `stderr: ${stderr.substring(0, 500)}`
           ));
           return;
+        }
+
+        // Логируем размер полученного вывода для отладки
+        if (stdout.length > 0) {
+          console.log(`[DEBUG] Получено ${stdout.length} байт из stdout`);
+        }
+        if (stderr.length > 0) {
+          console.log(`[DEBUG] Получено ${stderr.length} байт из stderr`);
         }
 
         resolve({
