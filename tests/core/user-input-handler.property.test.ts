@@ -667,4 +667,536 @@ describe('UserInputHandler Property-Based Tests', () => {
       );
     });
   });
+  
+  /**
+   * Feature: file-based-user-input, Property 7: Обработка вопросов
+   * 
+   * Для любого файла с вопросами и ответами, система должна корректно
+   * извлечь ответы и сопоставить их с вопросами.
+   * 
+   * Validates: Requirements 5.1, 5.2, 5.3, 5.4
+   */
+  describe('Property 7: Question Processing', () => {
+    it('должен корректно извлекать ответы из различных форматов', () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.record({
+              id: fc.string({ minLength: 1, maxLength: 10 })
+                .filter(s => /^[a-zA-Z0-9_]+$/.test(s))
+                .filter(s => s !== '__proto__' && s !== 'constructor' && s !== 'prototype'),
+              question: fc.string({ minLength: 5, maxLength: 100 })
+                .filter(s => !s.includes('\n') && s.trim().length > 0),
+              answer: fc.oneof(
+                fc.string({ minLength: 1, maxLength: 200 }),
+                fc.integer(),
+                fc.boolean()
+              )
+            }),
+            { minLength: 1, maxLength: 5 }
+          ),
+          (questionsData) => {
+            // Создаем уникальные вопросы
+            const uniqueQuestions = Array.from(
+              new Map(questionsData.map(q => [q.id, q])).values()
+            );
+            
+            const questions: UserQuestion[] = uniqueQuestions.map(q => ({
+              id: q.id,
+              question: q.question,
+              required: true,
+              type: 'string'
+            }));
+            
+            // Создаем ответы
+            const answersData: Record<string, unknown> = {};
+            for (const q of uniqueQuestions) {
+              answersData[q.id] = q.answer;
+            }
+            
+            const userAnswers: UserAnswers = {
+              answers: answersData,
+              timestamp: new Date().toISOString()
+            };
+            
+            // Извлекаем только ответы
+            const extractedAnswers = handler.extractAnswersOnly(userAnswers, questions, false);
+            
+            // Проверяем, что все ответы извлечены корректно
+            for (const q of uniqueQuestions) {
+              expect(extractedAnswers[q.id]).toEqual(q.answer);
+            }
+            
+            // Проверяем, что вопросы не включены
+            for (const value of Object.values(extractedAnswers)) {
+              if (typeof value === 'object' && value !== null) {
+                expect(value).not.toHaveProperty('question');
+              }
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+    
+    it('должен корректно сопоставлять вопросы и ответы при includeQuestions=true', () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.record({
+              id: fc.string({ minLength: 1, maxLength: 10 })
+                .filter(s => /^[a-zA-Z0-9_]+$/.test(s))
+                .filter(s => s !== '__proto__' && s !== 'constructor' && s !== 'prototype'),
+              question: fc.string({ minLength: 5, maxLength: 100 })
+                .filter(s => !s.includes('\n') && s.trim().length > 0),
+              answer: fc.string({ minLength: 1, maxLength: 200 })
+            }),
+            { minLength: 1, maxLength: 5 }
+          ),
+          (questionsData) => {
+            // Создаем уникальные вопросы
+            const uniqueQuestions = Array.from(
+              new Map(questionsData.map(q => [q.id, q])).values()
+            );
+            
+            const questions: UserQuestion[] = uniqueQuestions.map(q => ({
+              id: q.id,
+              question: q.question,
+              required: true,
+              type: 'string'
+            }));
+            
+            // Создаем ответы
+            const answersData: Record<string, unknown> = {};
+            for (const q of uniqueQuestions) {
+              answersData[q.id] = q.answer;
+            }
+            
+            const userAnswers: UserAnswers = {
+              answers: answersData,
+              timestamp: new Date().toISOString()
+            };
+            
+            // Извлекаем с вопросами
+            const extractedWithQuestions = handler.extractAnswersOnly(userAnswers, questions, true);
+            
+            // Проверяем, что все вопросы и ответы сопоставлены корректно
+            for (const q of uniqueQuestions) {
+              const extracted = extractedWithQuestions[q.id];
+              expect(extracted).toBeDefined();
+              
+              if (typeof extracted === 'object' && extracted !== null) {
+                const qaPair = extracted as { question?: string; answer?: unknown };
+                expect(qaPair.question).toBe(q.question);
+                expect(qaPair.answer).toEqual(q.answer);
+              }
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+    
+    it('должен обрабатывать различные типы ответов', () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.record({
+              id: fc.string({ minLength: 1, maxLength: 10 })
+                .filter(s => /^[a-zA-Z0-9_]+$/.test(s))
+                .filter(s => s !== '__proto__' && s !== 'constructor' && s !== 'prototype'),
+              question: fc.string({ minLength: 5, maxLength: 100 }),
+              answer: fc.oneof(
+                fc.string({ minLength: 1, maxLength: 200 }),
+                fc.integer(),
+                fc.boolean(),
+                fc.array(fc.string({ minLength: 1, maxLength: 50 }), { maxLength: 3 }),
+                fc.record({
+                  nested: fc.string({ minLength: 1, maxLength: 50 })
+                })
+              )
+            }),
+            { minLength: 1, maxLength: 5 }
+          ),
+          (questionsData) => {
+            // Создаем уникальные вопросы
+            const uniqueQuestions = Array.from(
+              new Map(questionsData.map(q => [q.id, q])).values()
+            );
+            
+            const questions: UserQuestion[] = uniqueQuestions.map(q => ({
+              id: q.id,
+              question: q.question,
+              required: true,
+              type: 'string'
+            }));
+            
+            // Создаем ответы
+            const answersData: Record<string, unknown> = {};
+            for (const q of uniqueQuestions) {
+              answersData[q.id] = q.answer;
+            }
+            
+            const userAnswers: UserAnswers = {
+              answers: answersData,
+              timestamp: new Date().toISOString()
+            };
+            
+            // Извлекаем ответы
+            const extractedAnswers = handler.extractAnswersOnly(userAnswers, questions, false);
+            
+            // Проверяем, что все типы данных сохранены корректно
+            for (const q of uniqueQuestions) {
+              expect(extractedAnswers[q.id]).toEqual(q.answer);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+    
+    it('должен обрабатывать пустые ответы', () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.record({
+              id: fc.string({ minLength: 1, maxLength: 10 })
+                .filter(s => /^[a-zA-Z0-9_]+$/.test(s))
+                .filter(s => s !== '__proto__' && s !== 'constructor' && s !== 'prototype'),
+              question: fc.string({ minLength: 5, maxLength: 100 })
+            }),
+            { minLength: 1, maxLength: 5 }
+          ),
+          (questionsData) => {
+            const uniqueQuestions = Array.from(
+              new Map(questionsData.map(q => [q.id, q])).values()
+            );
+            
+            const questions: UserQuestion[] = uniqueQuestions.map(q => ({
+              id: q.id,
+              question: q.question,
+              required: false,
+              type: 'string'
+            }));
+            
+            // Создаем пустые ответы
+            const userAnswers: UserAnswers = {
+              answers: {},
+              timestamp: new Date().toISOString()
+            };
+            
+            // Извлекаем ответы
+            const extractedAnswers = handler.extractAnswersOnly(userAnswers, questions, false);
+            
+            // Проверяем, что результат пустой
+            expect(Object.keys(extractedAnswers).length).toBe(0);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
+  
+  /**
+   * Feature: file-based-user-input, Property 8: Оптимизация контекста
+   * 
+   * Для любого набора ответов, если include_questions = false, в контекст
+   * должны передаваться только ответы без текста вопросов.
+   * 
+   * Validates: Requirements 6.1, 6.2, 6.3, 6.4, 6.5
+   */
+  describe('Property 8: Context Optimization', () => {
+    it('должен создавать меньший размер контекста без вопросов', () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.record({
+              id: fc.string({ minLength: 1, maxLength: 10 })
+                .filter(s => /^[a-zA-Z0-9_]+$/.test(s))
+                .filter(s => s !== '__proto__' && s !== 'constructor' && s !== 'prototype'),
+              question: fc.string({ minLength: 10, maxLength: 100 })
+                .filter(s => s.trim().length > 0),
+              answer: fc.string({ minLength: 1, maxLength: 50 })
+            }),
+            { minLength: 1, maxLength: 5 }
+          ),
+          (questionsData) => {
+            // Создаем уникальные вопросы
+            const uniqueQuestions = Array.from(
+              new Map(questionsData.map(q => [q.id, q])).values()
+            );
+            
+            const questions: UserQuestion[] = uniqueQuestions.map(q => ({
+              id: q.id,
+              question: q.question,
+              required: true,
+              type: 'string'
+            }));
+            
+            // Создаем ответы
+            const answersData: Record<string, unknown> = {};
+            for (const q of uniqueQuestions) {
+              answersData[q.id] = q.answer;
+            }
+            
+            const userAnswers: UserAnswers = {
+              answers: answersData,
+              timestamp: new Date().toISOString()
+            };
+            
+            // Форматируем без вопросов
+            const withoutQuestions = handler.formatForContext(userAnswers, 'text', questions, false);
+            
+            // Форматируем с вопросами
+            const withQuestions = handler.formatForContext(userAnswers, 'text', questions, true);
+            
+            // Проверяем, что размер без вопросов меньше
+            expect(withoutQuestions.length).toBeLessThan(withQuestions.length);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+    
+    it('должен передавать только ответы в JSON формате без вопросов', () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.record({
+              id: fc.string({ minLength: 1, maxLength: 10 })
+                .filter(s => /^[a-zA-Z0-9_]+$/.test(s))
+                .filter(s => s !== '__proto__' && s !== 'constructor' && s !== 'prototype'),
+              question: fc.string({ minLength: 5, maxLength: 100 }),
+              answer: fc.oneof(
+                fc.string({ minLength: 1, maxLength: 200 }),
+                fc.integer(),
+                fc.boolean()
+              )
+            }),
+            { minLength: 1, maxLength: 5 }
+          ),
+          (questionsData) => {
+            const uniqueQuestions = Array.from(
+              new Map(questionsData.map(q => [q.id, q])).values()
+            );
+            
+            const questions: UserQuestion[] = uniqueQuestions.map(q => ({
+              id: q.id,
+              question: q.question,
+              required: true,
+              type: 'string'
+            }));
+            
+            const answersData: Record<string, unknown> = {};
+            for (const q of uniqueQuestions) {
+              answersData[q.id] = q.answer;
+            }
+            
+            const userAnswers: UserAnswers = {
+              answers: answersData,
+              timestamp: new Date().toISOString()
+            };
+            
+            // Форматируем в JSON без вопросов
+            const jsonResult = handler.formatForContext(userAnswers, 'json', questions, false);
+            const parsed = JSON.parse(jsonResult);
+            
+            // Проверяем, что в результате только ответы
+            for (const q of uniqueQuestions) {
+              expect(parsed[q.id]).toEqual(q.answer);
+              // Проверяем, что нет вложенной структуры с вопросами
+              if (typeof parsed[q.id] === 'object' && parsed[q.id] !== null && !Array.isArray(parsed[q.id])) {
+                expect(parsed[q.id]).not.toHaveProperty('question');
+              }
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+    
+    it('должен передавать вопросы и ответы в JSON формате с includeQuestions=true', () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.record({
+              id: fc.string({ minLength: 1, maxLength: 10 })
+                .filter(s => /^[a-zA-Z0-9_]+$/.test(s))
+                .filter(s => s !== '__proto__' && s !== 'constructor' && s !== 'prototype'),
+              question: fc.string({ minLength: 5, maxLength: 100 }),
+              answer: fc.string({ minLength: 1, maxLength: 200 })
+            }),
+            { minLength: 1, maxLength: 5 }
+          ),
+          (questionsData) => {
+            const uniqueQuestions = Array.from(
+              new Map(questionsData.map(q => [q.id, q])).values()
+            );
+            
+            const questions: UserQuestion[] = uniqueQuestions.map(q => ({
+              id: q.id,
+              question: q.question,
+              required: true,
+              type: 'string'
+            }));
+            
+            const answersData: Record<string, unknown> = {};
+            for (const q of uniqueQuestions) {
+              answersData[q.id] = q.answer;
+            }
+            
+            const userAnswers: UserAnswers = {
+              answers: answersData,
+              timestamp: new Date().toISOString()
+            };
+            
+            // Форматируем в JSON с вопросами
+            const jsonResult = handler.formatForContext(userAnswers, 'json', questions, true);
+            const parsed = JSON.parse(jsonResult);
+            
+            // Проверяем, что в результате есть вопросы и ответы
+            for (const q of uniqueQuestions) {
+              expect(parsed[q.id]).toBeDefined();
+              expect(parsed[q.id].question).toBe(q.question);
+              expect(parsed[q.id].answer).toEqual(q.answer);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+    
+    it('должен корректно форматировать в YAML без вопросов', () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.record({
+              id: fc.string({ minLength: 1, maxLength: 10 })
+                .filter(s => /^[a-zA-Z0-9_]+$/.test(s))
+                .filter(s => s !== '__proto__' && s !== 'constructor' && s !== 'prototype'),
+              question: fc.string({ minLength: 5, maxLength: 100 }),
+              answer: fc.string({ minLength: 1, maxLength: 200 })
+                .filter(s => !s.includes('\n')) // Избегаем многострочных значений для простоты
+            }),
+            { minLength: 1, maxLength: 5 }
+          ),
+          (questionsData) => {
+            const uniqueQuestions = Array.from(
+              new Map(questionsData.map(q => [q.id, q])).values()
+            );
+            
+            const questions: UserQuestion[] = uniqueQuestions.map(q => ({
+              id: q.id,
+              question: q.question,
+              required: true,
+              type: 'string'
+            }));
+            
+            const answersData: Record<string, unknown> = {};
+            for (const q of uniqueQuestions) {
+              answersData[q.id] = q.answer;
+            }
+            
+            const userAnswers: UserAnswers = {
+              answers: answersData,
+              timestamp: new Date().toISOString()
+            };
+            
+            // Форматируем в YAML без вопросов
+            const yamlResult = handler.formatForContext(userAnswers, 'yaml', questions, false);
+            
+            // Проверяем, что результат можно распарсить обратно
+            const parsed = handler.parseStructuredInput(yamlResult, 'yaml');
+            const data = parsed.data as Record<string, unknown>;
+            
+            // Проверяем, что все ответы присутствуют
+            for (const q of uniqueQuestions) {
+              expect(data[q.id]).toEqual(q.answer);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+    
+    it('должен создавать компактный текстовый формат без вопросов', () => {
+      fc.assert(
+        fc.property(
+          fc.array(
+            fc.record({
+              id: fc.string({ minLength: 1, maxLength: 10 })
+                .filter(s => /^[a-zA-Z0-9_]+$/.test(s))
+                .filter(s => s !== '__proto__' && s !== 'constructor' && s !== 'prototype'),
+              question: fc.string({ minLength: 5, maxLength: 100 }),
+              answer: fc.string({ minLength: 1, maxLength: 200 })
+            }),
+            { minLength: 1, maxLength: 5 }
+          ),
+          (questionsData) => {
+            const uniqueQuestions = Array.from(
+              new Map(questionsData.map(q => [q.id, q])).values()
+            );
+            
+            const questions: UserQuestion[] = uniqueQuestions.map(q => ({
+              id: q.id,
+              question: q.question,
+              required: true,
+              type: 'string'
+            }));
+            
+            const answersData: Record<string, unknown> = {};
+            for (const q of uniqueQuestions) {
+              answersData[q.id] = q.answer;
+            }
+            
+            const userAnswers: UserAnswers = {
+              answers: answersData,
+              timestamp: new Date().toISOString()
+            };
+            
+            // Форматируем в текст без вопросов
+            const textResult = handler.formatForContext(userAnswers, 'text', questions, false);
+            
+            // Проверяем, что все ответы присутствуют
+            for (const q of uniqueQuestions) {
+              expect(textResult).toContain(q.id);
+              expect(textResult).toContain(String(q.answer));
+            }
+            
+            // Проверяем, что вопросы не включены
+            for (const q of uniqueQuestions) {
+              expect(textResult).not.toContain(`Q: ${q.question}`);
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+    
+    it('должен обрабатывать пустые ответы во всех форматах', () => {
+      fc.assert(
+        fc.property(
+          fc.constantFrom('text', 'json', 'yaml'),
+          (format) => {
+            const emptyAnswers: UserAnswers = {
+              answers: {},
+              timestamp: new Date().toISOString()
+            };
+            
+            const result = handler.formatForContext(emptyAnswers, format as 'text' | 'json' | 'yaml');
+            
+            // Проверяем, что результат не пустой (может содержать пустую структуру)
+            expect(result).toBeDefined();
+            expect(typeof result).toBe('string');
+            
+            // Для JSON должен быть пустой объект
+            if (format === 'json') {
+              expect(result).toBe('{}');
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
 });

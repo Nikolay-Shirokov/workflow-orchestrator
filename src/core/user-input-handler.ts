@@ -456,4 +456,143 @@ export class UserInputHandler {
       timestamp: new Date().toISOString()
     };
   }
+  
+  /**
+   * Извлечение только ответов без вопросов для оптимизации контекста
+   * 
+   * Этот метод позволяет минимизировать размер данных, передаваемых в контекст,
+   * удаляя текст вопросов и оставляя только ответы пользователя.
+   * 
+   * @param answers - Полные ответы пользователя
+   * @param questions - Список вопросов (опционально, для включения текста вопросов)
+   * @param includeQuestions - Включать ли текст вопросов в результат (по умолчанию false)
+   * @returns Record<string, unknown> - Только ответы или ответы с вопросами
+   * 
+   * @example
+   * // Только ответы (оптимизированный контекст)
+   * const optimized = handler.extractAnswersOnly(userAnswers, questions, false);
+   * // { "question_1": "Ответ 1", "question_2": "Ответ 2" }
+   * 
+   * @example
+   * // С вопросами (полный контекст)
+   * const full = handler.extractAnswersOnly(userAnswers, questions, true);
+   * // { "question_1": { "question": "Вопрос 1?", "answer": "Ответ 1" }, ... }
+   */
+  extractAnswersOnly(
+    answers: UserAnswers,
+    questions?: UserQuestion[],
+    includeQuestions: boolean = false
+  ): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    
+    if (!includeQuestions) {
+      // Возвращаем только ответы без вопросов (оптимизация размера)
+      return { ...answers.answers };
+    }
+    
+    // Если нужно включить вопросы, создаем структуру с вопросами и ответами
+    if (questions && questions.length > 0) {
+      // Создаем карту вопросов по ID для быстрого доступа
+      const questionMap = new Map<string, UserQuestion>();
+      for (const question of questions) {
+        questionMap.set(question.id, question);
+      }
+      
+      // Формируем результат с вопросами и ответами
+      for (const [questionId, answer] of Object.entries(answers.answers)) {
+        const question = questionMap.get(questionId);
+        
+        if (question) {
+          result[questionId] = {
+            question: question.question,
+            answer: answer
+          };
+        } else {
+          // Если вопрос не найден, просто добавляем ответ
+          result[questionId] = answer;
+        }
+      }
+    } else {
+      // Если вопросы не предоставлены, возвращаем только ответы
+      return { ...answers.answers };
+    }
+    
+    return result;
+  }
+  
+  /**
+   * Форматирование данных для контекста в указанном формате
+   * 
+   * Этот метод преобразует ответы пользователя в компактный формат для передачи
+   * в контекст следующих шагов, минимизируя размер данных и сохраняя структуру.
+   * 
+   * @param answers - Ответы пользователя
+   * @param format - Формат вывода ('text', 'json', 'yaml')
+   * @param questions - Список вопросов (опционально, для включения в контекст)
+   * @param includeQuestions - Включать ли текст вопросов (по умолчанию false)
+   * @returns string - Отформатированные данные
+   * 
+   * @example
+   * // Текстовый формат (минимальный размер)
+   * const text = handler.formatForContext(answers, 'text');
+   * // "question_1: Ответ 1\nquestion_2: Ответ 2"
+   * 
+   * @example
+   * // JSON формат (структурированный)
+   * const json = handler.formatForContext(answers, 'json');
+   * // '{"question_1":"Ответ 1","question_2":"Ответ 2"}'
+   * 
+   * @example
+   * // YAML формат (читаемый)
+   * const yamlStr = handler.formatForContext(answers, 'yaml');
+   * // "question_1: Ответ 1\nquestion_2: Ответ 2"
+   */
+  formatForContext(
+    answers: UserAnswers,
+    format: 'text' | 'json' | 'yaml',
+    questions?: UserQuestion[],
+    includeQuestions: boolean = false
+  ): string {
+    // Извлекаем данные (с вопросами или без)
+    const data = this.extractAnswersOnly(answers, questions, includeQuestions);
+    
+    switch (format) {
+      case 'json':
+        // JSON формат - компактный, без отступов для минимизации размера
+        return JSON.stringify(data);
+        
+      case 'yaml':
+        // YAML формат - читаемый, но компактный
+        return yaml.stringify(data, {
+          indent: 2,
+          lineWidth: 0, // Отключаем перенос строк
+          minContentWidth: 0
+        });
+        
+      case 'text':
+      default:
+        // Текстовый формат - самый компактный
+        const lines: string[] = [];
+        
+        for (const [key, value] of Object.entries(data)) {
+          if (includeQuestions && typeof value === 'object' && value !== null) {
+            // Если включены вопросы, форматируем как "Q: вопрос\nA: ответ"
+            const qaPair = value as { question?: string; answer?: unknown };
+            if (qaPair.question) {
+              lines.push(`${key}:`);
+              lines.push(`  Q: ${qaPair.question}`);
+              lines.push(`  A: ${String(qaPair.answer)}`);
+            } else {
+              lines.push(`${key}: ${String(value)}`);
+            }
+          } else {
+            // Простой формат "key: value"
+            const valueStr = typeof value === 'string' ? value : JSON.stringify(value);
+            lines.push(`${key}: ${valueStr}`);
+          }
+        }
+        
+        return lines.join('\n');
+    }
+  }
 }
