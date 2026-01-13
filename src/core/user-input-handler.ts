@@ -154,11 +154,17 @@ export class UserInputHandler {
    * 
    * Если структуры нет, возвращает весь текст как есть
    * 
-   * ВАЖНО: Удаляет HTML-комментарии перед возвратом, чтобы они не попадали в контекст
+   * ВАЖНО: 
+   * - Удаляет HTML-комментарии перед возвратом
+   * - Удаляет заголовки первого уровня (#) из шаблонов
    */
   private parseMarkdown(input: string): Record<string, string> | string {
     // Удаляем HTML-комментарии из входных данных
-    const cleanedInput = this.removeHtmlComments(input);
+    let cleanedInput = this.removeHtmlComments(input);
+    
+    // Удаляем заголовки первого уровня (# Заголовок), оставляя только контент
+    // Это нужно для очистки от служебных заголовков шаблона
+    cleanedInput = this.removeTopLevelHeaders(cleanedInput);
     
     const result: Record<string, string> = {};
     const sections = cleanedInput.split(/^##\s+/m).filter(s => s.trim());
@@ -197,6 +203,34 @@ export class UserInputHandler {
     // Удаляем HTML-комментарии вида <!-- ... -->
     // Используем флаг 's' для поддержки многострочных комментариев
     return text.replace(/<!--[\s\S]*?-->/g, '').trim();
+  }
+  
+  /**
+   * Удаление заголовков первого уровня из markdown
+   * Используется для очистки от служебных заголовков шаблона
+   * 
+   * Удаляет строки вида "# Заголовок", но сохраняет заголовки второго уровня и ниже (##, ###, и т.д.)
+   * 
+   * @param text - Исходный текст
+   * @returns string - Текст без заголовков первого уровня
+   */
+  private removeTopLevelHeaders(text: string): string {
+    // Разбиваем на строки
+    const lines = text.split('\n');
+    const result: string[] = [];
+    
+    for (const line of lines) {
+      // Проверяем, является ли строка заголовком первого уровня
+      // Заголовок первого уровня: "# Текст" (один # в начале, затем пробел)
+      if (/^#\s+.+/.test(line.trim())) {
+        // Пропускаем эту строку
+        continue;
+      }
+      
+      result.push(line);
+    }
+    
+    return result.join('\n').trim();
   }
   
   /**
