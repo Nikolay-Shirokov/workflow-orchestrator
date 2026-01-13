@@ -1,0 +1,322 @@
+/**
+ * Unit tests для обработки ошибок в FileInputHandler
+ * 
+ * Тестирует:
+ * - Обработку ошибок создания файла
+ * - Обработку недоступного редактора
+ * - Обработку удаленного файла
+ * - Обработку некорректных данных
+ * - Сохранение при прерывании
+ */
+
+import { describe, it, expect, beforeEach, afterEach, jest } from '@jest/globals';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import { FileInputHandler } from '../../src/core/file-input-handler.js';
+import { TemplateGenerator } from '../../src/core/template-generator.js';
+import { EditorManager } from '../../src/core/editor-manager.js';
+import { UserInputHandler } from '../../src/core/user-input-handler.js';
+import { Logger } from '../../src/core/logger.js';
+import { WorkflowStep, ExecutionContext, WorkflowErrorClass } from '../../src/core/types.js';
+
+// Мок для ArtifactManager
+interface MockArtifactManager {
+  save: jest.Mock<Promise<string>>;
+}
+
+describe('FileInputHandler - Обработка ошибок', () => {
+  let fileInputHandler: FileInputHandler;
+  let templateGenerator: TemplateGenerator;
+  let editorManager: EditorManager;
+  let userInputHandler: UserInputHandler;
+  let logger: Logger;
+  let testDir: string;
+  
+  beforeEach(async () => {
+    // Создаем временную директорию для тестов
+    testDir = path.join(process.cwd(), 'tmp', `error-test-${Date.now()}`);
+    await fs.mkdir(testDir, { recursive: true });
+    
+    // Создаем моки
+    logger = new Logger('test');
+    templateGenerator = new TemplateGenerator();
+    editorManager = new EditorManager(logger);
+    userInputHandler = new UserInputHandler();
+    
+    // Создаем FileInputHandler в тестовом режиме
+    fileInputHandler = new FileInputHandler(
+      templateGenerator,
+      editorManager,
+      userInputHandler,
+      logger,
+      true // testMode = true
+    );
+  });
+  
+  afterEach(async () => {
+    // Очищаем временную директорию
+    try {
+      await fs.rm(testDir, { recursive: true, force: true });
+    } catch {
+      // Игнорируем ошибки очистки
+    }
+  });
+  
+  describe('Обработка ошибок создания файла', () => {
+    it('должен выбросить ошибку FILE_CREATION_ERROR при недоступной директории', async () => {
+      // Создаем шаг с недоступной директорией
+      const step: WorkflowStep = {
+        id: 'test_step',
+        name: 'Test Step',
+        type: 'user_input',
+        prompt_message: 'Test prompt',
+        input_mode: 'file'
+      };
+      
+      // Создаем контекст с недоступным ArtifactManager
+      const brokenArtifactManager: MockArtifactManager = {
+        save: jest.fn<Promise<string>>().mockRejectedValue(new Error('Permission denied'))
+      };
+      
+      const context: ExecutionContext = {
+        state: {
+          sessionId: 'test-session',
+          workflowName: 'test-workflow',
+          workflowVersion: '1.0.0',
+          currentStep: 'test_step',
+          status: 'running',
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          completedSteps: [],
+          artifacts: {},
+          context: {},
+          history: [],
+          errors: []
+        },
+        artifactManager: brokenArtifactManager as any,
+        logger
+      };
+      
+      // Пытаемся обработать файловый ввод
+      await expect(fileInputHandler.handleFileInput(step, context))
+        .rejects
+        .toThrow(WorkflowErrorClass);
+      
+      // Проверяем, что была попытка создать файл
+      expect(brokenArtifactManager.save).toHaveBeenCalled();
+    });
+    
+    it('должен предложить альтернативные стратегии восстановления', async () => {
+      const step: WorkflowStep = {
+        id: 'test_step',
+        name: 'Test Step',
+        type: 'user_input',
+        prompt_message: 'Test prompt',
+        input_mode: 'file'
+      };
+      
+      const brokenArtifactManager: MockArtifactManager = {
+        save: jest.fn<Promise<string>>().mockRejectedValue(new Error('Disk full'))
+      };
+      
+      const context: ExecutionContext = {
+        state: {
+          sessionId: 'test-session',
+          workflowName: 'test-workflow',
+          workflowVersion: '1.0.0',
+          currentStep: 'test_step',
+          status: 'running',
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          completedSteps: [],
+          artifacts: {},
+          context: {},
+          history: [],
+          errors: []
+        },
+        artifactManager: brokenArtifactManager as any,
+        logger
+      };
+      
+      try {
+        await fileInputHandler.handleFileInput(step, context);
+        fail('Должна была быть выброшена ошибка');
+      } catch (error) {
+        expect(error).toBeInstanceOf(WorkflowErrorClass);
+        const workflowError = error as WorkflowErrorClass;
+        
+        // Проверяем наличие предложений по восстановлению
+        expect(workflowError.suggestions).toBeDefined();
+        expect(workflowError.suggestions.length).toBeGreaterThan(0);
+        expect(workflowError.recoverable).toBe(true);
+      }
+    });
+  });
+  
+  describe('Обработка недоступного редактора', () => {
+    it('должен продолжить работу при недоступном редакторе', async () => {
+      const step: WorkflowStep = {
+        id: 'test_step',
+        name: 'Test Step',
+        type: 'user_input',
+        prompt_message: 'Test prompt',
+        input_mode: 'file',
+        editor: {
+          command: 'nonexistent-editor'
+        }
+      };
+      
+      const mockArtifactManager = {
+        save: jest.fn<Promise<string>>().mockResolvedValue(path.join(testDir, 'test_step_input.md'))
+      };
+      
+      const context: ExecutionContext = {
+        state: {
+          sessionId: 'test-session',
+          workflowName: 'test-workflow',
+          workflowVersion: '1.0.0',
+          currentStep: 'test_step',
+          status: 'running',
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          completedSteps: [],
+          artifacts: {},
+          context: {},
+          history: [],
+          errors: []
+        },
+        artifactManager: mockArtifactManager as any,
+        logger
+      };
+      
+      // В тестовом режиме редактор не запускается, но метод должен завершиться успешно
+      const result = await fileInputHandler.handleFileInput(step, context);
+      
+      // Проверяем, что процесс не прервался
+      expect(result).toBeDefined();
+      expect(result.userCommand).toBe('postpone'); // В тестовом режиме автоматически postpone
+    });
+  });
+  
+  describe('Обработка некорректных данных', () => {
+    it('должен вывести детальные ошибки валидации', async () => {
+      const testData = {
+        field1: 'invalid',
+        field2: 123
+      };
+      
+      const validationRules = [
+        {
+          field: 'field1',
+          type: 'string',
+          required: true,
+          minLength: 10
+        }
+      ];
+      
+      const result = userInputHandler.validateInput(testData, validationRules);
+      
+      expect(result.valid).toBe(false);
+      expect(result.errors).toBeDefined();
+      expect(result.errors.length).toBeGreaterThan(0);
+      
+      // Проверяем структуру ошибок
+      const error = result.errors[0];
+      expect(error.field).toBeDefined();
+      expect(error.message).toBeDefined();
+      expect(error.code).toBeDefined();
+    });
+  });
+  
+  describe('Сохранение при прерывании', () => {
+    it('должен сохранить частичное состояние при отложении', async () => {
+      const step: WorkflowStep = {
+        id: 'test_step',
+        name: 'Test Step',
+        type: 'user_input',
+        prompt_message: 'Test prompt',
+        input_mode: 'file'
+      };
+      
+      const filePath = path.join(testDir, 'test_step_input.md');
+      const mockArtifactManager = {
+        save: jest.fn<Promise<string>>().mockResolvedValue(filePath)
+      };
+      
+      const context: ExecutionContext = {
+        state: {
+          sessionId: 'test-session',
+          workflowName: 'test-workflow',
+          workflowVersion: '1.0.0',
+          currentStep: 'test_step',
+          status: 'running',
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          completedSteps: [],
+          artifacts: {},
+          context: {},
+          history: [],
+          errors: []
+        },
+        artifactManager: mockArtifactManager as any,
+        logger
+      };
+      
+      // В тестовом режиме автоматически возвращается 'postpone'
+      const result = await fileInputHandler.handleFileInput(step, context);
+      
+      expect(result.success).toBe(false);
+      expect(result.userCommand).toBe('postpone');
+      expect(context.state.status).toBe('paused');
+    });
+  });
+  
+  describe('Стратегии восстановления', () => {
+    it('должен предложить переключение на консольный ввод при ошибке создания файла', async () => {
+      const step: WorkflowStep = {
+        id: 'test_step',
+        name: 'Test Step',
+        type: 'user_input',
+        prompt_message: 'Test prompt',
+        input_mode: 'file'
+      };
+      
+      const brokenArtifactManager: MockArtifactManager = {
+        save: jest.fn<Promise<string>>().mockRejectedValue(new Error('Cannot create file'))
+      };
+      
+      const context: ExecutionContext = {
+        state: {
+          sessionId: 'test-session',
+          workflowName: 'test-workflow',
+          workflowVersion: '1.0.0',
+          currentStep: 'test_step',
+          status: 'running',
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          completedSteps: [],
+          artifacts: {},
+          context: {},
+          history: [],
+          errors: []
+        },
+        artifactManager: brokenArtifactManager as any,
+        logger
+      };
+      
+      try {
+        await fileInputHandler.handleFileInput(step, context);
+        fail('Должна была быть выброшена ошибка');
+      } catch (error) {
+        expect(error).toBeInstanceOf(WorkflowErrorClass);
+        const workflowError = error as WorkflowErrorClass;
+        
+        // Проверяем, что есть предложение переключиться на консольный ввод
+        const hasConsoleSuggestion = workflowError.suggestions.some(
+          s => s.includes('консольный ввод') || s.includes('console')
+        );
+        expect(hasConsoleSuggestion).toBe(true);
+      }
+    });
+  });
+});

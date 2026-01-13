@@ -50,6 +50,8 @@ export class FileInputHandler {
    * 3. Ожидание подтверждения пользователя
    * 4. Чтение и валидация
    * 
+   * Автоматически сохраняет состояние при прерывании (Ctrl+C).
+   * 
    * @param step - Шаг user_input
    * @param context - Контекст выполнения
    * @returns Promise<FileInputResult> - Результат обработки
@@ -59,12 +61,23 @@ export class FileInputHandler {
     context: ExecutionContext
   ): Promise<FileInputResult> {
     const startTime = Date.now();
+    let filePath: string | undefined;
+    let interruptHandler: NodeJS.SignalsListener | undefined;
     
     try {
       this.logger.info(`Начало обработки файлового ввода для шага: ${step.id}`);
       
       // 1. Создание файла-шаблона
-      const filePath = await this.createTemplateFile(step, context);
+      filePath = await this.createTemplateFile(step, context);
+      
+      // Устанавливаем обработчик прерывания для автосохранения
+      if (!this.testMode) {
+        interruptHandler = async () => {
+          await this.handleInterruption(filePath!, step, context);
+        };
+        process.on('SIGINT', interruptHandler);
+        process.on('SIGTERM', interruptHandler);
+      }
       
       // 2. Открытие в редакторе
       const editorConfig = step.editor || context.state.workflowName ? undefined : undefined;
@@ -77,8 +90,17 @@ export class FileInputHandler {
       if (userCommand === 'postpone') {
         this.logger.info('Пользователь выбрал отложить выполнение');
         
+        // Сохраняем частично заполненный файл
+        await this.savePartialState(filePath, step, context);
+        
         // Обновляем статус процесса
         context.state.status = 'paused';
+        
+        // Удаляем обработчик прерывания
+        if (interruptHandler) {
+          process.off('SIGINT', interruptHandler);
+          process.off('SIGTERM', interruptHandler);
+        }
         
         return {
           success: false,
@@ -92,6 +114,12 @@ export class FileInputHandler {
       // 4. Чтение и валидация
       const parsedInput = await this.readAndValidate(filePath, step, context);
       
+      // Удаляем обработчик прерывания после успешного завершения
+      if (interruptHandler) {
+        process.off('SIGINT', interruptHandler);
+        process.off('SIGTERM', interruptHandler);
+      }
+      
       this.logger.info(`Файловый ввод успешно обработан для шага: ${step.id}`);
       
       return {
@@ -103,7 +131,108 @@ export class FileInputHandler {
       };
       
     } catch (error) {
+      // Удаляем обработчик прерывания при ошибке
+      if (interruptHandler) {
+        process.off('SIGINT', interruptHandler);
+        process.off('SIGTERM', interruptHandler);
+      }
+      
       this.logger.error(`Ошибка обработки файлового ввода для шага ${step.id}`, error as Error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Обработка прерывания процесса (Ctrl+C)
+   * 
+   * Автоматически сохраняет частично заполненный файл и состояние процесса.
+   * 
+   * @param filePath - Путь к файлу
+   * @param step - Шаг user_input
+   * @param context - Контекст выполнения
+   * @returns Promise<void>
+   */
+  private async handleInterruption(
+    filePath: string,
+    step: WorkflowStep,
+    context: ExecutionContext
+  ): Promise<void> {
+    console.log('\n\n' + '='.repeat(70));
+    console.log('⚠️  Получен сигнал прерывания (Ctrl+C)');
+    console.log('='.repeat(70));
+    console.log('\nСохранение текущего состояния...');
+    
+    try {
+      // Сохраняем частично заполненный файл
+      await this.savePartialState(filePath, step, context);
+      
+      console.log('✓ Состояние сохранено');
+      console.log(`\nФайл: ${filePath}`);
+      console.log('Резервная копия: ' + filePath + '.backup');
+      console.log('\nВы можете возобновить процесс позже.');
+      console.log('='.repeat(70) + '\n');
+      
+      this.logger.info('Процесс прерван пользователем, состояние сохранено');
+      
+    } catch (error) {
+      console.log('❌ Ошибка сохранения состояния:', (error as Error).message);
+      this.logger.error('Ошибка сохранения состояния при прерывании', error as Error);
+    }
+    
+    // Завершаем процесс
+    process.exit(0);
+  }
+  
+  /**
+   * Сохранение частично заполненного файла и состояния
+   * 
+   * Создает резервную копию файла и сохраняет метаданные для возобновления.
+   * 
+   * @param filePath - Путь к файлу
+   * @param step - Шаг user_input
+   * @param context - Контекст выполнения
+   * @returns Promise<void>
+   */
+  private async savePartialState(
+    filePath: string,
+    step: WorkflowStep,
+    context: ExecutionContext
+  ): Promise<void> {
+    try {
+      // Проверяем существование файла
+      const fileExists = await this.checkFileExists(filePath);
+      
+      if (fileExists) {
+        // Читаем текущее содержимое
+        const content = await fs.readFile(filePath, { encoding: 'utf-8' });
+        
+        // Создаем резервную копию
+        const backupPath = `${filePath}.backup`;
+        await fs.writeFile(backupPath, content, { encoding: 'utf-8' });
+        
+        this.logger.info(`Создана резервная копия: ${backupPath}`);
+        
+        // Сохраняем метаданные для возобновления
+        const metadataPath = `${filePath}.meta.json`;
+        const metadata = {
+          stepId: step.id,
+          sessionId: context.state.sessionId,
+          timestamp: new Date().toISOString(),
+          filePath,
+          backupPath,
+          status: 'partial'
+        };
+        
+        await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), { encoding: 'utf-8' });
+        
+        this.logger.info(`Сохранены метаданные: ${metadataPath}`);
+      }
+      
+      // Обновляем статус процесса
+      context.state.status = 'paused';
+      
+    } catch (error) {
+      this.logger.error('Ошибка сохранения частичного состояния', error as Error);
       throw error;
     }
   }
@@ -114,31 +243,32 @@ export class FileInputHandler {
    * Генерирует файл-шаблон на основе формата и сохраняет его
    * в директории артефактов с понятным именем.
    * 
+   * Стратегия восстановления при ошибках:
+   * 1. Попытка создания в альтернативной директории (tmp)
+   * 2. Предложение указать путь вручную
+   * 3. Переключение на консольный ввод
+   * 
    * @param step - Шаг user_input
    * @param context - Контекст выполнения
    * @returns Promise<string> - Путь к созданному файлу
-   * @throws WorkflowErrorClass - При ошибке создания файла
+   * @throws WorkflowErrorClass - При критической ошибке создания файла
    */
   private async createTemplateFile(
     step: WorkflowStep,
     context: ExecutionContext
   ): Promise<string> {
+    // Определяем формат файла
+    const format: FileFormat = step.file_format || 'markdown';
+    const extension = this.getFileExtension(format);
+    const fileName = `${step.id}_input${extension}`;
+    
+    this.logger.debug(`Создание шаблона в формате: ${format}`);
+    
+    // Генерируем содержимое шаблона
+    const templateContent = this.templateGenerator.generate(format, step, context);
+    
+    // Попытка 1: Создание в стандартной директории артефактов
     try {
-      // Определяем формат файла
-      const format: FileFormat = step.file_format || 'markdown';
-      
-      this.logger.debug(`Создание шаблона в формате: ${format}`);
-      
-      // Генерируем содержимое шаблона
-      const templateContent = this.templateGenerator.generate(format, step, context);
-      
-      // Определяем расширение файла
-      const extension = this.getFileExtension(format);
-      
-      // Формируем имя файла
-      const fileName = `${step.id}_input${extension}`;
-      
-      // Сохраняем файл через ArtifactManager
       const filePath = await context.artifactManager.save(
         context.state.sessionId,
         step.id,
@@ -147,29 +277,110 @@ export class FileInputHandler {
       );
       
       this.logger.info(`Создан файл-шаблон: ${filePath}`);
-      
       return filePath;
       
-    } catch (error) {
-      // Обработка ошибок создания файла
-      throw new WorkflowErrorClass({
-        code: 'FILE_CREATION_ERROR',
-        category: 'execution',
-        severity: 'error',
-        message: `Не удалось создать файл-шаблон для шага ${step.id}: ${(error as Error).message}`,
-        context: {
-          stepId: step.id,
-          error: (error as Error).message
-        },
-        recoverable: true,
-        suggestions: [
-          'Проверьте права доступа к директории артефактов',
-          'Убедитесь, что достаточно места на диске',
-          'Попробуйте указать альтернативную директорию',
-          'Переключитесь на консольный ввод (input_mode: console)'
-        ]
-      });
+    } catch (primaryError) {
+      this.logger.warn(`Не удалось создать файл в стандартной директории: ${(primaryError as Error).message}`);
+      
+      // Попытка 2: Создание в альтернативной директории (tmp)
+      try {
+        const tmpDir = process.platform === 'win32' ? process.env.TEMP || 'C:\\Temp' : '/tmp';
+        const alternativePath = `${tmpDir}/${context.state.sessionId}_${fileName}`;
+        
+        this.logger.info(`Попытка создания в альтернативной директории: ${alternativePath}`);
+        
+        await fs.writeFile(alternativePath, templateContent, { encoding: 'utf-8' });
+        
+        console.log('\n' + '='.repeat(70));
+        console.log('⚠️  Файл создан в альтернативной директории');
+        console.log('='.repeat(70));
+        console.log(`\nСтандартная директория недоступна, файл создан в: ${alternativePath}`);
+        console.log('='.repeat(70) + '\n');
+        
+        this.logger.info(`Файл создан в альтернативной директории: ${alternativePath}`);
+        return alternativePath;
+        
+      } catch (alternativeError) {
+        this.logger.error(`Не удалось создать файл в альтернативной директории: ${(alternativeError as Error).message}`);
+        
+        // Попытка 3: Предложение указать путь вручную (только в интерактивном режиме)
+        if (!this.testMode) {
+          try {
+            const manualPath = await this.askForManualPath(fileName, templateContent);
+            
+            if (manualPath) {
+              this.logger.info(`Файл создан по указанному пути: ${manualPath}`);
+              return manualPath;
+            }
+          } catch (manualError) {
+            this.logger.error(`Не удалось создать файл по указанному пути: ${(manualError as Error).message}`);
+          }
+        }
+        
+        // Все попытки исчерпаны - выбрасываем ошибку с предложением переключиться на консольный ввод
+        throw new WorkflowErrorClass({
+          code: 'FILE_CREATION_ERROR',
+          category: 'execution',
+          severity: 'error',
+          message: `Не удалось создать файл-шаблон для шага ${step.id}. Попробуйте переключиться на консольный ввод.`,
+          context: {
+            stepId: step.id,
+            primaryError: (primaryError as Error).message,
+            alternativeError: (alternativeError as Error).message
+          },
+          recoverable: true,
+          suggestions: [
+            'Переключитесь на консольный ввод: установите input_mode: "console" в конфигурации шага',
+            'Проверьте права доступа к директориям',
+            'Убедитесь, что достаточно места на диске',
+            'Проверьте, что директория артефактов существует и доступна для записи'
+          ]
+        });
+      }
     }
+  }
+  
+  /**
+   * Запрос пользователя о ручном указании пути для файла
+   * 
+   * @param fileName - Имя файла
+   * @param content - Содержимое файла
+   * @returns Promise<string | null> - Путь к созданному файлу или null
+   */
+  private async askForManualPath(fileName: string, content: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
+      
+      console.log('\n' + '='.repeat(70));
+      console.log('❌ Не удалось создать файл автоматически');
+      console.log('='.repeat(70));
+      console.log('\nВы можете указать путь для создания файла вручную.');
+      console.log('Оставьте пустым для переключения на консольный ввод.\n');
+      
+      rl.question(`Введите полный путь для файла ${fileName}: `, async (answer) => {
+        rl.close();
+        
+        const path = answer.trim();
+        
+        if (!path) {
+          console.log('\n⚠️  Переключение на консольный ввод...\n');
+          resolve(null);
+          return;
+        }
+        
+        try {
+          await fs.writeFile(path, content, { encoding: 'utf-8' });
+          console.log(`\n✓ Файл успешно создан: ${path}\n`);
+          resolve(path);
+        } catch (error) {
+          console.log(`\n❌ Ошибка создания файла: ${(error as Error).message}\n`);
+          resolve(null);
+        }
+      });
+    });
   }
   
   /**
@@ -197,7 +408,12 @@ export class FileInputHandler {
    * Открытие файла в редакторе
    * 
    * Запускает текстовый редактор с файлом-шаблоном.
-   * При недоступности редактора выводит путь для ручного открытия.
+   * 
+   * Стратегия восстановления при недоступности редактора:
+   * 1. Попытка использовать указанный редактор
+   * 2. Попытка использовать альтернативные редакторы
+   * 3. Вывод пути для ручного открытия
+   * 4. Продолжение в интерактивном режиме
    * 
    * В тестовом режиме пропускает запуск редактора.
    * 
@@ -215,28 +431,108 @@ export class FileInputHandler {
       return;
     }
     
+    // Попытка 1: Использование указанного редактора
+    if (editorConfig?.command) {
+      try {
+        this.logger.info(`Попытка открыть файл в указанном редакторе: ${editorConfig.command}`);
+        await this.editorManager.launchEditor(filePath, editorConfig);
+        this.logger.info('Редактор успешно запущен');
+        return;
+      } catch (error) {
+        this.logger.warn(`Не удалось запустить указанный редактор ${editorConfig.command}: ${(error as Error).message}`);
+        // Продолжаем попытки с альтернативными редакторами
+      }
+    }
+    
+    // Попытка 2: Использование системного редактора по умолчанию
     try {
-      this.logger.info(`Открытие файла в редакторе: ${filePath}`);
-      
-      // Запускаем редактор
-      await this.editorManager.launchEditor(filePath, editorConfig);
-      
+      this.logger.info(`Попытка открыть файл в системном редакторе по умолчанию`);
+      await this.editorManager.launchEditor(filePath);
       this.logger.info('Редактор успешно запущен');
-      
-    } catch (error) {
-      // Обработка недоступного редактора
-      this.logger.warn(`Не удалось запустить редактор: ${(error as Error).message}`);
-      
-      // Выводим путь для ручного открытия
-      console.log('\n' + '='.repeat(70));
-      console.log('⚠️  Не удалось автоматически открыть редактор');
-      console.log('='.repeat(70));
-      console.log('\nПожалуйста, откройте файл вручную:');
-      console.log(`\n  📄 ${filePath}\n`);
-      console.log('После заполнения файла вернитесь в терминал и выберите действие.');
-      console.log('='.repeat(70) + '\n');
-      
-      // Не прерываем процесс - продолжаем в интерактивном режиме
+      return;
+    } catch (defaultError) {
+      this.logger.warn(`Не удалось запустить системный редактор: ${(defaultError as Error).message}`);
+    }
+    
+    // Попытка 3: Перебор альтернативных редакторов
+    const alternativeEditors = this.getAlternativeEditors();
+    
+    for (const editorCommand of alternativeEditors) {
+      try {
+        this.logger.info(`Попытка открыть файл в альтернативном редакторе: ${editorCommand}`);
+        
+        // Проверяем доступность редактора
+        const isAvailable = await this.editorManager.checkEditorAvailability(editorCommand);
+        
+        if (isAvailable) {
+          await this.editorManager.launchEditor(filePath, { command: editorCommand });
+          
+          console.log('\n' + '='.repeat(70));
+          console.log('✓ Файл открыт в альтернативном редакторе');
+          console.log('='.repeat(70));
+          console.log(`\nРедактор: ${editorCommand}`);
+          console.log(`Файл: ${filePath}`);
+          console.log('='.repeat(70) + '\n');
+          
+          this.logger.info(`Файл успешно открыт в альтернативном редакторе: ${editorCommand}`);
+          return;
+        }
+      } catch (error) {
+        this.logger.debug(`Не удалось запустить редактор ${editorCommand}: ${(error as Error).message}`);
+        // Продолжаем со следующим редактором
+      }
+    }
+    
+    // Все попытки исчерпаны - выводим путь для ручного открытия
+    this.logger.warn('Не удалось автоматически открыть ни один редактор');
+    
+    console.log('\n' + '='.repeat(70));
+    console.log('⚠️  Не удалось автоматически открыть редактор');
+    console.log('='.repeat(70));
+    console.log('\nПожалуйста, откройте файл вручную в любом текстовом редакторе:');
+    console.log(`\n  📄 ${filePath}\n`);
+    console.log('Рекомендуемые редакторы:');
+    
+    const platform = process.platform;
+    if (platform === 'win32') {
+      console.log('  - Visual Studio Code (code)');
+      console.log('  - Notepad++ (notepad++)');
+      console.log('  - Блокнот (notepad)');
+    } else if (platform === 'darwin') {
+      console.log('  - Visual Studio Code (code)');
+      console.log('  - Sublime Text (subl)');
+      console.log('  - TextEdit');
+    } else {
+      console.log('  - Visual Studio Code (code)');
+      console.log('  - Gedit (gedit)');
+      console.log('  - Nano (nano)');
+      console.log('  - Vim (vim)');
+    }
+    
+    console.log('\nПосле заполнения файла вернитесь в терминал и выберите действие.');
+    console.log('='.repeat(70) + '\n');
+    
+    // Не прерываем процесс - продолжаем в интерактивном режиме
+  }
+  
+  /**
+   * Получение списка альтернативных редакторов для попытки запуска
+   * 
+   * @returns string[] - Список команд редакторов
+   */
+  private getAlternativeEditors(): string[] {
+    const platform = process.platform;
+    
+    switch (platform) {
+      case 'win32':
+        return ['code', 'kiro', 'cursor', 'notepad++', 'notepad'];
+        
+      case 'darwin':
+        return ['code', 'kiro', 'cursor', 'subl', 'nano', 'vim'];
+        
+      case 'linux':
+      default:
+        return ['code', 'kiro', 'cursor', 'subl', 'gedit', 'kate', 'nano', 'vim'];
     }
   }
   
@@ -352,16 +648,21 @@ export class FileInputHandler {
    * Читает файл, парсит его согласно формату и выполняет валидацию.
    * При ошибках валидации предлагает повторное редактирование.
    * 
+   * Обработка удаленного файла:
+   * 1. Проверка существования файла
+   * 2. Предложение создать новый файл
+   * 3. Попытка восстановления из резервной копии
+   * 
    * @param filePath - Путь к файлу
    * @param step - Шаг user_input
-   * @param _context - Контекст выполнения (не используется в текущей реализации)
+   * @param context - Контекст выполнения
    * @returns Promise<ParsedUserInput> - Распарсенные данные
    * @throws WorkflowErrorClass - При критических ошибках
    */
   private async readAndValidate(
     filePath: string,
     step: WorkflowStep,
-    _context: ExecutionContext
+    context: ExecutionContext
   ): Promise<ParsedUserInput> {
     let attempts = 0;
     const maxAttempts = 3;
@@ -374,24 +675,80 @@ export class FileInputHandler {
         try {
           await fs.access(filePath);
         } catch {
-          throw new WorkflowErrorClass({
-            code: 'FILE_NOT_FOUND',
-            category: 'execution',
-            severity: 'error',
-            message: `Файл не найден: ${filePath}`,
-            context: { filePath },
-            recoverable: true,
-            suggestions: [
-              'Файл был удален или перемещен',
-              'Создайте файл заново',
-              'Проверьте путь к файлу'
-            ]
-          });
+          this.logger.warn(`Файл не найден: ${filePath}`);
+          
+          // Попытка восстановления из резервной копии
+          const backupPath = `${filePath}.backup`;
+          const backupExists = await this.checkFileExists(backupPath);
+          
+          if (backupExists) {
+            const shouldRestore = await this.askForBackupRestore(filePath, backupPath);
+            
+            if (shouldRestore) {
+              try {
+                await fs.copyFile(backupPath, filePath);
+                this.logger.info(`Файл восстановлен из резервной копии: ${backupPath}`);
+                console.log(`\n✓ Файл восстановлен из резервной копии\n`);
+                // Продолжаем чтение восстановленного файла
+              } catch (restoreError) {
+                this.logger.error(`Не удалось восстановить файл из резервной копии: ${(restoreError as Error).message}`);
+              }
+            }
+          }
+          
+          // Если файл все еще не существует, предлагаем создать новый
+          const fileExists = await this.checkFileExists(filePath);
+          if (!fileExists) {
+            const shouldRecreate = await this.askForFileRecreation(filePath);
+            
+            if (shouldRecreate) {
+              // Создаем файл заново
+              const newFilePath = await this.createTemplateFile(step, context);
+              
+              // Открываем в редакторе
+              await this.openInEditor(newFilePath, step.editor);
+              
+              // Ждем подтверждения
+              const command = await this.waitForUserConfirmation(newFilePath);
+              
+              if (command === 'postpone') {
+                throw new WorkflowErrorClass({
+                  code: 'USER_POSTPONED',
+                  category: 'user_input',
+                  severity: 'warning',
+                  message: 'Пользователь отложил выполнение',
+                  context: { filePath: newFilePath },
+                  recoverable: true,
+                  suggestions: ['Возобновите процесс позже']
+                });
+              }
+              
+              // Обновляем путь к файлу и продолжаем
+              filePath = newFilePath;
+            } else {
+              throw new WorkflowErrorClass({
+                code: 'FILE_NOT_FOUND',
+                category: 'execution',
+                severity: 'error',
+                message: `Файл не найден и не был создан заново: ${filePath}`,
+                context: { filePath },
+                recoverable: false,
+                suggestions: [
+                  'Создайте файл вручную',
+                  'Проверьте путь к файлу',
+                  'Возобновите процесс для создания нового файла'
+                ]
+              });
+            }
+          }
         }
         
         // 2. Чтение содержимого файла
         this.logger.debug(`Чтение файла: ${filePath}`);
         const content = await fs.readFile(filePath, { encoding: 'utf-8' });
+        
+        // Создаем резервную копию перед валидацией
+        await this.createBackup(filePath, content);
         
         // 3. Определение формата для парсинга
         const format = this.getInputFormat(step.file_format || 'markdown');
@@ -412,18 +769,48 @@ export class FileInputHandler {
             // Валидация не пройдена
             this.logger.warn('Валидация не пройдена', { errors: validationResult.errors });
             
-            // Выводим ошибки
+            // Выводим детальные ошибки валидации
             console.log('\n' + '='.repeat(70));
-            console.log('❌ Ошибки валидации');
+            console.log('❌ Ошибки валидации данных');
             console.log('='.repeat(70));
+            console.log(`\nФайл: ${filePath}`);
+            console.log(`Найдено ошибок: ${validationResult.errors.length}\n`);
             
+            // Группируем ошибки по полям для лучшей читаемости
+            const errorsByField = new Map<string, typeof validationResult.errors>();
             for (const error of validationResult.errors) {
-              console.log(`\n  Поле: ${error.field}`);
-              console.log(`  Ошибка: ${error.message}`);
-              console.log(`  Код: ${error.code}`);
+              const field = error.field || 'общие';
+              if (!errorsByField.has(field)) {
+                errorsByField.set(field, []);
+              }
+              errorsByField.get(field)!.push(error);
             }
             
-            console.log('\n' + '='.repeat(70));
+            // Выводим ошибки по полям
+            for (const [field, errors] of errorsByField) {
+              console.log(`📍 Поле: ${field}`);
+              for (const error of errors) {
+                console.log(`   ❌ ${error.message}`);
+                if (error.code) {
+                  console.log(`      Код ошибки: ${error.code}`);
+                }
+                if (error.expected) {
+                  console.log(`      Ожидается: ${error.expected}`);
+                }
+                if (error.actual) {
+                  console.log(`      Получено: ${error.actual}`);
+                }
+              }
+              console.log('');
+            }
+            
+            console.log('='.repeat(70));
+            console.log('\n💡 Рекомендации:');
+            console.log('   - Проверьте правильность заполнения указанных полей');
+            console.log('   - Убедитесь, что все обязательные поля заполнены');
+            console.log('   - Проверьте формат данных (тип, длина, допустимые значения)');
+            console.log('   - Резервная копия сохранена в: ' + filePath + '.backup');
+            console.log('='.repeat(70) + '\n');
             
             // Предлагаем повторное редактирование
             if (attempts < maxAttempts) {
@@ -523,6 +910,96 @@ export class FileInputHandler {
     
     // Этот код не должен выполниться, но TypeScript требует return
     throw new Error('Unexpected error in readAndValidate');
+  }
+  
+  /**
+   * Проверка существования файла
+   * 
+   * @param filePath - Путь к файлу
+   * @returns Promise<boolean> - Существует ли файл
+   */
+  private async checkFileExists(filePath: string): Promise<boolean> {
+    try {
+      await fs.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  
+  /**
+   * Создание резервной копии файла
+   * 
+   * @param filePath - Путь к файлу
+   * @param content - Содержимое файла
+   * @returns Promise<void>
+   */
+  private async createBackup(filePath: string, content: string): Promise<void> {
+    try {
+      const backupPath = `${filePath}.backup`;
+      await fs.writeFile(backupPath, content, { encoding: 'utf-8' });
+      this.logger.debug(`Создана резервная копия: ${backupPath}`);
+    } catch (error) {
+      this.logger.warn(`Не удалось создать резервную копию: ${(error as Error).message}`);
+      // Не прерываем процесс, если не удалось создать резервную копию
+    }
+  }
+  
+  /**
+   * Запрос пользователя о восстановлении из резервной копии
+   * 
+   * @param _filePath - Путь к основному файлу (не используется)
+   * @param backupPath - Путь к резервной копии
+   * @returns Promise<boolean> - true если пользователь хочет восстановить
+   */
+  private async askForBackupRestore(_filePath: string, backupPath: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
+      
+      console.log('\n' + '='.repeat(70));
+      console.log('⚠️  Файл был удален');
+      console.log('='.repeat(70));
+      console.log(`\nНайдена резервная копия: ${backupPath}`);
+      console.log('Хотите восстановить файл из резервной копии? (y/n): ');
+      
+      rl.question('', (answer) => {
+        rl.close();
+        
+        const normalized = answer.trim().toLowerCase();
+        resolve(normalized === 'y' || normalized === 'yes' || normalized === 'д' || normalized === 'да');
+      });
+    });
+  }
+  
+  /**
+   * Запрос пользователя о создании нового файла
+   * 
+   * @param filePath - Путь к файлу
+   * @returns Promise<boolean> - true если пользователь хочет создать новый файл
+   */
+  private async askForFileRecreation(filePath: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
+      
+      console.log('\n' + '='.repeat(70));
+      console.log('❌ Файл не найден');
+      console.log('='.repeat(70));
+      console.log(`\nФайл был удален или перемещен: ${filePath}`);
+      console.log('Хотите создать новый файл? (y/n): ');
+      
+      rl.question('', (answer) => {
+        rl.close();
+        
+        const normalized = answer.trim().toLowerCase();
+        resolve(normalized === 'y' || normalized === 'yes' || normalized === 'д' || normalized === 'да');
+      });
+    });
   }
   
   /**
