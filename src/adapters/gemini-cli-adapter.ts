@@ -4,10 +4,7 @@
  */
 
 import { BaseCLIAdapter } from './base-cli-adapter.js';
-import { AdapterConfig, AdapterRequest, AdapterResponse } from '../core/types.js';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as os from 'os';
+import { AdapterConfig, AdapterRequest } from '../core/types.js';
 
 /**
  * Адаптер для Gemini CLI
@@ -19,17 +16,17 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
 
   constructor(config?: Partial<AdapterConfig>) {
     // Конфигурация по умолчанию для Gemini CLI
-    // НЕ используем stdin из-за проблем с обрезанием вывода в Windows
+    // Используем stdin для передачи промпта
     const defaultConfig: AdapterConfig = {
       name: 'gemini-cli',
       command: 'gemini',
-      args: [],
+      args: [], // Без дополнительных флагов
       env: {
         GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || ''
       },
       parser: 'text',
       timeout: 300000, // 5 минут
-      useStdin: false // НЕ используем stdin - будем передавать через аргументы
+      useStdin: true // Используем stdin для передачи промпта
     };
 
     // Объединяем конфигурацию по умолчанию с переданной
@@ -48,103 +45,21 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
   /**
    * Подготовка аргументов команды с подстановкой параметров
    * Переопределяем для добавления флага --model если модель указана
-   * Промпт НЕ добавляется в аргументы - он передается через временный файл
+   * Промпт НЕ добавляется в аргументы - он передается через stdin
    * @param request - Запрос к адаптеру
    * @returns string[] - Массив аргументов
    */
   protected prepareArguments(request: AdapterRequest): string[] {
-    const args: string[] = [];
+    const args: string[] = []; // Без флагов - чистый текстовый режим
     
     // Добавляем флаг --model если модель указана
     if (request.model) {
       args.push('--model', request.model);
     }
     
-    // Промпт НЕ добавляем в аргументы - он передается через временный файл
+    // Промпт НЕ добавляем в аргументы - он передается через stdin
     
     return args;
-  }
-
-  /**
-   * Выполнение запроса к модели через временный файл
-   * Переопределяем базовый метод для использования временного файла вместо stdin
-   * Это решает проблему с обрезанием длинных ответов в Windows
-   * @param request - Запрос к адаптеру
-   * @returns Promise<AdapterResponse> - Ответ от модели
-   */
-  async execute(request: AdapterRequest): Promise<AdapterResponse> {
-    const startTime = Date.now();
-    let tempFilePath: string | undefined;
-    
-    try {
-      // Создаем временный файл с промптом
-      const tmpDir = os.tmpdir();
-      tempFilePath = path.join(tmpDir, `gemini-prompt-${Date.now()}.txt`);
-      await fs.writeFile(tempFilePath, request.prompt, { encoding: 'utf-8' });
-      
-      // Подготовка аргументов команды
-      const args = this.prepareArguments(request);
-      
-      // Подготовка переменных окружения
-      const env = this.prepareEnvironment(request);
-      
-      // Определение таймаута
-      const timeout = request.timeout || this.config.timeout || 300000;
-      
-      // Выполнение команды с перенаправлением из файла
-      // Используем PowerShell для перенаправления: Get-Content file | gemini
-      // Добавляем --yolo для отключения интерактивности и инструментов
-      const command = process.platform === 'win32' 
-        ? `powershell -Command "Get-Content '${tempFilePath}' | ${this.config.command} --yolo ${args.join(' ')}"`
-        : `cat "${tempFilePath}" | ${this.config.command} --yolo ${args.join(' ')}`;
-      
-      const result = await this.executeCommand(
-        command,
-        [],
-        env,
-        timeout
-      );
-      
-      // Удаляем временный файл
-      try {
-        await fs.unlink(tempFilePath);
-      } catch (cleanupError) {
-        // Игнорируем ошибки удаления
-      }
-      
-      // Проверка на ошибки
-      if (result.exitCode !== 0) {
-        throw new Error(
-          `Команда завершилась с кодом ${result.exitCode}. ` +
-          `stderr: ${result.stderr}`
-        );
-      }
-      
-      // Парсинг ответа
-      const content = this.parseResponse(result.stdout);
-      
-      const executionTime = Date.now() - startTime;
-      
-      return {
-        content,
-        model: request.model || 'unknown',
-        executionTime,
-        metadata: {
-          exitCode: result.exitCode,
-          stderr: result.stderr
-        }
-      };
-    } catch (error) {
-      // Удаляем временный файл в случае ошибки
-      if (tempFilePath) {
-        try {
-          await fs.unlink(tempFilePath);
-        } catch (cleanupError) {
-          // Игнорируем ошибки удаления
-        }
-      }
-      throw this.handleError(error as Error);
-    }
   }
 
   /**
