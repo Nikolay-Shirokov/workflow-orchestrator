@@ -149,10 +149,12 @@ describe('TemplateGenerator Format Support Property-Based Tests', () => {
             // Даже для пустого промпта должен быть сгенерирован шаблон
             expect(template.length).toBeGreaterThan(0);
             
-            // Проверяем наличие имени с учётом трансформаций
+            // Проверяем наличие имени с учётом трансформаций для каждого формата
             if (format === 'text') {
+              // Text формат преобразует имя в верхний регистр
               expect(template).toContain('TEST STEP');
             } else {
+              // Остальные форматы сохраняют оригинальное имя
               expect(template).toContain('Test Step');
             }
           }
@@ -185,14 +187,12 @@ describe('TemplateGenerator Format Support Property-Based Tests', () => {
             // Text - имя в верхнем регистре
             expect(templates.text).toContain(step.name.toUpperCase());
             
-            // JSON - имя в экранированном виде
-            const escapedName = step.name
-              .replace(/\\/g, '\\\\')
-              .replace(/"/g, '\\"')
-              .replace(/\n/g, '\\n')
-              .replace(/\r/g, '\\r')
-              .replace(/\t/g, '\\t');
-            expect(templates.json).toContain(escapedName);
+            // JSON - проверяем, что JSON валиден и содержит имя
+            // JSON.stringify() автоматически корректно экранирует все специальные символы
+            expect(() => JSON.parse(templates.json)).not.toThrow();
+            const jsonObj = JSON.parse(templates.json);
+            // Имя должно быть в поле _comment
+            expect(jsonObj._comment).toContain(step.name);
           }
         ),
         { numRuns: 100 }
