@@ -261,9 +261,40 @@ export class FileInputHandler {
     // Определяем формат файла
     const format: FileFormat = step.file_format || 'markdown';
     const extension = this.getFileExtension(format);
-    const fileName = `${step.id}_input${extension}`;
     
-    this.logger.debug(`Создание шаблона в формате: ${format}`);
+    // Определяем имя файла
+    // Если в step.outputs есть путь, используем его директорию
+    let fileName = `${step.id}_input${extension}`;
+    let fileDir = '';
+    
+    if (step.outputs) {
+      // Берем первый output для определения директории
+      const firstOutput = Object.values(step.outputs)[0];
+      if (firstOutput) {
+        // Рендерим путь с подстановкой переменных
+        const renderedPath = context.templateEngine.render(
+          firstOutput,
+          {
+            variables: context.state.context,
+            loadArtifact: (_path: string) => '',
+            if: (condition: boolean, thenValue: string, elseValue?: string) => 
+              condition ? thenValue : (elseValue || ''),
+            forEach: (_items: unknown[], _template: string) => ''
+          }
+        );
+        
+        // Извлекаем директорию из пути
+        const lastSlash = Math.max(renderedPath.lastIndexOf('/'), renderedPath.lastIndexOf('\\'));
+        if (lastSlash > 0) {
+          fileDir = renderedPath.substring(0, lastSlash);
+        }
+      }
+    }
+    
+    // Формируем полный путь к файлу
+    const fullFileName = fileDir ? `${fileDir}/${fileName}` : fileName;
+    
+    this.logger.debug(`Создание шаблона в формате: ${format}, путь: ${fullFileName}`);
     
     // Генерируем содержимое шаблона
     const templateContent = this.templateGenerator.generate(format, step, context);
@@ -273,7 +304,7 @@ export class FileInputHandler {
       const filePath = await context.artifactManager.save(
         context.state.sessionId,
         step.id,
-        fileName,
+        fullFileName,
         templateContent
       );
       
