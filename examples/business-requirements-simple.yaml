@@ -75,7 +75,7 @@ workflow:
       depends_on: ["questions"]
       input_mode: "file"
       file_format: "markdown"
-      prompt_template: |
+      prompt_message: |
         # Ответы на вопросы
         
         ${questions}

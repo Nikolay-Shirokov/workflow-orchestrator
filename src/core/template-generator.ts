@@ -28,6 +28,21 @@ export class TemplateGenerator {
     step: WorkflowStep,
     context: ExecutionContext
   ): string {
+    // Рендерим prompt_message с подстановкой переменных из контекста
+    // Это позволяет использовать ${questions}, ${user_need} и другие переменные
+    if (step.prompt_message) {
+      step.prompt_message = context.templateEngine.render(
+        step.prompt_message,
+        {
+          variables: context.state.context,
+          loadArtifact: (_path: string) => '',
+          if: (condition: boolean, thenValue: string, elseValue?: string) => 
+            condition ? thenValue : (elseValue || ''),
+          forEach: (_items: unknown[], _template: string) => ''
+        }
+      );
+    }
+    
     switch (format) {
       case 'markdown':
         return this.generateMarkdownTemplate(step, context);
