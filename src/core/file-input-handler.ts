@@ -80,7 +80,8 @@ export class FileInputHandler {
       }
       
       // 2. Открытие в редакторе
-      const editorConfig = step.editor || context.state.workflowName ? undefined : undefined;
+      // Используем редактор из шага, или default_editor из настроек workflow
+      const editorConfig = step.editor || (context.state.context.default_editor as EditorConfig | undefined);
       await this.openInEditor(filePath, editorConfig);
       
       // 3. Ожидание подтверждения пользователя

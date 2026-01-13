@@ -79,9 +79,26 @@ export class EditorManager {
           });
         });
       } else {
-        // Отсоединяем процесс, чтобы он продолжал работать независимо
-        editorProcess.unref();
-        this.logger.info('Редактор запущен в фоновом режиме');
+        // Для фонового режима нужно дождаться, что процесс запустился без ошибок
+        await new Promise<void>((resolve, reject) => {
+          let errorOccurred = false;
+          
+          editorProcess.on('error', (error) => {
+            errorOccurred = true;
+            this.logger.error('Ошибка запуска редактора', error);
+            reject(error);
+          });
+          
+          // Даем небольшую задержку для проверки, что процесс запустился
+          setTimeout(() => {
+            if (!errorOccurred) {
+              // Отсоединяем процесс, чтобы он продолжал работать независимо
+              editorProcess.unref();
+              this.logger.info('Редактор запущен в фоновом режиме');
+              resolve();
+            }
+          }, 100);
+        });
       }
     } catch (error) {
       this.logger.error('Не удалось запустить редактор', error as Error);

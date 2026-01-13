@@ -9,12 +9,18 @@ workflow:
   settings:
     artifacts_dir: "artifacts/requirements-simple-${timestamp}"
     default_input_mode: "file"
-  
+    # Конфигурация редактора
+    default_editor:
+      command: "notepad"
+      args: []
+      wait: false  
   roles:
     analyst:
-      adapter: "claude-cli"
-      model: "claude-sonnet-3.5"
+      adapter: "gemini-cli"
       role_definition: "Вы - бизнес-аналитик, помогающий формировать требования"
+      permissions:
+        - read
+        - edit: "*.md"  # Разрешение на редактирование markdown файлов
   
   steps:
     # Шаг 1: Описание потребности
