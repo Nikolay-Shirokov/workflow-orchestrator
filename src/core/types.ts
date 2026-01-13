@@ -76,6 +76,8 @@ export interface AdapterConfig {
   env?: Record<string, string>;
   parser?: string;
   timeout?: number;
+  /** Использовать stdin для передачи промпта вместо аргументов командной строки */
+  useStdin?: boolean;
 }
 
 /**

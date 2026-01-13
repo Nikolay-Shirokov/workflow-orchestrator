@@ -73,12 +73,13 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
       // Определение таймаута
       const timeout = request.timeout || this.config.timeout || 300000; // 5 минут по умолчанию
       
-      // Выполнение команды
+      // Выполнение команды (с stdin если useStdin=true)
       const result = await this.executeCommand(
         this.config.command,
         args,
         env,
-        timeout
+        timeout,
+        this.config.useStdin ? request.prompt : undefined
       );
       
       // Проверка на ошибки
@@ -196,13 +197,15 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
    * @param args - Аргументы команды
    * @param env - Переменные окружения
    * @param timeout - Таймаут в миллисекундах
+   * @param stdinData - Данные для передачи через stdin (опционально)
    * @returns Promise<CommandResult> - Результат выполнения
    */
   protected executeCommand(
     command: string,
     args: string[],
     env: Record<string, string>,
-    timeout: number
+    timeout: number,
+    stdinData?: string
   ): Promise<CommandResult> {
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
@@ -216,6 +219,12 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
         shell: true,
         windowsHide: true
       });
+
+      // Если нужно передать данные через stdin
+      if (stdinData && child.stdin) {
+        child.stdin.write(stdinData);
+        child.stdin.end();
+      }
 
       // Таймер для таймаута
       const timeoutId = setTimeout(() => {

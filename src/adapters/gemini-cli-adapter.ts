@@ -16,18 +16,17 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
 
   constructor(config?: Partial<AdapterConfig>) {
     // Конфигурация по умолчанию для Gemini CLI
-    // Используем позиционный аргумент для промпта (новый синтаксис)
+    // Используем stdin для передачи промпта (работает с многострочными текстами)
     const defaultConfig: AdapterConfig = {
       name: 'gemini-cli',
       command: 'gemini',
-      args: [
-        '${prompt}'
-      ],
+      args: [],
       env: {
         GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || ''
       },
       parser: 'text',
-      timeout: 300000 // 5 минут
+      timeout: 300000, // 5 минут
+      useStdin: true // Используем stdin для передачи промпта
     };
 
     // Объединяем конфигурацию по умолчанию с переданной
@@ -46,6 +45,7 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
   /**
    * Подготовка аргументов команды с подстановкой параметров
    * Переопределяем для добавления флага --model если модель указана
+   * Промпт НЕ добавляется в аргументы, так как передается через stdin
    * @param request - Запрос к адаптеру
    * @returns string[] - Массив аргументов
    */
@@ -57,8 +57,8 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
       args.push('--model', request.model);
     }
     
-    // Добавляем промпт как позиционный аргумент (должен быть последним)
-    args.push(request.prompt);
+    // Промпт НЕ добавляем в аргументы - он передается через stdin
+    // Это решает проблему с многострочными промптами в Windows
     
     return args;
   }
