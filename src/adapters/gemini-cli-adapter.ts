@@ -53,8 +53,9 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
    * @returns string[] - Массив аргументов
    */
   protected prepareArguments(request: AdapterRequest): string[] {
-    // Используем stream-json формат для получения полного вывода
-    const args: string[] = ['--output-format', 'stream-json'];
+    // Используем --yolo для автоподтверждения инструментов
+    // Это позволяет Gemini использовать write_file для создания полных документов
+    const args: string[] = ['--yolo'];
     
     // Добавляем флаг --model если модель указана
     if (request.model) {
@@ -69,19 +70,30 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
   /**
    * Выполнение запроса к модели через временный файл для ввода
    * Переопределяем базовый метод для использования временного файла для ввода
-   * Вывод читаем напрямую из stdout процесса
+   * Если Gemini создает файл через write_file, читаем результат из него
    * @param request - Запрос к адаптеру
    * @returns Promise<AdapterResponse> - Ответ от модели
    */
   async execute(request: AdapterRequest): Promise<AdapterResponse> {
     const startTime = Date.now();
     let tempInputPath: string | undefined;
+    let outputFilePath: string | undefined;
     
     try {
       // Создаем временный файл для ввода
       const tmpDir = os.tmpdir();
       const timestamp = Date.now();
       tempInputPath = path.join(tmpDir, `gemini-prompt-${timestamp}.txt`);
+      
+      // Пытаемся извлечь путь к выходному файлу из промпта
+      // Ищем паттерн: "Сохрани результат в файл <путь>" или просто путь к .md файлу
+      const outputFileMatch = request.prompt.match(/[Сс]охрани.*?файл\s+([^\s]+\.md)|файл[:\s]+([^\s]+\.md)/);
+      if (outputFileMatch) {
+        outputFilePath = outputFileMatch[1] || outputFileMatch[2];
+        // Убираем возможные кавычки
+        outputFilePath = outputFilePath.replace(/['"]/g, '');
+        console.log(`[DEBUG] Обнаружен путь к выходному файлу: ${outputFilePath}`);
+      }
       
       // Записываем промпт во входной файл
       await fs.writeFile(tempInputPath, request.prompt, { encoding: 'utf-8' });
@@ -96,7 +108,7 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
       const timeout = request.timeout || this.config.timeout || 300000;
       
       // Используем cmd.exe для перенаправления ввода, но читаем stdout напрямую
-      // cmd /c "type input.txt | gemini --output-format stream-json"
+      // cmd /c "type input.txt | gemini --allowed-tools write_file --approval-mode yolo"
       const command = process.platform === 'win32'
         ? `cmd /c "type "${tempInputPath}" | ${this.config.command} ${args.join(' ')}"`
         : `cat "${tempInputPath}" | ${this.config.command} ${args.join(' ')}`;
@@ -123,8 +135,24 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
         );
       }
       
-      // Парсинг ответа
-      const content = this.parseResponse(result.stdout);
+      let content: string;
+      
+      // Если указан путь к выходному файлу, пытаемся прочитать из него
+      if (outputFilePath) {
+        try {
+          // Ждем немного, чтобы файл был записан
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          content = await fs.readFile(outputFilePath, { encoding: 'utf-8' });
+          console.log(`[DEBUG] Прочитано ${content.length} байт из файла ${outputFilePath}`);
+        } catch (fileError) {
+          console.log(`[DEBUG] Не удалось прочитать файл ${outputFilePath}, используем stdout`);
+          content = this.parseResponse(result.stdout);
+        }
+      } else {
+        // Парсинг ответа из stdout
+        content = this.parseResponse(result.stdout);
+      }
       
       const executionTime = Date.now() - startTime;
       
@@ -134,7 +162,8 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
         executionTime,
         metadata: {
           exitCode: result.exitCode,
-          stderr: result.stderr
+          stderr: result.stderr,
+          outputFile: outputFilePath
         }
       };
     } catch (error) {
