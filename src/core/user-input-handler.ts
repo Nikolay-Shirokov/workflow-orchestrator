@@ -56,6 +56,12 @@ export interface UserInputValidationError {
   
   /** Код ошибки */
   code: string;
+  
+  /** Ожидаемое значение (опционально) */
+  expected?: string;
+  
+  /** Фактическое значение (опционально) */
+  actual?: string;
 }
 
 /**
