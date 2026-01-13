@@ -46,6 +46,35 @@ workflow-orchestrator run my-workflow.yaml
 
 ---
 
+## 🎯 Новое: Создание бизнес-требований
+
+Попробуйте новый workflow для создания детальных бизнес-требований:
+
+```bash
+# Полная версия с двумя AI-моделями
+workflow-orchestrator run examples/business-requirements-workflow.yaml
+
+# Или упрощенная версия
+workflow-orchestrator run examples/business-requirements-simple.yaml
+```
+
+**Что вы получите:**
+- ✅ Полный документ бизнес-требований
+- ✅ Функциональные и нефункциональные требования
+- ✅ Сценарии использования и тестирования
+- ✅ Диаграммы взаимодействия (Mermaid)
+- ✅ Критерии успеха и метрики
+
+**Как это работает:**
+1. Опишите свою идею в файле (открывается автоматически)
+2. AI-модели формируют вопросы для уточнения
+3. Ответьте на вопросы в удобном редакторе
+4. Получите готовый документ требований
+
+📖 **Подробное руководство**: [examples/BUSINESS_REQUIREMENTS_GUIDE.md](examples/BUSINESS_REQUIREMENTS_GUIDE.md)
+
+---
+
 ## Описание
 
 Workflow Orchestrator - это инструмент для автоматизации сложных рабочих процессов с использованием различных AI-моделей. Система заменяет AI-оркестратор на скриптовый подход, обеспечивая стабильное и предсказуемое выполнение даже с менее продвинутыми моделями.
@@ -222,6 +251,27 @@ workflow-orchestrator run examples/mcp-workflow-example.yaml
 ```
 
 См. [examples/mcp-workflow-example.yaml](examples/mcp-workflow-example.yaml)
+
+#### Создание бизнес-требований
+
+Интерактивный процесс создания детальных бизнес-требований с файловым вводом:
+
+```bash
+# Полная версия с двумя AI-моделями
+workflow-orchestrator run examples/business-requirements-workflow.yaml
+
+# Упрощенная версия для быстрого результата
+workflow-orchestrator run examples/business-requirements-simple.yaml
+```
+
+**Особенности:**
+- Совместная работа архитектора и второго пилота
+- Файловый ввод для удобного заполнения
+- Многоэтапный анализ и уточнение
+- Фокус на MVP
+- Автоматическая генерация диаграмм
+
+📖 **Подробное руководство**: [examples/BUSINESS_REQUIREMENTS_GUIDE.md](examples/BUSINESS_REQUIREMENTS_GUIDE.md)
 
 ### Экспорт и импорт конфигураций
 
@@ -542,6 +592,7 @@ workflow-orchestrator/
 - 🏷️ [Примеры с тегами](examples/prompts/dual-design/examples_with_tags.txt) - обрамление контекста
 - 📝 [Файловый ввод](examples/file-input-workflow.yaml) - работа с большими промптами
 - ⚠️ [Обработка ошибок](examples/file-input-error-handling.yaml) - примеры обработки ошибок при файловом вводе
+- 📊 [Бизнес-требования](examples/business-requirements-workflow.yaml) - создание требований с файловым вводом ([руководство](examples/BUSINESS_REQUIREMENTS_GUIDE.md))
 
 ### Для участников
 - 🤝 **[Руководство по внесению вклада](CONTRIBUTING.md)** - как помочь проекту

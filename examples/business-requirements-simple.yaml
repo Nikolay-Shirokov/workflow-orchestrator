@@ -1,0 +1,110 @@
+# Упрощенная версия workflow для бизнес-требований
+# Быстрый вариант без детального анализа
+
+workflow:
+  name: "business-requirements-simple"
+  version: "1.0"
+  description: "Упрощенное создание бизнес-требований с файловым вводом"
+  
+  settings:
+    artifacts_dir: "artifacts/requirements-simple-${timestamp}"
+    default_input_mode: "file"
+  
+  roles:
+    analyst:
+      adapter: "claude-cli"
+      model: "claude-sonnet-3.5"
+      role_definition: "Вы - бизнес-аналитик, помогающий формировать требования"
+  
+  steps:
+    # Шаг 1: Описание потребности
+    - id: "user_need"
+      name: "Описание потребности"
+      type: "user_input"
+      input_mode: "file"
+      file_format: "markdown"
+      prompt_message: |
+        # Опишите вашу потребность
+        
+        ## Что вы хотите создать?
+        
+        [Ваше описание]
+        
+        ## Для кого это?
+        
+        [Целевая аудитория]
+        
+        ## Какие ограничения?
+        
+        [Бюджет, сроки, технологии]
+      outputs:
+        user_need: "${artifacts_dir}/user_need.md"
+    
+    # Шаг 2: Формирование вопросов
+    - id: "questions"
+      name: "Вопросы для уточнения"
+      type: "model"
+      role: "analyst"
+      depends_on: ["user_need"]
+      prompt_template: |
+        Пользователь описал потребность:
+        
+        ${user_need}
+        
+        Задай ключевые вопросы для формирования MVP требований.
+        Сфокусируйся на самом важном.
+      inputs:
+        user_need: "${user_need}"
+      outputs:
+        questions: "${artifacts_dir}/questions.md"
+    
+    # Шаг 3: Ответы пользователя
+    - id: "answers"
+      name: "Ответы на вопросы"
+      type: "user_input"
+      depends_on: ["questions"]
+      input_mode: "file"
+      file_format: "markdown"
+      prompt_template: |
+        # Ответы на вопросы
+        
+        ${questions}
+        
+        ---
+        
+        # ВАШИ ОТВЕТЫ
+        
+        [Отвечайте под каждым вопросом]
+      inputs:
+        questions: "${questions}"
+      outputs:
+        answers: "${artifacts_dir}/answers.md"
+    
+    # Шаг 4: Формирование требований
+    - id: "requirements"
+      name: "Бизнес-требования"
+      type: "model"
+      role: "analyst"
+      depends_on: ["answers", "user_need"]
+      prompt_template: |
+        На основе ответов создай бизнес-требования:
+        
+        ## Потребность
+        ${user_need}
+        
+        ## Ответы
+        ${answers}
+        
+        Создай документ включающий:
+        1. Краткое описание
+        2. Функциональные требования
+        3. Сценарии использования
+        4. Критерии приемки
+        5. Диаграммы (Mermaid)
+        
+        Без воды, только конкретика.
+      inputs:
+        user_need: "${user_need}"
+        answers: "${answers}"
+      outputs:
+        requirements: "${artifacts_dir}/requirements.md"
