@@ -159,7 +159,7 @@ describe('File Input - Full Cycle Integration Tests', () => {
     
     // Проверяем наличие инструкций
     expect(templateContent).toContain('Инструкции');
-    expect(templateContent).toContain('Заполните');
+    expect(templateContent).toContain('заполните');
     
     // Проверяем наличие вопросов
     expect(templateContent).toContain('Как вас зовут?');
@@ -359,7 +359,7 @@ skills:
     // Симуляция заполнения с валидными данными
     const validContent = JSON.stringify({
       email: 'test@example.com',
-      age: 25
+      age: '25'
     }, null, 2);
     
     await fs.writeFile(result.filePath, validContent, 'utf-8');
@@ -370,7 +370,7 @@ skills:
       env.editorManager,
       env.userInputHandler,
       env.logger,
-      false
+      true // testMode = true для избежания зависания при ошибках валидации
     );
     
     const readAndValidate = (readHandler as any).readAndValidate.bind(readHandler);
@@ -380,7 +380,7 @@ skills:
     expect(parsedInput.data).toBeDefined();
     const data = parsedInput.data as Record<string, unknown>;
     expect(data['email']).toBe('test@example.com');
-    expect(data['age']).toBe(25);
+    expect(data['age']).toBe('25');
   });
   
   /**

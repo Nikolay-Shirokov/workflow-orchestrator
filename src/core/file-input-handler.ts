@@ -953,6 +953,12 @@ export class FileInputHandler {
    * @returns Promise<boolean> - true если пользователь хочет восстановить
    */
   private async askForBackupRestore(_filePath: string, backupPath: string): Promise<boolean> {
+    // В тестовом режиме автоматически возвращаем true (восстановить)
+    if (this.testMode) {
+      this.logger.debug('Тестовый режим: автоматически выбран "восстановить из резервной копии"');
+      return true;
+    }
+    
     return new Promise((resolve) => {
       const rl = readline.createInterface({
         input: process.stdin,
@@ -981,6 +987,12 @@ export class FileInputHandler {
    * @returns Promise<boolean> - true если пользователь хочет создать новый файл
    */
   private async askForFileRecreation(filePath: string): Promise<boolean> {
+    // В тестовом режиме автоматически возвращаем false (не создавать новый файл)
+    if (this.testMode) {
+      this.logger.debug('Тестовый режим: автоматически выбран "не создавать новый файл"');
+      return false;
+    }
+    
     return new Promise((resolve) => {
       const rl = readline.createInterface({
         input: process.stdin,
@@ -1030,6 +1042,12 @@ export class FileInputHandler {
    * @returns Promise<boolean> - true если пользователь хочет повторить
    */
   private async askForRetry(_filePath: string): Promise<boolean> {
+    // В тестовом режиме автоматически возвращаем false (не повторять)
+    if (this.testMode) {
+      this.logger.debug('Тестовый режим: автоматически выбран "не повторять"');
+      return false;
+    }
+    
     return new Promise((resolve) => {
       const rl = readline.createInterface({
         input: process.stdin,
