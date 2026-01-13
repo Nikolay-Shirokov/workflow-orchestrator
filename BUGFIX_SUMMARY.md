@@ -89,7 +89,55 @@ roles:
 
 ---
 
-### 4. ⚠️ Опечатка в конфигурации редактора
+### 4. ❌ Артефакты создавались в корне проекта
+
+**Причина:** `FileInputHandler` не учитывал путь из `step.outputs` с подстановкой `artifacts_dir`
+
+**Файл:** `src/core/file-input-handler.ts`, метод `createTemplateFile`
+
+**Проблема:**
+- Файлы `user_need_input.md` создавались в корне проекта
+- Вместо директории `artifacts/requirements-simple-*/`
+- `FileInputHandler` использовал только имя файла без директории
+
+**Решение:**
+```typescript
+// Определяем имя файла
+// Если в step.outputs есть путь, используем его директорию
+let fileName = `${step.id}_input${extension}`;
+let fileDir = '';
+
+if (step.outputs) {
+  // Берем первый output для определения директории
+  const firstOutput = Object.values(step.outputs)[0];
+  if (firstOutput) {
+    // Рендерим путь с подстановкой переменных
+    const renderedPath = context.templateEngine.render(
+      firstOutput,
+      { variables: context.state.context, ... }
+    );
+    
+    // Извлекаем директорию из пути
+    const lastSlash = Math.max(renderedPath.lastIndexOf('/'), renderedPath.lastIndexOf('\\'));
+    if (lastSlash > 0) {
+      fileDir = renderedPath.substring(0, lastSlash);
+    }
+  }
+}
+
+// Формируем полный путь к файлу
+const fullFileName = fileDir ? `${fileDir}/${fileName}` : fileName;
+```
+
+**Результат:** Теперь файлы создаются в правильной директории `artifacts/requirements-simple-*/`
+
+**Дополнительно:**
+- Добавлены паттерны `*_input.md*` в `.gitignore`
+- Удалены временные файлы из корня проекта
+
+---
+
+### 5. ⚠️ Опечатка в конфигурации редактора
 
 **Файл:** `examples/business-requirements-simple.yaml`
 
@@ -116,7 +164,7 @@ default_editor:
 
 ✅ **Workflow теперь работает корректно:**
 
-1. ✅ Создается файл-шаблон в директории артефактов
+1. ✅ Создается файл-шаблон в правильной директории `artifacts/requirements-simple-*/`
 2. ✅ Система пытается открыть файл в указанном редакторе
 3. ✅ При неудаче автоматически перебирает альтернативные редакторы:
    - code (VS Code)
@@ -129,6 +177,7 @@ default_editor:
    - "Отложить"
 5. ✅ Процесс корректно приостанавливается и ожидает ввода пользователя
 6. ✅ Роль `analyst` имеет необходимые разрешения для создания файлов
+7. ✅ Артефакты сохраняются в правильной директории
 
 ---
 
@@ -140,11 +189,11 @@ node dist/cli/cli.js run examples/business-requirements-simple.yaml
 ```
 
 **Ожидаемое поведение:**
-1. Создается файл `user_need_input.md`
+1. Создается файл `artifacts/requirements-simple-*/user_need_input.md`
 2. Открывается Notepad (или другой доступный редактор)
 3. Показывается интерактивное меню
 4. После заполнения файла и выбора "Продолжить" процесс продолжается
-5. Роль `analyst` успешно создает файлы `questions.md` и `requirements.md`
+5. Роль `analyst` успешно создает файлы `questions.md` и `requirements.md` в той же директории
 
 ---
 
@@ -161,9 +210,17 @@ node dist/cli/cli.js run examples/business-requirements-simple.yaml
 
 ## Файлы, затронутые изменениями
 
-1. `src/core/file-input-handler.ts` - исправлена логика определения editorConfig
+1. `src/core/file-input-handler.ts` - исправлена логика определения editorConfig и пути к файлам
 2. `src/core/editor-manager.ts` - добавлена обработка ошибок в фоновом режиме
 3. `examples/business-requirements-simple.yaml` - добавлены разрешения роли, исправлена команда редактора
+4. `.gitignore` - добавлены паттерны для временных файлов
+
+---
+
+## Коммиты
+
+1. **608f56f** - fix: исправлен файловый ввод пользователя и разрешения ролей
+2. **ae1f14d** - fix: исправлено создание артефактов в корне проекта
 
 ---
 
