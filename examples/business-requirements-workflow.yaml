@@ -139,9 +139,15 @@ workflow:
       name: "Анализ архитектора"
       type: "model"
       role: "architect"
-      depends_on: ["step2_architect_questions", "step3_copilot_questions"]
+      depends_on: ["step1_user_need", "step2_architect_questions", "step3_copilot_questions"]
       description: "Архитектор анализирует вопросы второго пилота"
       prompt_template: |
+        Напоминаю исходную потребность пользователя:
+        
+        <user_need>
+        ${user_need}
+        </user_need>
+        
         Я задал этот же вопрос другой нейросети. Ты будешь главным архитектором,
         а она "вторым пилотом".
         
@@ -157,9 +163,11 @@ workflow:
         ${architect_questions}
         </architect>
         
-        Проанализируй их, собери вместе то, с чем вы согласны, и выдели то,
-        что есть только у них или у тебя. Укажи, какие вопросы наиболее важны.
+        Проанализируй их в контексте исходной потребности, собери вместе то, 
+        с чем вы согласны, и выдели то, что есть только у них или у тебя. 
+        Укажи, какие вопросы наиболее важны для решения задачи пользователя.
       inputs:
+        user_need: "${user_need}"
         copilot_questions: "${copilot_questions}"
         architect_questions: "${architect_questions}"
       outputs:
@@ -172,9 +180,15 @@ workflow:
       name: "Рекомендации второго пилота"
       type: "model"
       role: "copilot"
-      depends_on: ["step2_architect_questions", "step3_copilot_questions"]
+      depends_on: ["step1_user_need", "step2_architect_questions", "step3_copilot_questions"]
       description: "Второй пилот анализирует вопросы архитектора"
       prompt_template: |
+        Напоминаю исходную потребность пользователя:
+        
+        <user_need>
+        ${user_need}
+        </user_need>
+        
         Отлично, ты будешь работать со мной и другой нейросетью как "второй пилот".
         Она дает основу, а ты анализируешь и даешь рекомендации.
         
@@ -190,12 +204,13 @@ workflow:
         ${copilot_questions}
         </copilot>
         
-        Проанализируй их и дай рекомендации:
-        - Что упущено?
+        Проанализируй их в контексте исходной потребности и дай рекомендации:
+        - Что упущено для решения задачи пользователя?
         - Что можно улучшить?
         - Какие вопросы избыточны?
         - Какие аспекты требуют большего внимания?
       inputs:
+        user_need: "${user_need}"
         architect_questions: "${architect_questions}"
         copilot_questions: "${copilot_questions}"
       outputs:
@@ -208,9 +223,15 @@ workflow:
       name: "MVP вопросы от архитектора"
       type: "model"
       role: "architect"
-      depends_on: ["step4_architect_analysis", "step5_copilot_analysis"]
+      depends_on: ["step1_user_need", "step4_architect_analysis", "step5_copilot_analysis"]
       description: "Архитектор формирует финальные вопросы для MVP"
       prompt_template: |
+        Напоминаю исходную потребность пользователя:
+        
+        <user_need>
+        ${user_need}
+        </user_need>
+        
         Вот мнение по вопросам от второго пилота:
         
         <copilot_analysis>
@@ -224,15 +245,17 @@ workflow:
         </architect_analysis>
         
         Напиши мне такой список вопросов, ответив на который, мы получим
-        самый простой минимальный рабочий вариант (MVP).
+        самый простой минимальный рабочий вариант (MVP) для решения 
+        потребности пользователя.
         
         Сфокусируйся на:
-        - Критически важных функциях
+        - Критически важных функциях для решения задачи
         - Минимальных требованиях для запуска
         - Ключевых решениях, которые нужно принять сейчас
         
         Сформулируй вопросы четко, пронумеруй их.
       inputs:
+        user_need: "${user_need}"
         copilot_analysis: "${copilot_analysis}"
         architect_analysis: "${architect_analysis}"
       outputs:
@@ -245,16 +268,23 @@ workflow:
       name: "Улучшения от второго пилота"
       type: "model"
       role: "copilot"
-      depends_on: ["step6_architect_mvp_questions"]
+      depends_on: ["step1_user_need", "step6_architect_mvp_questions"]
       description: "Второй пилот предлагает улучшения для MVP вопросов"
       prompt_template: |
-        Я хочу MVP. Посмотри что предложил архитектор:
+        Напоминаю исходную потребность пользователя:
+        
+        <user_need>
+        ${user_need}
+        </user_need>
+        
+        Я хочу MVP для решения этой потребности. Посмотри что предложил архитектор:
         
         <architect_mvp>
         ${architect_mvp_questions}
         </architect_mvp>
         
-        Напиши только предложения к упрощению/улучшению вопросов.
+        Напиши только предложения к упрощению/улучшению вопросов в контексте
+        создания MVP для решения потребности пользователя.
         
         Сфокусируйся на:
         - Упрощении формулировок
@@ -264,6 +294,7 @@ workflow:
         
         Будь конкретен и конструктивен.
       inputs:
+        user_need: "${user_need}"
         architect_mvp_questions: "${architect_mvp_questions}"
       outputs:
         copilot_improvements: "${artifacts_dir}/step7_copilot_improvements.md"
@@ -275,9 +306,15 @@ workflow:
       name: "Финальные вопросы"
       type: "model"
       role: "architect"
-      depends_on: ["step6_architect_mvp_questions", "step7_copilot_improvements"]
+      depends_on: ["step1_user_need", "step6_architect_mvp_questions", "step7_copilot_improvements"]
       description: "Архитектор формирует финальный список вопросов"
       prompt_template: |
+        Напоминаю исходную потребность пользователя:
+        
+        <user_need>
+        ${user_need}
+        </user_need>
+        
         Держи мнение второго пилота по вопросам для пользователя:
         
         <copilot_improvements>
@@ -290,7 +327,8 @@ workflow:
         ${architect_mvp_questions}
         </mvp_questions>
         
-        Напиши итоговый список вопросов для пользователя.
+        Напиши итоговый список вопросов для пользователя, которые помогут
+        создать требования для решения его потребности.
         
         Требования к списку:
         - Четкие, понятные формулировки
@@ -306,6 +344,7 @@ workflow:
         [Краткое пояснение]
         [Пример ответа при необходимости]
       inputs:
+        user_need: "${user_need}"
         copilot_improvements: "${copilot_improvements}"
         architect_mvp_questions: "${architect_mvp_questions}"
       outputs:
@@ -438,17 +477,32 @@ workflow:
       name: "Ревью требований"
       type: "model"
       role: "copilot"
-      depends_on: ["step10_final_requirements"]
+      depends_on: ["step1_user_need", "step9_user_answers", "step10_final_requirements"]
       description: "Второй пилот проводит критическое ревью требований"
       prompt_template: |
+        Напоминаю исходную потребность пользователя:
+        
+        <user_need>
+        ${user_need}
+        </user_need>
+        
+        Вот ответы пользователя на вопросы:
+        
+        <user_answers>
+        ${user_answers}
+        </user_answers>
+        
         Проведи критическое ревью следующих бизнес-требований:
         
+        <requirements>
         ${final_requirements}
+        </requirements>
         
-        Проанализируй:
+        Проанализируй в контексте исходной потребности и ответов:
         
         1. **Полнота**
-           - Все ли аспекты покрыты?
+           - Все ли аспекты исходной потребности покрыты?
+           - Все ли ответы пользователя учтены?
            - Что упущено?
         
         2. **Ясность**
@@ -474,6 +528,8 @@ workflow:
         
         Будь конструктивен и конкретен.
       inputs:
+        user_need: "${user_need}"
+        user_answers: "${user_answers}"
         final_requirements: "${final_requirements}"
       outputs:
         requirements_review: "${artifacts_dir}/step11_requirements_review.md"
@@ -485,28 +541,49 @@ workflow:
       name: "Финальная версия требований"
       type: "model"
       role: "architect"
-      depends_on: ["step10_final_requirements", "step11_requirements_review"]
+      depends_on: ["step1_user_need", "step9_user_answers", "step10_final_requirements", "step11_requirements_review"]
       description: "Архитектор создает финальную версию с учетом ревью"
       prompt_template: |
+        Напоминаю исходную потребность пользователя:
+        
+        <user_need>
+        ${user_need}
+        </user_need>
+        
+        Вот ответы пользователя:
+        
+        <user_answers>
+        ${user_answers}
+        </user_answers>
+        
         Вот бизнес-требования, которые ты создал:
         
+        <requirements>
         ${final_requirements}
+        </requirements>
         
         Вот ревью от второго пилота:
         
+        <review>
         ${requirements_review}
+        </review>
         
         Создай финальную версию требований, учитывая все замечания и рекомендации.
+        Убедись, что требования полностью соответствуют исходной потребности и 
+        учитывают все ответы пользователя.
         
         Сохрани структуру, но:
         - Исправь найденные проблемы
-        - Добавь упущенные аспекты
+        - Добавь упущенные аспекты из исходной потребности и ответов
         - Уточни неясные моменты
         - Оптимизируй приоритизацию
         - Добавь раздел с рисками и их митигацией
         
-        Это должна быть финальная, готовая к использованию версия документа.
+        Это должна быть финальная, готовая к использованию версия документа,
+        которая полностью решает потребность пользователя.
       inputs:
+        user_need: "${user_need}"
+        user_answers: "${user_answers}"
         final_requirements: "${final_requirements}"
         requirements_review: "${requirements_review}"
       outputs:
