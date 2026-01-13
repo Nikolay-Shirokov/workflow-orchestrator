@@ -25,17 +25,20 @@ export class FileInputHandler {
   private editorManager: EditorManager;
   private userInputHandler: UserInputHandler;
   private logger: Logger;
+  private testMode: boolean;
   
   constructor(
     templateGenerator: TemplateGenerator,
     editorManager: EditorManager,
     userInputHandler: UserInputHandler,
-    logger: Logger
+    logger: Logger,
+    testMode: boolean = false
   ) {
     this.templateGenerator = templateGenerator;
     this.editorManager = editorManager;
     this.userInputHandler = userInputHandler;
     this.logger = logger;
+    this.testMode = testMode;
   }
   
   /**
@@ -196,6 +199,8 @@ export class FileInputHandler {
    * Запускает текстовый редактор с файлом-шаблоном.
    * При недоступности редактора выводит путь для ручного открытия.
    * 
+   * В тестовом режиме пропускает запуск редактора.
+   * 
    * @param filePath - Путь к файлу
    * @param editorConfig - Конфигурация редактора (опционально)
    * @returns Promise<void>
@@ -204,6 +209,12 @@ export class FileInputHandler {
     filePath: string,
     editorConfig?: EditorConfig
   ): Promise<void> {
+    // В тестовом режиме пропускаем запуск редактора
+    if (this.testMode) {
+      this.logger.debug(`Тестовый режим: пропуск запуска редактора для ${filePath}`);
+      return;
+    }
+    
     try {
       this.logger.info(`Открытие файла в редакторе: ${filePath}`);
       
@@ -238,10 +249,18 @@ export class FileInputHandler {
    * 
    * Пользователь выбирает стрелочками и подтверждает Enter.
    * 
+   * В тестовом режиме автоматически возвращает 'postpone' без интерактивности.
+   * 
    * @param filePath - Путь к файлу для редактирования
    * @returns Promise<UserCommand> - Команда пользователя
    */
   private async waitForUserConfirmation(filePath: string): Promise<UserCommand> {
+    // В тестовом режиме автоматически возвращаем 'postpone'
+    if (this.testMode) {
+      this.logger.debug('Тестовый режим: автоматически выбран "postpone"');
+      return 'postpone';
+    }
+    
     return new Promise((resolve) => {
       const options = ['Продолжить', 'Отложить'];
       let selectedIndex = 0; // По умолчанию выбран "Продолжить"

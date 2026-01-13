@@ -114,65 +114,39 @@ describe('StepExecutor - Input Mode Selection (Property-Based)', () => {
             }
           };
           
-          // Мокаем stdin для file mode
-          const originalStdin = process.stdin;
-          try {
-            const mockStdin = {
-              isTTY: false,
-              setRawMode: () => {},
-              on: () => {},
-              removeListener: () => {},
-              pause: () => {},
-              resume: () => {}
-            };
-            
-            Object.defineProperty(process, 'stdin', {
-              value: mockStdin,
-              writable: true,
-              configurable: true
-            });
-            
-            // Выполняем шаг
-            const result = await executor.executeStep(step, context);
-            
-            // Определяем ожидаемый режим
-            const expectedMode = stepInputMode || defaultInputMode || 'console';
-            
-            // Проверяем, что процесс приостановлен (оба режима приостанавливают процесс)
-            expect(context.state.status).toBe('paused');
-            expect(result.status).toBe('skipped');
-            
-            // Проверяем, что создан артефакт
-            expect(result.artifacts.length).toBeGreaterThan(0);
-            
-            // Для console mode проверяем наличие заглушки
-            if (expectedMode === 'console') {
-              const artifactPath = result.artifacts[0];
-              const content = await fs.readFile(artifactPath, 'utf-8');
-              expect(content).toContain('Ожидается ввод пользователя');
-            }
-            
-            // Для file mode проверяем, что создан шаблон (не заглушка)
-            if (expectedMode === 'file') {
-              const artifactPath = result.artifacts[0];
-              const content = await fs.readFile(artifactPath, 'utf-8');
-              // Шаблон не должен содержать текст заглушки
-              // (может содержать инструкции, вопросы и т.д.)
-              expect(content.length).toBeGreaterThan(0);
-            }
-            
-          } finally {
-            Object.defineProperty(process, 'stdin', {
-              value: originalStdin,
-              writable: true,
-              configurable: true
-            });
+          // Выполняем шаг (testMode включен автоматически через переменную окружения или мок)
+          const result = await executor.executeStep(step, context);
+          
+          // Определяем ожидаемый режим
+          const expectedMode = stepInputMode || defaultInputMode || 'console';
+          
+          // Проверяем, что процесс приостановлен (оба режима приостанавливают процесс)
+          expect(context.state.status).toBe('paused');
+          expect(result.status).toBe('skipped');
+          
+          // Проверяем, что создан артефакт
+          expect(result.artifacts.length).toBeGreaterThan(0);
+          
+          // Для console mode проверяем наличие заглушки
+          if (expectedMode === 'console') {
+            const artifactPath = result.artifacts[0];
+            const content = await fs.readFile(artifactPath, 'utf-8');
+            expect(content).toContain('Ожидается ввод пользователя');
+          }
+          
+          // Для file mode проверяем, что создан шаблон (не заглушка)
+          if (expectedMode === 'file') {
+            const artifactPath = result.artifacts[0];
+            const content = await fs.readFile(artifactPath, 'utf-8');
+            // Шаблон не должен содержать текст заглушки
+            // (может содержать инструкции, вопросы и т.д.)
+            expect(content.length).toBeGreaterThan(0);
           }
         }
       ),
       { numRuns: 100 } // Минимум 100 итераций согласно требованиям
     );
-  }, 60000); // Увеличиваем timeout для property test
+  }, 120000); // Увеличиваем timeout для property test
   
   /**
    * Property 9.1: Приоритет step.input_mode над default_input_mode

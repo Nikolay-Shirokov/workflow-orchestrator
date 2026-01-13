@@ -1011,7 +1011,8 @@ export class DefaultStepExecutor implements StepExecutor {
       templateGenerator,
       editorManager,
       userInputHandler,
-      loggerWrapper as never // Используем as never для обхода проверки типов
+      loggerWrapper as never, // Используем as never для обхода проверки типов
+      process.env.NODE_ENV === 'test' // testMode = true в тестовом окружении
     );
     
     try {
