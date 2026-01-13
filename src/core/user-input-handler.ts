@@ -157,6 +157,7 @@ export class UserInputHandler {
    * ВАЖНО: 
    * - Удаляет HTML-комментарии перед возвратом
    * - Удаляет заголовки первого уровня (#) из шаблонов
+   * - Извлекает только ответы после разделителя --- если он присутствует
    */
   private parseMarkdown(input: string): Record<string, string> | string {
     // Удаляем HTML-комментарии из входных данных
@@ -165,6 +166,25 @@ export class UserInputHandler {
     // Удаляем заголовки первого уровня (# Заголовок), оставляя только контент
     // Это нужно для очистки от служебных заголовков шаблона
     cleanedInput = this.removeTopLevelHeaders(cleanedInput);
+    
+    // Проверяем наличие разделителя ---
+    // Если есть, извлекаем только текст после него (это ответы пользователя)
+    if (cleanedInput.includes('---')) {
+      const parts = cleanedInput.split('---');
+      if (parts.length >= 2) {
+        // Берем все после последнего разделителя
+        const afterSeparator = parts[parts.length - 1].trim();
+        
+        // Удаляем служебные подсказки в [квадратных скобках]
+        const cleanedAnswers = afterSeparator
+          .replace(/\[[^\]]+\]/g, '')    // Удаляем текст в [скобках]
+          .trim();
+        
+        if (cleanedAnswers) {
+          cleanedInput = cleanedAnswers;
+        }
+      }
+    }
     
     const result: Record<string, string> = {};
     const sections = cleanedInput.split(/^##\s+/m).filter(s => s.trim());
