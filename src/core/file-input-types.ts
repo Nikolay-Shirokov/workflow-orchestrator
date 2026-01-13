@@ -50,25 +50,40 @@ export type FileFormat = 'markdown' | 'yaml' | 'json' | 'text';
  * Вопрос пользователю
  */
 export interface UserQuestion {
-  /** Номер вопроса */
-  number: number;
+  /** ID вопроса (для программного доступа) */
+  id?: string;
+  
+  /** Номер вопроса (для отображения) */
+  number?: number;
   
   /** Текст вопроса */
-  text: string;
+  text?: string;
+  
+  /** Текст вопроса (альтернативное поле) */
+  question?: string;
   
   /** Варианты ответов (опционально) */
   options?: string[];
   
   /** Обязателен ли ответ */
   required?: boolean;
+  
+  /** Тип ожидаемого ответа */
+  type?: 'string' | 'number' | 'boolean' | 'array';
+  
+  /** Значение по умолчанию */
+  default?: unknown;
 }
 
 /**
- * Ответы пользователя
+ * Ответы пользователя на вопросы
  */
 export interface UserAnswers {
-  /** Ответы на вопросы по номерам */
-  answers: Record<number, string>;
+  /** Ответы на вопросы */
+  answers: Record<string, unknown>;
+  
+  /** Время получения ответов */
+  timestamp?: string;
   
   /** Дополнительный текст (опционально) */
   additionalText?: string;

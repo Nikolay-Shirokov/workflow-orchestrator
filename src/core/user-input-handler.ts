@@ -9,7 +9,7 @@
  */
 
 import * as yaml from 'yaml';
-import { ValidationRule, WorkflowErrorClass } from './types.js';
+import { ValidationRule, WorkflowErrorClass, UserQuestion, UserAnswers } from './types.js';
 
 /**
  * Формат ввода пользователя
@@ -28,37 +28,6 @@ export interface ParsedUserInput {
   
   /** Исходный текст */
   rawText: string;
-}
-
-/**
- * Вопрос для пользователя
- */
-export interface UserQuestion {
-  /** ID вопроса */
-  id: string;
-  
-  /** Текст вопроса */
-  question: string;
-  
-  /** Обязателен ли ответ */
-  required?: boolean;
-  
-  /** Тип ожидаемого ответа */
-  type?: 'string' | 'number' | 'boolean' | 'array';
-  
-  /** Значение по умолчанию */
-  default?: unknown;
-}
-
-/**
- * Ответы пользователя на вопросы
- */
-export interface UserAnswers {
-  /** Ответы по ID вопроса */
-  answers: Record<string, unknown>;
-  
-  /** Время получения ответов */
-  timestamp: string;
 }
 
 /**
@@ -297,8 +266,11 @@ export class UserInputHandler {
     const lines: string[] = [];
     lines.push('# Ответы пользователя');
     lines.push('');
-    lines.push(`Время: ${answers.timestamp}`);
-    lines.push('');
+    
+    if (answers.timestamp) {
+      lines.push(`Время: ${answers.timestamp}`);
+      lines.push('');
+    }
     
     for (const [key, value] of Object.entries(answers.answers)) {
       lines.push(`## ${key}`);
@@ -428,26 +400,29 @@ export class UserInputHandler {
       // Прямое сопоставление по ID
       const data = parsed.data as Record<string, unknown>;
       for (const question of questions) {
-        if (question.id in data) {
-          answers[question.id] = data[question.id];
+        const questionId = question.id || `question_${question.number || 0}`;
+        if (questionId in data) {
+          answers[questionId] = data[questionId];
         } else if (question.default !== undefined) {
-          answers[question.id] = question.default;
+          answers[questionId] = question.default;
         }
       }
     } else if (format === 'markdown' || format === 'questions') {
       // Извлекаем ответы из структурированного текста
       const data = parsed.data as Record<string, string>;
       for (const question of questions) {
-        if (question.id in data) {
-          answers[question.id] = data[question.id];
+        const questionId = question.id || `question_${question.number || 0}`;
+        if (questionId in data) {
+          answers[questionId] = data[questionId];
         } else if (question.default !== undefined) {
-          answers[question.id] = question.default;
+          answers[questionId] = question.default;
         }
       }
     } else {
       // Для текстового формата используем весь ввод как один ответ
       if (questions.length > 0) {
-        answers[questions[0].id] = parsed.data;
+        const questionId = questions[0].id || `question_${questions[0].number || 0}`;
+        answers[questionId] = parsed.data;
       }
     }
     
@@ -495,7 +470,8 @@ export class UserInputHandler {
       // Создаем карту вопросов по ID для быстрого доступа
       const questionMap = new Map<string, UserQuestion>();
       for (const question of questions) {
-        questionMap.set(question.id, question);
+        const questionId = question.id || `question_${question.number || 0}`;
+        questionMap.set(questionId, question);
       }
       
       // Формируем результат с вопросами и ответами
@@ -503,8 +479,9 @@ export class UserInputHandler {
         const question = questionMap.get(questionId);
         
         if (question) {
+          const questionText = question.question || question.text || '';
           result[questionId] = {
-            question: question.question,
+            question: questionText,
             answer: answer
           };
         } else {

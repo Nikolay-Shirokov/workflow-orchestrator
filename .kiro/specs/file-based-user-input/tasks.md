@@ -113,8 +113,8 @@
     - Генерация случайных ответов
     - Проверка размера с/без вопросов
 
-- [ ] 6. Реализация FileInputHandler
-  - [ ] 6.1 Создать файл `src/core/file-input-handler.ts`
+- [-] 6. Реализация FileInputHandler
+  - [x] 6.1 Создать файл `src/core/file-input-handler.ts`
     - Реализовать класс FileInputHandler
     - Конструктор с зависимостями
     - Основной метод handleFileInput()

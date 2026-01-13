@@ -3,7 +3,7 @@
  */
 
 // Экспорт типов файлового ввода
-export * from './file-input-types';
+export * from './file-input-types.js';
 
 /**
  * Конфигурация рабочего процесса
