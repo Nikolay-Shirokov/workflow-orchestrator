@@ -11,7 +11,7 @@ workflow:
     default_input_mode: "file"
     # Конфигурация редактора
     default_editor:
-      command: "notepad"
+      command: "kiro"
       args: []
       wait: false  
   roles:

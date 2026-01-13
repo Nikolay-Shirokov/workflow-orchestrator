@@ -55,9 +55,11 @@ export class EditorManager {
       this.logger.info(`Запуск редактора: ${editorCommand} ${fullArgs.join(' ')}`);
       
       // Запускаем редактор
+      // В Windows используем shell: true для поддержки .cmd и .bat файлов
       const editorProcess = spawn(editorCommand, fullArgs, {
         detached: true,
-        stdio: 'ignore'
+        stdio: 'ignore',
+        shell: process.platform === 'win32'
       });
       
       // Если нужно ждать закрытия редактора
@@ -154,13 +156,17 @@ export class EditorManager {
     try {
       const platform = process.platform;
       
-      // Для Windows используем where, для Unix-подобных - which
-      const checkCommand = platform === 'win32' 
-        ? `where ${editorCommand}`
-        : `which ${editorCommand}`;
-      
-      await execAsync(checkCommand);
-      return true;
+      if (platform === 'win32') {
+        // В Windows используем where.exe (не алиас where в PowerShell)
+        // where.exe автоматически ищет файлы с расширениями из PATHEXT
+        const { stdout } = await execAsync(`where.exe ${editorCommand} 2>nul`);
+        // where.exe возвращает пути к найденным файлам, если нашел
+        return stdout.trim().length > 0;
+      } else {
+        // Для Unix-подобных систем используем which
+        await execAsync(`which ${editorCommand}`);
+        return true;
+      }
     } catch {
       // Команда не найдена
       return false;
