@@ -137,26 +137,120 @@ const fullFileName = fileDir ? `${fileDir}/${fileName}` : fileName;
 
 ---
 
-### 5. ⚠️ Опечатка в конфигурации редактора
+### 5. ❌ Редактор Kiro не определяется и не запускается в Windows
+
+**Дата исправления:** 2026-01-13  
+**Коммиты:** 8e07e32, 364855b
+
+**Причина:** Три взаимосвязанные проблемы:
+1. Неправильная проверка доступности команд в Windows
+2. Node.js spawn не поддерживает .cmd файлы без shell
+3. default_editor не попадал в контекст выполнения
+
+#### Проблема 1: where vs where.exe в PowerShell
+
+**Файл:** `src/core/editor-manager.ts`, метод `checkEditorAvailability`
+
+**Проблема:**
+- В PowerShell команда `where` - это алиас для `Where-Object`, а не утилита Windows `where.exe`
+- Из-за этого проверка `execAsync('where kiro')` всегда возвращала пустой результат
+- Команда `kiro` существует как `kiro.cmd` в PATH, но не определялась
+
+**Решение:**
+```typescript
+if (platform === 'win32') {
+  // В Windows используем where.exe (не алиас where в PowerShell)
+  // where.exe автоматически ищет файлы с расширениями из PATHEXT
+  const { stdout } = await execAsync(`where.exe ${editorCommand} 2>nul`);
+  // where.exe возвращает пути к найденным файлам, если нашел
+  return stdout.trim().length > 0;
+}
+```
+
+**Результат:** Теперь `where.exe kiro` находит `C:\Users\...\AppData\Local\Programs\Kiro\bin\kiro.cmd`
+
+#### Проблема 2: spawn не запускает .cmd файлы
+
+**Файл:** `src/core/editor-manager.ts`, метод `launchEditor`
+
+**Проблема:**
+- Node.js `spawn()` не автоматически добавляет расширения файлов
+- Без опции `shell: true` не может запустить `.cmd` и `.bat` файлы
+- Команда `spawn('kiro', ...)` падала с ошибкой "spawn kiro ENOENT"
+
+**Решение:**
+```typescript
+const editorProcess = spawn(editorCommand, fullArgs, {
+  detached: true,
+  stdio: 'ignore',
+  shell: process.platform === 'win32'  // Добавлено для поддержки .cmd
+});
+```
+
+**Результат:** Теперь `kiro.cmd` запускается корректно через shell
+
+#### Проблема 3: default_editor не попадал в контекст
+
+**Файл:** `src/core/workflow-engine.ts`, метод `execute`
+
+**Проблема:**
+- При инициализации `state.context` добавлялись только определенные поля из `config.settings`
+- Поле `default_editor` не копировалось в контекст
+- Из-за этого `FileInputHandler` не мог получить конфигурацию редактора
+
+**Было:**
+```typescript
+state.context = {
+  ...initialContext,
+  default_adapter: config.settings.default_adapter,
+  artifacts_dir: artifactsDir,
+  workflow_name: config.name,
+  // ... default_editor отсутствовал
+};
+```
+
+**Стало:**
+```typescript
+state.context = {
+  ...initialContext,
+  default_adapter: config.settings.default_adapter,
+  default_editor: config.settings.default_editor,  // Добавлено
+  artifacts_dir: artifactsDir,
+  workflow_name: config.name,
+  // ...
+};
+```
+
+**Результат:** Теперь конфигурация редактора из YAML попадает в контекст выполнения
+
+#### Дополнительно: Debug-логирование
+
+**Файл:** `src/core/file-input-handler.ts`
+
+Добавлено логирование для отладки:
+```typescript
+this.logger.debug(`Конфигурация редактора: ${JSON.stringify(editorConfig)}`);
+this.logger.debug(`context.state.context.default_editor: ${JSON.stringify(context.state.context.default_editor)}`);
+this.logger.debug(`openInEditor вызван с editorConfig: ${JSON.stringify(editorConfig)}`);
+```
+
+#### Изменение конфигурации
 
 **Файл:** `examples/business-requirements-simple.yaml`
 
-**Было:** 
+**Было:**
 ```yaml
 default_editor:
-  command: "kito"  # Опечатка
+  command: "notepad"
 ```
 
 **Стало:**
 ```yaml
 default_editor:
-  command: "notepad"  # Надежный выбор для Windows
+  command: "kiro"
 ```
 
-**Объяснение:** 
-- "kito" - опечатка, должно быть "kiro"
-- Для надежности изменено на "notepad", который гарантированно есть в Windows
-- Система все равно пробует альтернативные редакторы, если указанный недоступен
+**Результат:** Workflow теперь использует редактор Kiro, как и ожидалось
 
 ---
 
@@ -165,19 +259,21 @@ default_editor:
 ✅ **Workflow теперь работает корректно:**
 
 1. ✅ Создается файл-шаблон в правильной директории `artifacts/requirements-simple-*/`
-2. ✅ Система пытается открыть файл в указанном редакторе
-3. ✅ При неудаче автоматически перебирает альтернативные редакторы:
+2. ✅ Система корректно определяет доступность редактора Kiro в Windows
+3. ✅ Редактор Kiro успешно запускается через shell для поддержки .cmd файлов
+4. ✅ Конфигурация `default_editor` из YAML попадает в контекст выполнения
+5. ✅ При неудаче автоматически перебирает альтернативные редакторы:
+   - kiro (теперь работает!)
    - code (VS Code)
-   - kiro
    - cursor
    - notepad++ 
-   - notepad (успешно открывается)
-4. ✅ Отображается интерактивное меню с опциями:
+   - notepad
+6. ✅ Отображается интерактивное меню с опциями:
    - "Продолжить" (по умолчанию)
    - "Отложить"
-5. ✅ Процесс корректно приостанавливается и ожидает ввода пользователя
-6. ✅ Роль `analyst` имеет необходимые разрешения для создания файлов
-7. ✅ Артефакты сохраняются в правильной директории
+7. ✅ Процесс корректно приостанавливается и ожидает ввода пользователя
+8. ✅ Роль `analyst` имеет необходимые разрешения для создания файлов
+9. ✅ Артефакты сохраняются в правильной директории
 
 ---
 
@@ -221,6 +317,8 @@ node dist/cli/cli.js run examples/business-requirements-simple.yaml
 
 1. **608f56f** - fix: исправлен файловый ввод пользователя и разрешения ролей
 2. **ae1f14d** - fix: исправлено создание артефактов в корне проекта
+3. **8e07e32** - fix: исправлена проверка доступности редакторов в Windows (where.exe + shell: true)
+4. **364855b** - fix: добавлена передача default_editor в контекст выполнения
 
 ---
 
