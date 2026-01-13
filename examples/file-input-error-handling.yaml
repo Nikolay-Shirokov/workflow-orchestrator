@@ -1,0 +1,286 @@
+# Пример обработки ошибок при файловом вводе
+# Демонстрирует различные сценарии ошибок и их обработку
+
+workflow:
+  name: "file-input-error-handling"
+  version: "1.0"
+  description: "Примеры обработки ошибок при файловом вводе"
+  author: "Workflow Orchestrator Team"
+  
+  settings:
+    artifacts_dir: "artifacts/error-handling-${timestamp}"
+    default_adapter: "claude-cli"
+    default_input_mode: "file"
+    log_level: "debug"  # Подробное логирование для отладки
+    max_retries: 3  # Максимум попыток при ошибках
+    
+    # Альтернативные редакторы (будут пробоваться по порядку)
+    default_editor:
+      command: "code"
+      args: ["--wait"]
+      wait: true
+      fallback:
+        - command: "vim"
+        - command: "nano"
+        - command: "notepad"  # Windows
+  
+  roles:
+    assistant:
+      adapter: "claude-cli"
+      model: "claude-sonnet-3.5"
+      role_definition: "Дружелюбный помощник"
+  
+  steps:
+    # ============================================================
+    # СЦЕНАРИЙ 1: Недоступный редактор
+    # ============================================================
+    - id: "unavailable_editor"
+      name: "Тест недоступного редактора"
+      type: "user_input"
+      description: "Демонстрация обработки недоступного редактора"
+      input_mode: "file"
+      file_format: "markdown"
+      editor:
+        command: "nonexistent-editor"  # Несуществующий редактор
+        wait: true
+      prompt_message: |
+        # Тест недоступного редактора
+        
+        Этот шаг пытается использовать несуществующий редактор.
+        Система должна:
+        1. Обнаружить, что редактор недоступен
+        2. Попробовать альтернативные редакторы
+        3. Вывести путь к файлу для ручного открытия
+        4. Продолжить в интерактивном режиме
+        
+        ## Ваш ответ
+        
+        [Введите ваш ответ здесь]
+      outputs:
+        test1_result: "${artifacts_dir}/test1_result.md"
+      on_error:
+        strategy: "fallback"  # Использовать альтернативные редакторы
+        continue: true  # Продолжить выполнение
+    
+    # ============================================================
+    # СЦЕНАРИЙ 2: Ошибка создания файла
+    # ============================================================
+    - id: "file_creation_error"
+      name: "Тест ошибки создания файла"
+      type: "user_input"
+      description: "Демонстрация обработки ошибки создания файла"
+      depends_on: ["unavailable_editor"]
+      input_mode: "file"
+      file_format: "yaml"
+      prompt_message: |
+        # Тест ошибки создания файла
+        
+        test_data:
+          message: "Введите данные"
+          value: ""
+      outputs:
+        test2_result: "/invalid/path/test2_result.yaml"  # Недоступный путь
+      on_error:
+        strategy: "alternative_path"  # Создать в альтернативной директории
+        alternative_paths:
+          - "${artifacts_dir}/test2_result.yaml"
+          - "/tmp/test2_result.yaml"
+          - "${HOME}/test2_result.yaml"
+        continue: true
+    
+    # ============================================================
+    # СЦЕНАРИЙ 3: Некорректные данные (валидация)
+    # ============================================================
+    - id: "validation_error"
+      name: "Тест ошибок валидации"
+      type: "user_input"
+      description: "Демонстрация обработки ошибок валидации"
+      depends_on: ["file_creation_error"]
+      input_mode: "file"
+      file_format: "json"
+      validation:
+        required_fields:
+          - "name"
+          - "email"
+          - "age"
+        field_types:
+          name: "string"
+          email: "email"
+          age: "number"
+        constraints:
+          age:
+            min: 18
+            max: 120
+      prompt_message: |
+        {
+          "name": "",
+          "email": "",
+          "age": 0
+        }
+      outputs:
+        test3_result: "${artifacts_dir}/test3_result.json"
+      on_error:
+        strategy: "retry"  # Позволить повторное редактирование
+        max_retries: 3
+        show_errors: true  # Показать конкретные ошибки валидации
+    
+    # ============================================================
+    # СЦЕНАРИЙ 4: Удаленный файл
+    # ============================================================
+    - id: "deleted_file"
+      name: "Тест удаленного файла"
+      type: "user_input"
+      description: "Демонстрация обработки удаленного файла"
+      depends_on: ["validation_error"]
+      input_mode: "file"
+      file_format: "markdown"
+      prompt_message: |
+        # Тест удаленного файла
+        
+        Этот файл может быть удален пользователем во время редактирования.
+        
+        ## Ваш ответ
+        
+        [Введите ваш ответ]
+      outputs:
+        test4_result: "${artifacts_dir}/test4_result.md"
+      on_error:
+        strategy: "recreate"  # Создать новый файл
+        backup: true  # Создать резервную копию
+        continue: true
+    
+    # ============================================================
+    # СЦЕНАРИЙ 5: Прерывание процесса
+    # ============================================================
+    - id: "interruption_handling"
+      name: "Тест прерывания процесса"
+      type: "user_input"
+      description: "Демонстрация сохранения при прерывании"
+      depends_on: ["deleted_file"]
+      input_mode: "file"
+      file_format: "markdown"
+      auto_save: true  # Автосохранение частично заполненного файла
+      save_interval: 30  # Сохранять каждые 30 секунд
+      prompt_message: |
+        # Тест прерывания процесса
+        
+        Этот шаг демонстрирует автосохранение при прерывании.
+        Если процесс будет прерван (Ctrl+C), частично заполненный
+        файл будет сохранен и может быть восстановлен при возобновлении.
+        
+        ## Большой текст для заполнения
+        
+        ### Раздел 1
+        
+        [Введите текст]
+        
+        ### Раздел 2
+        
+        [Введите текст]
+        
+        ### Раздел 3
+        
+        [Введите текст]
+      outputs:
+        test5_result: "${artifacts_dir}/test5_result.md"
+      on_error:
+        strategy: "save_and_resume"  # Сохранить и позволить возобновление
+        backup: true
+    
+    # ============================================================
+    # СЦЕНАРИЙ 6: Некорректный формат файла
+    # ============================================================
+    - id: "invalid_format"
+      name: "Тест некорректного формата"
+      type: "user_input"
+      description: "Демонстрация обработки некорректного формата"
+      depends_on: ["interruption_handling"]
+      input_mode: "file"
+      file_format: "yaml"
+      strict_parsing: true  # Строгий парсинг
+      prompt_message: |
+        # Тест некорректного формата
+        # YAML должен быть валидным
+        
+        data:
+          key1: "value1"
+          key2: "value2"
+          nested:
+            key3: "value3"
+      outputs:
+        test6_result: "${artifacts_dir}/test6_result.yaml"
+      on_error:
+        strategy: "show_syntax_errors"  # Показать синтаксические ошибки
+        suggest_fix: true  # Предложить исправление
+        max_retries: 3
+    
+    # ============================================================
+    # СЦЕНАРИЙ 7: Переключение на консольный ввод
+    # ============================================================
+    - id: "fallback_to_console"
+      name: "Переключение на консоль"
+      type: "user_input"
+      description: "Демонстрация переключения на консольный ввод"
+      depends_on: ["invalid_format"]
+      input_mode: "file"
+      file_format: "text"
+      prompt_message: "Введите ваш ответ:"
+      outputs:
+        test7_result: "${artifacts_dir}/test7_result.txt"
+      on_error:
+        strategy: "fallback_to_console"  # Переключиться на консольный ввод
+        prompt: "Не удалось использовать файловый ввод. Введите ответ в консоли:"
+    
+    # ============================================================
+    # ФИНАЛЬНЫЙ ОТЧЕТ
+    # ============================================================
+    - id: "error_handling_report"
+      name: "Отчет по обработке ошибок"
+      type: "model"
+      role: "assistant"
+      depends_on:
+        - "unavailable_editor"
+        - "file_creation_error"
+        - "validation_error"
+        - "deleted_file"
+        - "interruption_handling"
+        - "invalid_format"
+        - "fallback_to_console"
+      description: "Создание отчета по всем сценариям ошибок"
+      prompt_template: |
+        Создайте отчет по результатам тестирования обработки ошибок:
+        
+        ## Результаты тестов
+        
+        ### Тест 1: Недоступный редактор
+        ${test1_result}
+        
+        ### Тест 2: Ошибка создания файла
+        ${test2_result}
+        
+        ### Тест 3: Ошибки валидации
+        ${test3_result}
+        
+        ### Тест 4: Удаленный файл
+        ${test4_result}
+        
+        ### Тест 5: Прерывание процесса
+        ${test5_result}
+        
+        ### Тест 6: Некорректный формат
+        ${test6_result}
+        
+        ### Тест 7: Переключение на консоль
+        ${test7_result}
+        
+        Проанализируйте результаты и предоставьте рекомендации.
+      inputs:
+        test1_result: "${test1_result}"
+        test2_result: "${test2_result}"
+        test3_result: "${test3_result}"
+        test4_result: "${test4_result}"
+        test5_result: "${test5_result}"
+        test6_result: "${test6_result}"
+        test7_result: "${test7_result}"
+      outputs:
+        error_report: "${artifacts_dir}/error_handling_report.md"
