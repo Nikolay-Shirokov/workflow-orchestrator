@@ -11,6 +11,9 @@
 import * as yaml from 'yaml';
 import { ValidationRule, WorkflowErrorClass, UserQuestion, UserAnswers } from './types.js';
 
+// Реэкспорт типов для использования в тестах
+export type { UserQuestion, UserAnswers } from './types.js';
+
 /**
  * Формат ввода пользователя
  */

@@ -120,7 +120,7 @@ describe('TemplateGenerator Format Support Property-Based Tests', () => {
             for (const question of originalQuestions) {
               // Проверяем наличие текста вопроса или его номера
               const hasQuestion = 
-                template.includes(question.text) ||
+                (question.text && template.includes(question.text)) ||
                 template.includes(`${question.number}.`) ||
                 template.includes(`question_${question.number}`);
               
