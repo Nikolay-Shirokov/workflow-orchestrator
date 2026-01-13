@@ -153,14 +153,19 @@ export class UserInputHandler {
    * Ответ 2
    * 
    * Если структуры нет, возвращает весь текст как есть
+   * 
+   * ВАЖНО: Удаляет HTML-комментарии перед возвратом, чтобы они не попадали в контекст
    */
   private parseMarkdown(input: string): Record<string, string> | string {
+    // Удаляем HTML-комментарии из входных данных
+    const cleanedInput = this.removeHtmlComments(input);
+    
     const result: Record<string, string> = {};
-    const sections = input.split(/^##\s+/m).filter(s => s.trim());
+    const sections = cleanedInput.split(/^##\s+/m).filter(s => s.trim());
     
     // Если нет секций с ##, возвращаем весь текст
-    if (sections.length === 0 || (sections.length === 1 && !input.includes('##'))) {
-      return input.trim();
+    if (sections.length === 0 || (sections.length === 1 && !cleanedInput.includes('##'))) {
+      return cleanedInput.trim();
     }
     
     for (const section of sections) {
@@ -175,10 +180,23 @@ export class UserInputHandler {
     
     // Если не нашли ни одной пары вопрос-ответ, возвращаем весь текст
     if (Object.keys(result).length === 0) {
-      return input.trim();
+      return cleanedInput.trim();
     }
     
     return result;
+  }
+  
+  /**
+   * Удаление HTML-комментариев из текста
+   * Используется для очистки пользовательского ввода от служебных инструкций
+   * 
+   * @param text - Исходный текст
+   * @returns string - Текст без HTML-комментариев
+   */
+  private removeHtmlComments(text: string): string {
+    // Удаляем HTML-комментарии вида <!-- ... -->
+    // Используем флаг 's' для поддержки многострочных комментариев
+    return text.replace(/<!--[\s\S]*?-->/g, '').trim();
   }
   
   /**
