@@ -151,10 +151,17 @@ export class UserInputHandler {
    * 
    * ## Вопрос 2
    * Ответ 2
+   * 
+   * Если структуры нет, возвращает весь текст как есть
    */
-  private parseMarkdown(input: string): Record<string, string> {
+  private parseMarkdown(input: string): Record<string, string> | string {
     const result: Record<string, string> = {};
     const sections = input.split(/^##\s+/m).filter(s => s.trim());
+    
+    // Если нет секций с ##, возвращаем весь текст
+    if (sections.length === 0 || (sections.length === 1 && !input.includes('##'))) {
+      return input.trim();
+    }
     
     for (const section of sections) {
       const lines = section.split('\n');
@@ -164,6 +171,11 @@ export class UserInputHandler {
       if (question && answer) {
         result[question] = answer;
       }
+    }
+    
+    // Если не нашли ни одной пары вопрос-ответ, возвращаем весь текст
+    if (Object.keys(result).length === 0) {
+      return input.trim();
     }
     
     return result;
