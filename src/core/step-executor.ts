@@ -869,13 +869,23 @@ export class DefaultStepExecutor implements StepExecutor {
    * Выполнение шага ввода пользователя
    * 
    * Логика работы:
-   * - При первом выполнении: приостанавливает процесс и создает заглушку для артефакта
+   * - Определяет режим ввода (file или console) на основе конфигурации
+   * - Для file mode: делегирует обработку FileInputHandler
+   * - Для console mode: использует существующую логику с заглушками
    * - При возобновлении: загружает данные из артефакта и добавляет в контекст
    */
   private async executeUserInputStep(
     step: WorkflowStep,
     context: ExecutionContext
   ): Promise<StepResult> {
+    // Определяем режим ввода
+    // Приоритет: step.input_mode > settings.default_input_mode > 'console'
+    const inputMode = step.input_mode || 
+                     (context.state.context.default_input_mode as string) || 
+                     'console';
+    
+    context.logger.debug(`Режим ввода для шага ${step.id}: ${inputMode}`);
+    
     // Проверяем, есть ли уже артефакт с ответами пользователя
     // Если есть - это возобновление после паузы
     let userInputExists = false;
@@ -940,10 +950,191 @@ export class DefaultStepExecutor implements StepExecutor {
       };
     }
     
-    // Первое выполнение - приостанавливаем процесс
-    context.logger.info(`Шаг ${step.id} требует ввода пользователя. Приостановка выполнения...`);
+    // Первое выполнение - обрабатываем в зависимости от режима
+    if (inputMode === 'file') {
+      // Файловый режим - делегируем FileInputHandler
+      return this.executeFileInputMode(step, context);
+    } else {
+      // Консольный режим - используем существующую логику
+      return this.executeConsoleInputMode(step, context);
+    }
+  }
+  
+  /**
+   * Выполнение шага ввода в файловом режиме
+   * 
+   * Делегирует обработку FileInputHandler, который:
+   * - Создает файл-шаблон
+   * - Открывает его в редакторе
+   * - Ожидает подтверждения пользователя
+   * - Читает и валидирует заполненный файл
+   * 
+   * @param step - Шаг user_input
+   * @param context - Контекст выполнения
+   * @returns Promise<StepResult> - Результат выполнения
+   */
+  private async executeFileInputMode(
+    step: WorkflowStep,
+    context: ExecutionContext
+  ): Promise<StepResult> {
+    context.logger.info(`Шаг ${step.id}: файловый режим ввода`);
     
-    // Устанавливаем статус процесса как 'paused'
+    // Импортируем необходимые компоненты
+    const { FileInputHandler } = await import('./file-input-handler.js');
+    const { TemplateGenerator } = await import('./template-generator.js');
+    const { EditorManager } = await import('./editor-manager.js');
+    const { UserInputHandler } = await import('./user-input-handler.js');
+    const { Logger, LogLevel } = await import('./logger.js');
+    
+    // Создаем экземпляры компонентов
+    const templateGenerator = new TemplateGenerator();
+    
+    // Создаем Logger для EditorManager
+    const editorLogger = new Logger({
+      level: LogLevel.INFO,
+      enableConsole: true,
+      enableFile: false
+    });
+    
+    const editorManager = new EditorManager(editorLogger);
+    const userInputHandler = new UserInputHandler();
+    
+    // Создаем обертку для context.logger, чтобы использовать его с FileInputHandler
+    const loggerWrapper = {
+      debug: (message: string, ...args: unknown[]) => context.logger.debug(message, ...args),
+      info: (message: string, ...args: unknown[]) => context.logger.info(message, ...args),
+      warn: (message: string, ...args: unknown[]) => context.logger.warn(message, ...args),
+      error: (message: string, ...args: unknown[]) => context.logger.error(message, ...args)
+    };
+    
+    const fileInputHandler = new FileInputHandler(
+      templateGenerator,
+      editorManager,
+      userInputHandler,
+      loggerWrapper as never // Используем as never для обхода проверки типов
+    );
+    
+    try {
+      // Обрабатываем файловый ввод
+      const result = await fileInputHandler.handleFileInput(step, context);
+      
+      // Если пользователь выбрал отложить
+      if (!result.success || result.userCommand === 'postpone') {
+        context.logger.info('Пользователь выбрал отложить выполнение');
+        
+        // Статус уже установлен в 'paused' в FileInputHandler
+        return {
+          stepId: step.id,
+          status: 'skipped',
+          outputs: {
+            message: 'Выполнение отложено пользователем',
+            inputFormat: step.file_format || 'markdown'
+          },
+          artifacts: [result.filePath],
+          executionTime: result.processingTime
+        };
+      }
+      
+      // Успешная обработка - сохраняем данные в контекст
+      const artifacts: string[] = [result.filePath];
+      
+      if (step.outputs) {
+        // Определяем, нужно ли включать вопросы в контекст
+        const includeQuestions = step.include_questions !== undefined ? 
+                                step.include_questions : false;
+        
+        // Определяем формат для контекста (по умолчанию json)
+        const contextFormat = step.file_format === 'yaml' ? 'yaml' : 
+                             step.file_format === 'text' ? 'text' : 'json';
+        
+        for (const [outputName, outputPath] of Object.entries(step.outputs)) {
+          const renderedPath = context.templateEngine.render(
+            outputPath,
+            this.createTemplateContext(context)
+          );
+          
+          // Форматируем данные для контекста
+          // Если include_questions = false, передаем только ответы
+          let contextData: string;
+          
+          if (typeof result.data === 'object' && result.data !== null && 'answers' in result.data) {
+            // Данные в формате UserAnswers - используем formatForContext
+            const userAnswers = result.data as { answers: Record<string, unknown>; timestamp?: string };
+            contextData = userInputHandler.formatForContext(
+              { answers: userAnswers.answers, timestamp: userAnswers.timestamp },
+              contextFormat,
+              undefined, // questions не передаем, так как их нет в result.data
+              includeQuestions
+            );
+          } else {
+            // Данные в другом формате - сохраняем как есть
+            contextData = typeof result.data === 'string' ? 
+                         result.data : 
+                         JSON.stringify(result.data, null, 2);
+          }
+          
+          // Сохраняем данные в артефакт
+          const artifactPath = await context.artifactManager.save(
+            context.state.sessionId,
+            step.id,
+            renderedPath,
+            contextData
+          );
+          
+          artifacts.push(artifactPath);
+          
+          // Обновляем контекст
+          // Сохраняем отформатированные данные (только ответы или с вопросами)
+          context.state.context[outputName] = contextData;
+          context.state.context[`${outputName}_file`] = artifactPath;
+          context.state.artifacts[outputName] = artifactPath;
+          
+          context.logger.debug(
+            `Сохранено в контекст: ${outputName} ` +
+            `(${contextData.length} символов, includeQuestions: ${includeQuestions})`
+          );
+        }
+      }
+      
+      context.logger.info(`Шаг ${step.id}: файловый ввод успешно обработан`);
+      
+      return {
+        stepId: step.id,
+        status: 'success',
+        outputs: {
+          message: 'Файловый ввод успешно обработан',
+          inputFormat: step.file_format || 'markdown',
+          data: result.data
+        },
+        artifacts,
+        executionTime: result.processingTime
+      };
+      
+    } catch (error) {
+      context.logger.error(`Ошибка обработки файлового ввода для шага ${step.id}`, error as Error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Выполнение шага ввода в консольном режиме
+   * 
+   * Использует существующую логику с заглушками:
+   * - Приостанавливает процесс
+   * - Создает заглушки для артефактов
+   * - Ожидает ручного заполнения файлов пользователем
+   * 
+   * @param step - Шаг user_input
+   * @param context - Контекст выполнения
+   * @returns Promise<StepResult> - Результат выполнения
+   */
+  private async executeConsoleInputMode(
+    step: WorkflowStep,
+    context: ExecutionContext
+  ): Promise<StepResult> {
+    context.logger.info(`Шаг ${step.id}: консольный режим ввода (существующая логика)`);
+    
+    // Приостанавливаем процесс
     context.state.status = 'paused';
     context.state.currentStep = step.id;
     
