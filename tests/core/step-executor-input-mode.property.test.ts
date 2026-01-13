@@ -22,12 +22,26 @@ import * as os from 'os';
 
 describe('StepExecutor - Input Mode Selection (Property-Based)', () => {
   let testDir: string;
+  let originalNodeEnv: string | undefined;
   
   beforeEach(async () => {
+    // Сохраняем оригинальное значение NODE_ENV
+    originalNodeEnv = process.env.NODE_ENV;
+    
+    // Устанавливаем NODE_ENV в 'test' для корректной работы testMode
+    process.env.NODE_ENV = 'test';
+    
     testDir = await fs.mkdtemp(path.join(os.tmpdir(), 'step-executor-prop-test-'));
   });
   
   afterEach(async () => {
+    // Восстанавливаем оригинальное значение NODE_ENV
+    if (originalNodeEnv !== undefined) {
+      process.env.NODE_ENV = originalNodeEnv;
+    } else {
+      delete process.env.NODE_ENV;
+    }
+    
     try {
       await fs.rm(testDir, { recursive: true, force: true });
     } catch (error) {
