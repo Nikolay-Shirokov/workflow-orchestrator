@@ -16,7 +16,8 @@ workflow:
       wait: false  
   roles:
     analyst:
-      adapter: "gemini-cli"
+      adapter: "codex-cli"
+      model: "gpt-5.2"
       role_definition: "Вы - бизнес-аналитик, помогающий формировать требования"
       permissions:
         - read
