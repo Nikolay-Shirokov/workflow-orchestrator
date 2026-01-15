@@ -181,6 +181,7 @@ export class InteractiveDisplay {
   /**
    * Создание секции списка шагов
    * Property 5: Формат отображения списка шагов
+   * Requirements 3.1: Формат - номер, иконка статуса, название, ID
    */
   private createStepsSection(): DisplaySection {
     if (!this.state) {
@@ -196,7 +197,9 @@ export class InteractiveDisplay {
       
       // Выделяем текущий шаг
       const isCurrentStep = step.number - 1 === this.state.currentStepIndex;
-      let line = ` ${coloredIcon} ${step.number}. ${step.name}`;
+      
+      // Формат: номер, иконка статуса, название, ID (Requirements 3.1)
+      let line = ` ${coloredIcon} ${step.number}. ${step.name} ${this.renderer.dim(`[${step.id}]`)}`;
       
       if (step.duration !== undefined) {
         const duration = DisplayStateUtils.formatExecutionTime(step.duration);

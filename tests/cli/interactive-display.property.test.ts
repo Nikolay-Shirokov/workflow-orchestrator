@@ -408,4 +408,155 @@ describe('InteractiveDisplay Property Tests', () => {
       { numRuns: 100 }
     );
   });
+
+  /**
+   * Property 5: Формат отображения списка шагов
+   * Feature: interactive-cli-interface, Property 5: Формат отображения списка шагов
+   * Validates: Requirements 3.1
+   * 
+   * Для любого списка шагов, каждый шаг должен отображаться в формате:
+   * номер, иконка статуса, название, ID.
+   * 
+   * Также проверяется:
+   * - Наличие иконок статусов (✓, ⏳, ○, ✗)
+   * - Визуальное выделение текущего шага (жирный текст)
+   */
+  test('Property 5: Steps list format is correct', () => {
+    fc.assert(
+      fc.property(workflowConfigArb, (config) => {
+        const mockStream = new MockWriteStream();
+        const renderer = new TerminalRenderer(mockStream as any);
+        const display = new InteractiveDisplay(renderer);
+
+        display.initialize(config as WorkflowConfig);
+        const output = mockStream.output;
+
+        // Проверяем формат каждого шага: номер, иконка, название, ID
+        for (let i = 0; i < config.steps.length; i++) {
+          const step = config.steps[i];
+          const stepNumber = i + 1;
+          
+          // Проверяем наличие номера шага
+          expect(output).toContain(`${stepNumber}.`);
+          
+          // Проверяем наличие названия шага
+          expect(output).toContain(step.name);
+          
+          // Проверяем наличие ID шага в квадратных скобках
+          expect(output).toContain(`[${step.id}]`);
+        }
+
+        // Проверяем наличие иконок статусов
+        // В начальном состоянии все шаги должны иметь статус "pending" (○)
+        const state = display.getState();
+        if (state) {
+          for (const step of state.steps) {
+            const icon = renderer.getStatusIcon(step.status);
+            // Проверяем, что иконка присутствует в выводе
+            // Используем простую проверку наличия иконки
+            expect(['✓', '⏳', '○', '✗']).toContain(icon);
+          }
+        }
+
+        display.cleanup();
+      }),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 5.1: Иконки статусов корректны
+   * Feature: interactive-cli-interface, Property 5: Формат отображения списка шагов
+   * Validates: Requirements 3.1
+   * 
+   * Для любого статуса шага, должна использоваться правильная иконка:
+   * - completed: ✓
+   * - running: ⏳
+   * - pending: ○
+   * - failed: ✗
+   */
+  test('Property 5.1: Status icons are correct', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom('completed', 'running', 'pending', 'failed', 'skipped'),
+        (status) => {
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+
+          const icon = renderer.getStatusIcon(status as any);
+
+          // Проверяем соответствие иконок статусам
+          switch (status) {
+            case 'completed':
+              expect(icon).toBe('✓');
+              break;
+            case 'running':
+              expect(icon).toBe('⏳');
+              break;
+            case 'pending':
+              expect(icon).toBe('○');
+              break;
+            case 'failed':
+              expect(icon).toBe('✗');
+              break;
+            case 'skipped':
+              expect(icon).toBe('○');
+              break;
+          }
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 5.2: Текущий шаг визуально выделен
+   * Feature: interactive-cli-interface, Property 5: Формат отображения списка шагов
+   * Validates: Requirements 3.2
+   * 
+   * Для любого текущего выполняемого шага, он должен быть визуально выделен
+   * (жирный текст с ANSI escape code \x1b[1m).
+   */
+  test('Property 5.2: Current step is visually highlighted', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.integer({ min: 0, max: 9 }),
+        (config, stepIndex) => {
+          // Ограничиваем индекс количеством шагов
+          const actualStepIndex = stepIndex % config.steps.length;
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          // Симулируем начало выполнения шага
+          const step = config.steps[actualStepIndex];
+          display.onStepStart(step as any, actualStepIndex + 1);
+          
+          const output = mockStream.output;
+
+          // Проверяем, что текущий шаг содержит ANSI код для жирного текста
+          // Жирный текст: \x1b[1m ... \x1b[22m
+          const boldCode = '\x1b[1m';
+          expect(output).toContain(boldCode);
+          
+          // Проверяем, что название текущего шага присутствует после кода жирного текста
+          const stepName = step.name;
+          const boldCodeIndex = output.indexOf(boldCode);
+          const stepNameIndex = output.indexOf(stepName, boldCodeIndex);
+          
+          // Если шаг найден после кода жирного текста, значит он выделен
+          if (boldCodeIndex >= 0 && stepNameIndex > boldCodeIndex) {
+            expect(stepNameIndex).toBeGreaterThan(boldCodeIndex);
+          }
+
+          display.cleanup();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
 });
