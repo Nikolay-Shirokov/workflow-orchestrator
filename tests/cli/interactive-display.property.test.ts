@@ -979,4 +979,344 @@ describe.skip('InteractiveDisplay Property Tests', () => {
       { numRuns: 100 }
     );
   });
+
+  /**
+   * Property 8: Ограничение размера истории
+   * Feature: interactive-cli-interface, Property 8: Ограничение размера истории
+   * Validates: Requirements 5.1, 5.2
+   * 
+   * Для любой истории последних действий, количество отображаемых элементов
+   * не должно превышать 3. При добавлении нового элемента самый старый должен
+   * удаляться.
+   */
+  test('Property 8: Recent activity size is limited to 3', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.integer({ min: 1, max: 10 }), // Количество шагов для завершения
+        (config, stepsToComplete) => {
+          // Пропускаем конфигурации с недостаточным количеством шагов
+          if (config.steps.length < 2) {
+            return true;
+          }
+          
+          const actualStepsToComplete = Math.min(stepsToComplete, config.steps.length);
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          // Завершаем несколько шагов
+          for (let i = 0; i < actualStepsToComplete; i++) {
+            const step = config.steps[i];
+            
+            // Начинаем шаг
+            display.onStepStart(step as any, i + 1);
+            
+            // Завершаем шаг
+            const history = {
+              stepId: step.id,
+              status: 'success' as const,
+              executionTime: 1000 + i * 100,
+              artifacts: [`artifact_${i}.txt`],
+              error: undefined
+            };
+            
+            display.onStepComplete(step as any, history as any);
+          }
+          
+          // Получаем состояние
+          const state = display.getState();
+          
+          // Проверяем, что размер истории не превышает 3 (Requirements 5.1, 5.2)
+          expect(state).not.toBeNull();
+          if (state) {
+            expect(state.recentActivity.length).toBeLessThanOrEqual(3);
+            
+            // Если завершено больше 3 шагов, история должна содержать ровно 3 элемента
+            if (actualStepsToComplete > 3) {
+              expect(state.recentActivity.length).toBe(3);
+            } else {
+              // Иначе история должна содержать столько элементов, сколько завершено шагов
+              expect(state.recentActivity.length).toBe(actualStepsToComplete);
+            }
+          }
+
+          display.cleanup();
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 8.1: История содержит последние завершенные шаги
+   * Feature: interactive-cli-interface, Property 8: Ограничение размера истории
+   * Validates: Requirements 5.2
+   * 
+   * Для любой последовательности завершенных шагов, история должна содержать
+   * последние (самые новые) шаги, а не первые.
+   */
+  test('Property 8.1: Recent activity contains latest steps', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        (config) => {
+          // Пропускаем конфигурации с недостаточным количеством шагов
+          if (config.steps.length < 4) {
+            return true;
+          }
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          // Завершаем первые 4 шага
+          for (let i = 0; i < 4; i++) {
+            const step = config.steps[i];
+            
+            display.onStepStart(step as any, i + 1);
+            
+            const history = {
+              stepId: step.id,
+              status: 'success' as const,
+              executionTime: 1000 + i * 100,
+              artifacts: [`artifact_${i}.txt`],
+              error: undefined
+            };
+            
+            display.onStepComplete(step as any, history as any);
+          }
+          
+          // Получаем состояние
+          const state = display.getState();
+          
+          expect(state).not.toBeNull();
+          if (state) {
+            // История должна содержать 3 элемента
+            expect(state.recentActivity.length).toBe(3);
+            
+            // Проверяем, что история содержит последние 3 шага (шаги 1, 2, 3)
+            // В обратном порядке: шаг 3 (индекс 0), шаг 2 (индекс 1), шаг 1 (индекс 2)
+            expect(state.recentActivity[0].stepName).toBe(config.steps[3].name);
+            expect(state.recentActivity[1].stepName).toBe(config.steps[2].name);
+            expect(state.recentActivity[2].stepName).toBe(config.steps[1].name);
+            
+            // Первый шаг (индекс 0) не должен быть в истории
+            const hasFirstStep = state.recentActivity.some(
+              activity => activity.stepName === config.steps[0].name
+            );
+            expect(hasFirstStep).toBe(false);
+          }
+
+          display.cleanup();
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 8.2: История отображается в выводе
+   * Feature: interactive-cli-interface, Property 8: Ограничение размера истории
+   * Validates: Requirements 5.1, 5.3
+   * 
+   * Для любой истории с завершенными шагами, секция "Recent Activity"
+   * должна отображать информацию о каждом шаге: название, статус, время, артефакты.
+   */
+  test('Property 8.2: Recent activity is displayed in output', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.integer({ min: 1, max: 5 }),
+        (config, stepsToComplete) => {
+          // Пропускаем конфигурации с недостаточным количеством шагов
+          if (config.steps.length < 2) {
+            return true;
+          }
+          
+          const actualStepsToComplete = Math.min(stepsToComplete, config.steps.length);
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          // Завершаем несколько шагов
+          const completedSteps: Array<{ name: string; artifacts: string[] }> = [];
+          
+          for (let i = 0; i < actualStepsToComplete; i++) {
+            const step = config.steps[i];
+            const artifacts = [`artifact_${i}.txt`, `result_${i}.json`];
+            
+            display.onStepStart(step as any, i + 1);
+            
+            const history = {
+              stepId: step.id,
+              status: 'success' as const,
+              executionTime: 1000 + i * 100,
+              artifacts: artifacts,
+              error: undefined
+            };
+            
+            display.onStepComplete(step as any, history as any);
+            
+            completedSteps.push({ name: step.name, artifacts });
+          }
+          
+          // Рендерим и получаем вывод
+          mockStream.clearOutput();
+          display.render();
+          const output = mockStream.output;
+          
+          // Проверяем наличие секции истории (Requirements 5.1)
+          expect(output).toContain('Recent Activity:');
+          
+          // Проверяем, что последние шаги отображаются (Requirements 5.3)
+          const displayedSteps = completedSteps.slice(-3).reverse(); // Последние 3 в обратном порядке
+          
+          for (const step of displayedSteps) {
+            // Проверяем наличие названия шага
+            expect(output).toContain(step.name);
+            
+            // Проверяем наличие информации об артефактах
+            expect(output).toContain(`${step.artifacts.length} artifact`);
+          }
+          
+          // Проверяем наличие иконок статуса (✓ для успешных)
+          const successIcon = '✓';
+          expect(output).toContain(successIcon);
+
+          display.cleanup();
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 8.3: История корректно обрабатывает ошибки
+   * Feature: interactive-cli-interface, Property 8: Ограничение размера истории
+   * Validates: Requirements 5.3
+   * 
+   * Для любого шага, завершившегося с ошибкой, история должна отображать
+   * статус "failed" с соответствующей иконкой (✗).
+   */
+  test('Property 8.3: Recent activity handles errors correctly', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.integer({ min: 0, max: 9 }),
+        fc.string({ minLength: 1, maxLength: 100 }),
+        (config, stepIndex, errorMessage) => {
+          // Пропускаем конфигурации с недостаточным количеством шагов
+          if (config.steps.length < 1) {
+            return true;
+          }
+          
+          const actualStepIndex = stepIndex % config.steps.length;
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          const step = config.steps[actualStepIndex];
+          
+          display.onStepStart(step as any, actualStepIndex + 1);
+          
+          // Завершаем шаг с ошибкой
+          const history = {
+            stepId: step.id,
+            status: 'failed' as const,
+            executionTime: 1000,
+            artifacts: [],
+            error: errorMessage
+          };
+          
+          display.onStepComplete(step as any, history as any);
+          
+          // Получаем состояние
+          const state = display.getState();
+          
+          expect(state).not.toBeNull();
+          if (state) {
+            // Проверяем, что в истории есть запись с ошибкой
+            expect(state.recentActivity.length).toBe(1);
+            expect(state.recentActivity[0].status).toBe('failed');
+            expect(state.recentActivity[0].stepName).toBe(step.name);
+          }
+          
+          // Проверяем вывод
+          mockStream.clearOutput();
+          display.render();
+          const output = mockStream.output;
+          
+          // Проверяем наличие иконки ошибки (✗)
+          const errorIcon = '✗';
+          expect(output).toContain(errorIcon);
+          
+          // Проверяем наличие названия шага
+          expect(output).toContain(step.name);
+
+          display.cleanup();
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 8.4: Пустая история отображается корректно
+   * Feature: interactive-cli-interface, Property 8: Ограничение размера истории
+   * Validates: Requirements 5.1
+   * 
+   * Для любого начального состояния без завершенных шагов, секция истории
+   * должна отображать "Recent Activity: None".
+   */
+  test('Property 8.4: Empty recent activity is displayed correctly', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        (config) => {
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          // Получаем состояние без завершенных шагов
+          const state = display.getState();
+          
+          expect(state).not.toBeNull();
+          if (state) {
+            // История должна быть пустой
+            expect(state.recentActivity.length).toBe(0);
+          }
+          
+          // Проверяем вывод
+          mockStream.clearOutput();
+          display.render();
+          const output = mockStream.output;
+          
+          // Проверяем, что отображается "Recent Activity: None"
+          expect(output).toContain('Recent Activity:');
+          expect(output).toContain('None');
+
+          display.cleanup();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
 });
