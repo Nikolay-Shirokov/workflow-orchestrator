@@ -20,11 +20,9 @@ import * as path from 'path';
 import * as readline from 'readline';
 
 // Экспорт компонентов Terminal Layer
-export { TerminalRenderer, TerminalColor } from './terminal-renderer.js';
-export type { TerminalCapabilities, TerminalSize } from './terminal-renderer.js';
-export type { IProgressDisplay } from './display-types.js';
-export { ResumeSelector } from './resume-selector.js';
-export type { ResumeStepInfo } from './resume-selector.js';
+export { TerminalRenderer, TerminalColor, TerminalCapabilities, TerminalSize } from './terminal-renderer.js';
+export { IProgressDisplay } from './display-types.js';
+export { ResumeSelector, ResumeStepInfo } from './resume-selector.js';
 
 /**
  * Создание простого логгера для CLI
@@ -956,11 +954,3 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   });
 }
-
-
-
-
-
-
-
-
