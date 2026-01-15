@@ -1,4 +1,4 @@
-{
+﻿{
   "compilerOptions": {
     /* Основные настройки */
     "target": "ES2022",
@@ -12,6 +12,7 @@
     
     /* Строгая проверка типов */
     "strict": true,
+    "isolatedModules": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
     "strictFunctionTypes": true,
@@ -47,3 +48,5 @@
     "tests"
   ]
 }
+
+
