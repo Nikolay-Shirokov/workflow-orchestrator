@@ -517,6 +517,95 @@ export class InteractiveDisplay implements IProgressDisplay {
   }
 
   /**
+   * Обработчик требования ввода пользователя
+   * Requirements 10.1, 10.2, 10.3: Отображение сообщения, пауза обновления, возобновление
+   * 
+   * @param step - Шаг, требующий ввода
+   * @param message - Сообщение для пользователя
+   */
+  public onUserInputRequired(step: WorkflowStep, message: string): void {
+    if (!this.state) {
+      return;
+    }
+
+    // Приостанавливаем обновление интерфейса (Requirements 10.2)
+    this.pauseRendering();
+
+    // Отображаем сообщение о требовании ввода (Requirements 10.1)
+    this.renderer.writeLine('');
+    this.renderer.writeLine('─'.repeat(60));
+    this.renderer.writeLine(
+      this.renderer.colorize('⏸ Требуется ввод пользователя', TerminalColor.Yellow)
+    );
+    this.renderer.writeLine(`  Шаг: ${this.renderer.bold(step.name)}`);
+    this.renderer.writeLine(`  ${message}`);
+    this.renderer.writeLine('─'.repeat(60));
+    this.renderer.writeLine('');
+  }
+
+  /**
+   * Возобновление обновления интерфейса после ввода пользователя
+   * Requirements 10.3: Возобновление после ввода
+   */
+  public resumeRendering(): void {
+    // Возобновляем обновление интерфейса
+    if (!this.renderInterval && this.config.interactive?.refreshInterval) {
+      this.renderInterval = setInterval(() => {
+        this.render();
+      }, this.config.interactive.refreshInterval);
+    }
+
+    // Перерисовываем интерфейс
+    this.render();
+  }
+
+  /**
+   * Приостановка обновления интерфейса
+   * Requirements 10.2: Пауза обновления
+   */
+  public pauseRendering(): void {
+    // Останавливаем интервал обновления
+    if (this.renderInterval) {
+      clearInterval(this.renderInterval);
+      this.renderInterval = null;
+    }
+  }
+
+  /**
+   * Отображение интерактивного меню для выбора опций
+   * Requirements 10.1.4: Интеграция InteractiveMenu
+   * 
+   * @param options - Список опций меню
+   * @param config - Конфигурация меню
+   * @returns Promise с выбранным значением
+   */
+  public async showMenu(
+    options: MenuOption[],
+    config?: { title?: string; defaultIndex?: number }
+  ): Promise<string> {
+    // Приостанавливаем обновление интерфейса
+    this.pauseRendering();
+
+    // Показываем курсор для интерактивного меню
+    this.renderer.showCursor();
+
+    // Создаем и отображаем меню
+    const { InteractiveMenu } = await import('./interactive-menu.js');
+    const menu = new InteractiveMenu(this.renderer);
+    
+    try {
+      const result = await menu.show(options, config);
+      return result;
+    } finally {
+      // Скрываем курсор после выбора
+      this.renderer.hideCursor();
+      
+      // Возобновляем обновление интерфейса
+      this.resumeRendering();
+    }
+  }
+
+  /**
    * Обработчик начала параллельного выполнения
    * Requirements 9.1: Отображение параллельных шагов
    */
