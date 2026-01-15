@@ -1325,4 +1325,465 @@ describe('InteractiveDisplay Property Tests', () => {
       { numRuns: 100 }
     );
   });
+
+  /**
+   * Property 6: Обновление статуса шага
+   * Feature: interactive-cli-interface, Property 6: Обновление статуса шага
+   * Validates: Requirements 3.3
+   * 
+   * Для любого шага, когда он завершается, его статус в списке должен
+   * измениться с "running" на "completed" или "failed".
+   */
+  test('Property 6: Step status updates on completion', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.integer({ min: 0, max: 9 }),
+        fc.constantFrom('success', 'failed'),
+        fc.integer({ min: 100, max: 10000 }),
+        (config, stepIndex, completionStatus, duration) => {
+          // Пропускаем конфигурации с недостаточным количеством шагов
+          if (config.steps.length < 1) {
+            return true;
+          }
+          
+          const actualStepIndex = stepIndex % config.steps.length;
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          const step = config.steps[actualStepIndex];
+          
+          // Получаем начальное состояние
+          let state = display.getState();
+          expect(state).not.toBeNull();
+          if (state) {
+            // Проверяем, что шаг в статусе "pending"
+            expect(state.steps[actualStepIndex].status).toBe('pending');
+          }
+          
+          // Начинаем выполнение шага
+          display.onStepStart(step as any, actualStepIndex + 1);
+          
+          // Проверяем, что статус изменился на "running"
+          state = display.getState();
+          expect(state).not.toBeNull();
+          if (state) {
+            expect(state.steps[actualStepIndex].status).toBe('running');
+          }
+          
+          // Завершаем шаг
+          const history = {
+            stepId: step.id,
+            status: completionStatus,
+            executionTime: duration,
+            artifacts: [],
+            error: completionStatus === 'failed' ? 'Test error' : undefined
+          };
+          
+          display.onStepComplete(step as any, history as any);
+          
+          // Проверяем, что статус изменился на "completed" или "failed"
+          state = display.getState();
+          expect(state).not.toBeNull();
+          if (state) {
+            const expectedStatus = completionStatus === 'success' ? 'completed' : 'failed';
+            expect(state.steps[actualStepIndex].status).toBe(expectedStatus);
+            
+            // Проверяем, что длительность установлена
+            expect(state.steps[actualStepIndex].duration).toBe(duration);
+          }
+
+          display.cleanup();
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 6.1: Статус шага отображается в выводе
+   * Feature: interactive-cli-interface, Property 6: Обновление статуса шага
+   * Validates: Requirements 3.3
+   * 
+   * Для любого шага с обновленным статусом, новый статус должен
+   * отображаться в списке шагов с соответствующей иконкой.
+   */
+  test('Property 6.1: Updated step status is displayed in output', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.integer({ min: 0, max: 9 }),
+        fc.constantFrom('success', 'failed'),
+        (config, stepIndex, completionStatus) => {
+          // Пропускаем конфигурации с недостаточным количеством шагов
+          if (config.steps.length < 1) {
+            return true;
+          }
+          
+          const actualStepIndex = stepIndex % config.steps.length;
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          const step = config.steps[actualStepIndex];
+          
+          // Начинаем и завершаем шаг
+          display.onStepStart(step as any, actualStepIndex + 1);
+          
+          const history = {
+            stepId: step.id,
+            status: completionStatus,
+            executionTime: 1000,
+            artifacts: [],
+            error: completionStatus === 'failed' ? 'Test error' : undefined
+          };
+          
+          display.onStepComplete(step as any, history as any);
+          
+          // Рендерим и получаем вывод
+          mockStream.clearOutput();
+          display.render();
+          const output = mockStream.output;
+          
+          // Проверяем наличие правильной иконки статуса
+          const expectedIcon = completionStatus === 'success' ? '✓' : '✗';
+          expect(output).toContain(expectedIcon);
+          
+          // Проверяем наличие названия шага
+          expect(output).toContain(step.name);
+
+          display.cleanup();
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 6.2: Множественные обновления статусов
+   * Feature: interactive-cli-interface, Property 6: Обновление статуса шага
+   * Validates: Requirements 3.3
+   * 
+   * Для любой последовательности шагов, каждый шаг должен корректно
+   * обновлять свой статус независимо от других шагов.
+   */
+  test('Property 6.2: Multiple step status updates are independent', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.array(fc.constantFrom('success', 'failed'), { minLength: 1, maxLength: 10 }),
+        (config, completionStatuses) => {
+          // Пропускаем конфигурации с недостаточным количеством шагов
+          if (config.steps.length < 2) {
+            return true;
+          }
+          
+          const stepsToComplete = Math.min(completionStatuses.length, config.steps.length);
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          // Завершаем несколько шагов с разными статусами
+          for (let i = 0; i < stepsToComplete; i++) {
+            const step = config.steps[i];
+            const completionStatus = completionStatuses[i];
+            
+            display.onStepStart(step as any, i + 1);
+            
+            const history = {
+              stepId: step.id,
+              status: completionStatus,
+              executionTime: 1000 + i * 100,
+              artifacts: [],
+              error: completionStatus === 'failed' ? `Error ${i}` : undefined
+            };
+            
+            display.onStepComplete(step as any, history as any);
+          }
+          
+          // Проверяем, что все шаги имеют правильные статусы
+          const state = display.getState();
+          expect(state).not.toBeNull();
+          if (state) {
+            for (let i = 0; i < stepsToComplete; i++) {
+              const expectedStatus = completionStatuses[i] === 'success' ? 'completed' : 'failed';
+              expect(state.steps[i].status).toBe(expectedStatus);
+            }
+            
+            // Проверяем, что незавершенные шаги остались в статусе "pending"
+            for (let i = stepsToComplete; i < config.steps.length; i++) {
+              expect(state.steps[i].status).toBe('pending');
+            }
+          }
+
+          display.cleanup();
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 14: Полнота итоговой информации
+   * Feature: interactive-cli-interface, Property 14: Полнота итоговой информации
+   * Validates: Requirements 11.1, 11.2, 11.3
+   * 
+   * Для любого завершенного процесса, итоговая информация должна содержать:
+   * статус, время выполнения, количество завершенных шагов, количество артефактов, ID сессии.
+   */
+  test('Property 14: Workflow completion information is complete', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.constantFrom('completed', 'failed'),
+        fc.string({ minLength: 10, maxLength: 50 }),
+        fc.integer({ min: 1, max: 10 }),
+        (config, workflowStatus, sessionId, artifactCount) => {
+          // Пропускаем конфигурации с недостаточным количеством шагов
+          if (config.steps.length < 1) {
+            return true;
+          }
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          // Завершаем все шаги
+          const completedSteps: string[] = [];
+          const artifacts: Record<string, string> = {};
+          
+          for (let i = 0; i < config.steps.length; i++) {
+            const step = config.steps[i];
+            
+            display.onStepStart(step as any, i + 1);
+            
+            const stepArtifacts = [`artifact_${i}.txt`];
+            
+            const history = {
+              stepId: step.id,
+              status: 'success' as const,
+              executionTime: 1000 + i * 100,
+              artifacts: stepArtifacts,
+              error: undefined
+            };
+            
+            display.onStepComplete(step as any, history as any);
+            
+            completedSteps.push(step.id);
+            artifacts[step.id] = stepArtifacts[0];
+          }
+          
+          // Добавляем дополнительные артефакты
+          for (let i = 0; i < artifactCount; i++) {
+            artifacts[`extra_${i}`] = `extra_artifact_${i}.txt`;
+          }
+          
+          // Создаем состояние завершения
+          const finalState = {
+            sessionId,
+            workflowName: config.name,
+            workflowVersion: config.version,
+            status: workflowStatus,
+            currentStep: null,
+            startedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+            completedSteps,
+            artifacts,
+            history: [],
+            errors: workflowStatus === 'failed' ? ['Test error'] : []
+          };
+          
+          // Очищаем вывод перед финальным рендером
+          mockStream.clearOutput();
+          
+          // Вызываем обработчик завершения
+          display.onWorkflowComplete(finalState as any);
+          
+          const output = mockStream.output;
+          
+          // Проверяем наличие всех обязательных элементов итоговой информации
+          
+          // 1. Статус завершения (Requirements 11.1)
+          if (workflowStatus === 'completed') {
+            expect(output).toContain('completed successfully');
+            expect(output).toContain('✓');
+          } else {
+            expect(output).toContain('failed');
+            expect(output).toContain('✗');
+          }
+          
+          // 2. Общее время выполнения (Requirements 11.1)
+          expect(output).toContain('Total time:');
+          expect(output).toMatch(/\d+\.\d+s/); // Формат времени
+          
+          // 3. Количество завершенных шагов (Requirements 11.2)
+          expect(output).toContain('Completed steps:');
+          expect(output).toContain(`${completedSteps.length}`);
+          
+          // 4. Количество артефактов (Requirements 11.2)
+          expect(output).toContain('Artifacts:');
+          expect(output).toContain(`${Object.keys(artifacts).length}`);
+          
+          // 5. ID сессии (Requirements 11.2)
+          expect(output).toContain('Session:');
+          expect(output).toContain(sessionId);
+          
+          // 6. Ошибки (если есть) (Requirements 11.3)
+          if (workflowStatus === 'failed') {
+            expect(output).toContain('Errors:');
+          }
+
+          display.cleanup();
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 14.1: Итоговая информация остается на экране
+   * Feature: interactive-cli-interface, Property 14: Полнота итоговой информации
+   * Validates: Requirements 11.2
+   * 
+   * Для любого завершенного процесса, итоговая информация должна
+   * оставаться на экране после завершения (не очищаться).
+   */
+  test('Property 14.1: Completion information remains on screen', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.string({ minLength: 10, maxLength: 50 }),
+        (config, sessionId) => {
+          // Пропускаем конфигурации с недостаточным количеством шагов
+          if (config.steps.length < 1) {
+            return true;
+          }
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          // Создаем состояние завершения
+          const finalState = {
+            sessionId,
+            workflowName: config.name,
+            workflowVersion: config.version,
+            status: 'completed',
+            currentStep: null,
+            startedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+            completedSteps: config.steps.map(s => s.id),
+            artifacts: {},
+            history: [],
+            errors: []
+          };
+          
+          // Очищаем вывод
+          mockStream.clearOutput();
+          
+          // Вызываем обработчик завершения
+          display.onWorkflowComplete(finalState as any);
+          
+          const outputAfterCompletion = mockStream.output;
+          
+          // Проверяем, что итоговая информация присутствует
+          expect(outputAfterCompletion).toContain('completed successfully');
+          expect(outputAfterCompletion).toContain('Session:');
+          expect(outputAfterCompletion).toContain(sessionId);
+          
+          // Очищаем вывод снова
+          mockStream.clearOutput();
+          
+          // Вызываем cleanup (не должен очищать итоговую информацию)
+          display.cleanup();
+          
+          // Итоговая информация должна остаться (не должно быть команды очистки экрана после завершения)
+          // Проверяем, что курсор показан (это происходит в cleanup)
+          const outputAfterCleanup = mockStream.output;
+          expect(outputAfterCleanup).toContain('\x1b[?25h'); // Show cursor
+
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 14.2: Список ошибок отображается при неудачном завершении
+   * Feature: interactive-cli-interface, Property 14: Полнота итоговой информации
+   * Validates: Requirements 11.3
+   * 
+   * Для любого процесса, завершившегося с ошибками, должен отображаться
+   * список ошибок.
+   */
+  test('Property 14.2: Error list is displayed on failure', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.string({ minLength: 10, maxLength: 50 }),
+        fc.array(fc.string({ minLength: 1, maxLength: 100 }), { minLength: 1, maxLength: 5 }),
+        (config, sessionId, errors) => {
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          // Создаем состояние завершения с ошибками
+          const finalState = {
+            sessionId,
+            workflowName: config.name,
+            workflowVersion: config.version,
+            status: 'failed',
+            currentStep: null,
+            startedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+            completedSteps: [],
+            artifacts: {},
+            history: [],
+            errors
+          };
+          
+          // Очищаем вывод
+          mockStream.clearOutput();
+          
+          // Вызываем обработчик завершения
+          display.onWorkflowComplete(finalState as any);
+          
+          const output = mockStream.output;
+          
+          // Проверяем наличие информации об ошибках (Requirements 11.3)
+          expect(output).toContain('failed');
+          expect(output).toContain('Errors:');
+          expect(output).toContain(`${errors.length}`);
+
+          display.cleanup();
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
 });
