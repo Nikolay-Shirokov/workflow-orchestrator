@@ -6,13 +6,13 @@
 
 ## Задачи
 
-- [ ] 1. Создание базовых компонентов Terminal Layer
+- [x] 1. Создание базовых компонентов Terminal Layer
   - Реализовать TerminalRenderer для работы с ANSI codes
   - Реализовать определение возможностей терминала
   - Реализовать обработку изменения размера терминала
   - _Requirements: 2.3, 8.1, 8.2_
 
-- [ ] 1.1 Написать property тесты для TerminalRenderer
+- [x] 1.1 Написать property тесты для TerminalRenderer
   - **Property 4: Цветовая индикация статусов**
   - **Validates: Requirements 2.3**
 
