@@ -130,9 +130,17 @@ export function initializeLogger(config: LoggerConfig): Logger {
  */
 export function getLogger(): Logger {
   if (!defaultLogger) {
+    // Читаем уровень логирования из переменной окружения
+    const envLogLevel = process.env.LOG_LEVEL?.toLowerCase();
+    const logLevel = envLogLevel === 'debug' ? LogLevel.DEBUG :
+                     envLogLevel === 'info' ? LogLevel.INFO :
+                     envLogLevel === 'warn' ? LogLevel.WARNING :
+                     envLogLevel === 'error' ? LogLevel.ERROR :
+                     LogLevel.INFO;
+    
     // Создаем логгер по умолчанию, если не инициализирован
     defaultLogger = new Logger({
-      level: LogLevel.INFO,
+      level: logLevel,
       enableConsole: true,
       enableFile: false
     });

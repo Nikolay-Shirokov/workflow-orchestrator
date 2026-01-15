@@ -12,6 +12,9 @@ export default {
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
   verbose: false, // Компактный вывод по умолчанию
+  reporters: [
+    'default', // Стандартный reporter для компактного вывода
+  ],
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
