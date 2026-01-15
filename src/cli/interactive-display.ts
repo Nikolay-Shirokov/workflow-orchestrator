@@ -18,6 +18,7 @@ import {
   DisplayConfig,
   DisplaySection,
   DisplayStateUtils,
+  DisplayStepStatus,
   IProgressDisplay
 } from './display-types.js';
 
@@ -225,9 +226,33 @@ export class InteractiveDisplay implements IProgressDisplay {
   /**
    * Создание секции текущего шага
    * Property 7: Полнота информации о текущем шаге
+   * Property 12: Отображение параллельных шагов
    * Requirements 4.1: Отображение названия, ID, типа, роли, адаптера, модели, времени
+   * Requirements 9.1, 9.2, 9.3: Отображение параллельных шагов с индикатором
    */
   private createCurrentStepSection(): DisplaySection {
+    // Проверка наличия параллельных шагов (Requirements 9.1)
+    if (this.state?.parallelSteps && this.state.parallelSteps.length > 0) {
+      const content: string[] = [
+        `${this.renderer.colorize('⚡', TerminalColor.Yellow)} Parallel Execution:` // Индикатор параллельного выполнения (Requirements 9.3)
+      ];
+
+      // Отображение всех параллельных шагов (Requirements 9.1)
+      for (const parallelStep of this.state.parallelSteps) {
+        const icon = this.renderer.getStatusIcon(parallelStep.status as DisplayStepStatus);
+        const color = this.renderer.getStatusColor(parallelStep.status as DisplayStepStatus);
+        const coloredIcon = this.renderer.colorize(icon, color);
+        
+        content.push(`  ${coloredIcon} ${parallelStep.stepName} ${this.renderer.dim(`[${parallelStep.stepId}]`)}`);
+      }
+
+      return {
+        title: 'Current Step',
+        content
+      };
+    }
+
+    // Обычное отображение текущего шага
     if (!this.state || this.state.currentStepIndex < 0) {
       return {
         title: 'Current Step',
@@ -489,6 +514,65 @@ export class InteractiveDisplay implements IProgressDisplay {
 
     this.renderer.writeLine(`Session: ${state.sessionId}`);
     this.renderer.writeLine('═'.repeat(60));
+  }
+
+  /**
+   * Обработчик начала параллельного выполнения
+   * Requirements 9.1: Отображение параллельных шагов
+   */
+  public onParallelStart(steps: WorkflowStep[]): void {
+    if (!this.state) {
+      return;
+    }
+
+    // Создаем информацию о параллельных шагах
+    const parallelSteps = steps.map(step => ({
+      stepId: step.id,
+      stepName: step.name,
+      status: 'running'
+    }));
+
+    // Обновляем состояние
+    this.state = {
+      ...this.state,
+      parallelSteps
+    };
+
+    this.render();
+  }
+
+  /**
+   * Обработчик завершения параллельного выполнения
+   * Requirements 9.1: Обновление статусов параллельных шагов
+   */
+  public onParallelComplete(results: Array<{ stepId: string; status: string }>): void {
+    if (!this.state) {
+      return;
+    }
+
+    // Обновляем статусы параллельных шагов
+    if (this.state.parallelSteps) {
+      this.state.parallelSteps = this.state.parallelSteps.map(parallelStep => {
+        const result = results.find(r => r.stepId === parallelStep.stepId);
+        if (result) {
+          return {
+            ...parallelStep,
+            status: result.status
+          };
+        }
+        return parallelStep;
+      });
+    }
+
+    this.render();
+
+    // Очищаем параллельные шаги после небольшой задержки
+    setTimeout(() => {
+      if (this.state) {
+        this.state.parallelSteps = undefined;
+        this.render();
+      }
+    }, 1000);
   }
 
   /**

@@ -1796,4 +1796,272 @@ describe('InteractiveDisplay Property Tests', () => {
       { numRuns: 100 }
     );
   });
+
+  /**
+   * Property 12: Отображение параллельных шагов
+   * Feature: interactive-cli-interface, Property 12: Отображение параллельных шагов
+   * Validates: Requirements 9.1, 9.2, 9.3
+   * 
+   * Для любого набора параллельно выполняемых шагов, все шаги должны
+   * отображаться в секции текущих шагов с индикатором параллельного выполнения (⚡).
+   */
+  test('Property 12: Parallel steps are displayed with indicator', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.array(
+          fc.record({
+            id: fc.string({ minLength: 1, maxLength: 20 }),
+            name: fc.string({ minLength: 1, maxLength: 100 }),
+            type: fc.constantFrom('model', 'transform', 'export', 'import')
+          }),
+          { minLength: 2, maxLength: 5 } // Минимум 2 параллельных шага
+        ),
+        (config, parallelStepsData) => {
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          // Инициализируем отображение
+          display.initialize(config as WorkflowConfig);
+
+          // Создаем параллельные шаги с уникальными ID
+          const parallelSteps = parallelStepsData.map((stepData, index) => ({
+            ...stepData,
+            id: `parallel_${stepData.id}_${index}` // Гарантируем уникальность
+          }));
+
+          // Очищаем вывод перед вызовом onParallelStart
+          mockStream.clearOutput();
+
+          // Вызываем обработчик начала параллельного выполнения
+          display.onParallelStart(parallelSteps as any);
+
+          const output = mockStream.output;
+
+          // Проверяем наличие индикатора параллельного выполнения (Requirements 9.3)
+          expect(output).toContain('⚡');
+          expect(output).toContain('Parallel Execution:');
+
+          // Проверяем, что все параллельные шаги отображаются (Requirements 9.1)
+          for (const step of parallelSteps) {
+            expect(output).toContain(step.name);
+            expect(output).toContain(step.id);
+          }
+
+          // Проверяем, что шаги визуально сгруппированы (Requirements 9.2)
+          // Все шаги должны быть в одной секции "Parallel Execution"
+          const parallelSectionMatch = output.match(/⚡ Parallel Execution:([\s\S]*?)─{10,}/);
+          if (parallelSectionMatch) {
+            const parallelSection = parallelSectionMatch[1];
+            // Проверяем, что все шаги находятся в этой секции
+            for (const step of parallelSteps) {
+              expect(parallelSection).toContain(step.name);
+            }
+          }
+
+          display.cleanup();
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 12.1: Статусы параллельных шагов обновляются
+   * Feature: interactive-cli-interface, Property 12: Отображение параллельных шагов
+   * Validates: Requirements 9.1
+   * 
+   * Для любого набора параллельных шагов, при завершении выполнения
+   * их статусы должны обновляться корректно.
+   */
+  test('Property 12.1: Parallel step statuses are updated', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.array(
+          fc.record({
+            id: fc.string({ minLength: 1, maxLength: 20 }),
+            name: fc.string({ minLength: 1, maxLength: 100 }),
+            type: fc.constantFrom('model', 'transform', 'export', 'import'),
+            status: fc.constantFrom('completed', 'failed')
+          }),
+          { minLength: 2, maxLength: 5 }
+        ),
+        (config, parallelStepsData) => {
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+
+          // Создаем параллельные шаги с уникальными ID
+          const parallelSteps = parallelStepsData.map((stepData, index) => ({
+            id: `parallel_${stepData.id}_${index}`,
+            name: stepData.name,
+            type: stepData.type
+          }));
+
+          // Начинаем параллельное выполнение
+          display.onParallelStart(parallelSteps as any);
+
+          // Создаем результаты выполнения
+          const results = parallelStepsData.map((stepData, index) => ({
+            stepId: `parallel_${stepData.id}_${index}`,
+            status: stepData.status
+          }));
+
+          // Очищаем вывод перед вызовом onParallelComplete
+          mockStream.clearOutput();
+
+          // Завершаем параллельное выполнение
+          display.onParallelComplete(results);
+
+          const output = mockStream.output;
+
+          // Проверяем, что статусы обновлены
+          // Ищем иконки статусов в выводе
+          const hasCompletedIcon = output.includes('✓');
+          const hasFailedIcon = output.includes('✗');
+
+          // Проверяем соответствие иконок статусам
+          const hasCompleted = results.some(r => r.status === 'completed');
+          const hasFailed = results.some(r => r.status === 'failed');
+
+          if (hasCompleted) {
+            expect(hasCompletedIcon).toBe(true);
+          }
+          if (hasFailed) {
+            expect(hasFailedIcon).toBe(true);
+          }
+
+          display.cleanup();
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 12.2: Параллельные шаги очищаются после завершения
+   * Feature: interactive-cli-interface, Property 12: Отображение параллельных шагов
+   * Validates: Requirements 9.1
+   * 
+   * Для любого набора параллельных шагов, после завершения выполнения
+   * информация о параллельных шагах должна быть очищена из состояния.
+   */
+  test('Property 12.2: Parallel steps are cleared after completion', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        workflowConfigArb,
+        fc.array(
+          fc.record({
+            id: fc.string({ minLength: 1, maxLength: 20 }),
+            name: fc.string({ minLength: 1, maxLength: 100 }),
+            type: fc.constantFrom('model', 'transform', 'export', 'import')
+          }),
+          { minLength: 2, maxLength: 5 }
+        ),
+        async (config, parallelStepsData) => {
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+
+          // Создаем параллельные шаги с уникальными ID
+          const parallelSteps = parallelStepsData.map((stepData, index) => ({
+            id: `parallel_${stepData.id}_${index}`,
+            name: stepData.name,
+            type: stepData.type
+          }));
+
+          // Начинаем параллельное выполнение
+          display.onParallelStart(parallelSteps as any);
+
+          // Проверяем, что параллельные шаги установлены
+          let state = display.getState();
+          expect(state?.parallelSteps).toBeDefined();
+          expect(state?.parallelSteps?.length).toBe(parallelSteps.length);
+
+          // Создаем результаты выполнения
+          const results = parallelStepsData.map((stepData, index) => ({
+            stepId: `parallel_${stepData.id}_${index}`,
+            status: 'completed'
+          }));
+
+          // Завершаем параллельное выполнение
+          display.onParallelComplete(results);
+
+          // Ждем очистки (setTimeout в onParallelComplete - 1000ms)
+          await new Promise(resolve => setTimeout(resolve, 1100));
+
+          // Проверяем, что параллельные шаги очищены
+          state = display.getState();
+          expect(state?.parallelSteps).toBeUndefined();
+
+          display.cleanup();
+          return true;
+        }
+      ),
+      { numRuns: 10 } // Меньше итераций из-за async и таймаутов
+    );
+  }, 30000); // Увеличиваем таймаут до 30 секунд
+
+  /**
+   * Property 12.3: Индикатор параллельного выполнения всегда присутствует
+   * Feature: interactive-cli-interface, Property 12: Отображение параллельных шагов
+   * Validates: Requirements 9.3
+   * 
+   * Для любого набора параллельных шагов, индикатор ⚡ должен всегда
+   * присутствовать в выводе при параллельном выполнении.
+   */
+  test('Property 12.3: Parallel execution indicator is always present', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.array(
+          fc.record({
+            id: fc.string({ minLength: 1, maxLength: 20 }),
+            name: fc.string({ minLength: 1, maxLength: 100 }),
+            type: fc.constantFrom('model', 'transform', 'export', 'import')
+          }),
+          { minLength: 1, maxLength: 10 } // От 1 до 10 параллельных шагов
+        ),
+        (config, parallelStepsData) => {
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+
+          // Создаем параллельные шаги с уникальными ID
+          const parallelSteps = parallelStepsData.map((stepData, index) => ({
+            id: `parallel_${stepData.id}_${index}`,
+            name: stepData.name,
+            type: stepData.type
+          }));
+
+          mockStream.clearOutput();
+
+          // Начинаем параллельное выполнение
+          display.onParallelStart(parallelSteps as any);
+
+          const output = mockStream.output;
+
+          // Проверяем наличие индикатора ⚡ (Requirements 9.3)
+          expect(output).toContain('⚡');
+
+          // Проверяем, что индикатор находится рядом с текстом "Parallel Execution"
+          expect(output).toMatch(/⚡.*Parallel Execution/);
+
+          display.cleanup();
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
 });
