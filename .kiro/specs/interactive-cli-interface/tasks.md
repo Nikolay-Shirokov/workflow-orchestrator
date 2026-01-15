@@ -271,8 +271,9 @@
     - [ ] 24.22 tests/integration/user-input-prompts.test.ts.disabled → .test.ts (ошибки компиляции TypeScript)
     - [ ] 24.23 tests/integration/user-input-cancellation.test.ts.disabled → .test.ts (ошибки компиляции TypeScript)
     - [ ] 24.24 tests/integration/validation-errors.test.ts.disabled → .test.ts (ошибки компиляции TypeScript)
-  - Исправить оставшийся упавший тест:
+  - Исправить оставшиеся упавшие тесты:
     - [ ] 24.25 tests/adapters/codex-cli-adapter.property.test.ts (1 property test failure)
+    - [ ] 24.26 tests/core/template-engine.test.ts - Property-Based Tests (вложенные переменные)
   - Убедиться, что все тесты проходят (см. failed-tests-summary.md для деталей)
   - _Note: Тесты были временно отключены для продолжения работы над текущей задачей_
   - _Статистика до отключения: 24 failed suites, 101 failed tests из 934 total_

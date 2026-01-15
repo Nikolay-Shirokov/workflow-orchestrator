@@ -37,8 +37,9 @@
 6. ✅ tests/integration/user-input-cancellation.test.ts → `.disabled`
 7. ✅ tests/integration/validation-errors.test.ts → `.disabled`
 
-## Оставшийся 1 упавший тест:
+## Оставшиеся упавшие тесты (2):
 - tests/adapters/codex-cli-adapter.property.test.ts - 1 property test failure
+- tests/core/template-engine.test.ts - Property-Based Tests (вложенные переменные)
 
 ## Для включения тестов обратно:
 1. Убрать `.skip` из describe блоков
