@@ -15,6 +15,7 @@ import { Logger, LogLevel } from '../core/logger.js';
 
 // Экспорт компонентов Terminal Layer
 export { TerminalRenderer, TerminalColor, TerminalCapabilities, TerminalSize } from './terminal-renderer.js';
+export { IProgressDisplay } from './display-types.js';
 
 /**
  * Создание простого логгера для CLI
@@ -25,6 +26,32 @@ function createSimpleLogger(verbose: boolean = false): Logger {
     enableConsole: true,
     enableFile: false
   });
+}
+
+/**
+ * Создание индикатора прогресса на основе режима
+ * Property 1: Выбор режима на основе флага
+ * 
+ * @param logMode - Флаг логового режима
+ * @param logger - Логгер
+ * @returns ProgressDisplay или InteractiveDisplay
+ */
+function createProgressDisplay(logMode: boolean, logger: Logger): ProgressDisplay | any {
+  if (logMode) {
+    // Логовый режим - используем ProgressDisplay
+    return new ProgressDisplay(logger);
+  } else {
+    // Интерактивный режим - используем InteractiveDisplay
+    try {
+      // Динамический импорт InteractiveDisplay
+      const { InteractiveDisplay } = require('./interactive-display.js');
+      return new InteractiveDisplay();
+    } catch (error) {
+      // Fallback на логовый режим при ошибке
+      logger.warn('Не удалось инициализировать интерактивный режим, используется логовый режим');
+      return new ProgressDisplay(logger);
+    }
+  }
 }
 
 /**
@@ -47,6 +74,7 @@ export function createCLI(): Command {
     .option('-f, --context-file <file>', 'Путь к файлу с начальным контекстом (JSON)')
     .option('-v, --verbose', 'Подробный вывод логов')
     .option('--log-level <level>', 'Уровень логирования (debug, info, warning, error)', 'info')
+    .option('--log-mode', 'Использовать логовый режим вместо интерактивного')
     .option('--state-dir <dir>', 'Директория для файлов состояния', './state')
     .option('--artifacts-dir <dir>', 'Директория для артефактов')
     .action(async (configPath: string, options) => {
@@ -85,8 +113,9 @@ export function createCLI(): Command {
           logger
         });
 
-        // Создание индикатора прогресса
-        const progress = new ProgressDisplay(logger);
+        // Создание индикатора прогресса на основе режима
+        // Property 1: Выбор режима на основе флага (Requirements 1.2, 1.3)
+        const progress = createProgressDisplay(options.logMode || false, logger);
 
         // Запуск процесса
         const state = await orchestrator.run(configPath, initialContext, progress);
@@ -125,6 +154,7 @@ export function createCLI(): Command {
     .argument('<config>', 'Путь к файлу конфигурации процесса')
     .option('-v, --verbose', 'Подробный вывод логов')
     .option('--log-level <level>', 'Уровень логирования (debug, info, warning, error)', 'info')
+    .option('--log-mode', 'Использовать логовый режим вместо интерактивного')
     .option('--state-dir <dir>', 'Директория для файлов состояния', './state')
     .option('--skip-validation', 'Пропустить валидацию артефактов')
     .action(async (sessionId: string, configPath: string, options) => {
@@ -139,8 +169,9 @@ export function createCLI(): Command {
           logger
         });
 
-        // Создание индикатора прогресса
-        const progress = new ProgressDisplay(logger);
+        // Создание индикатора прогресса на основе режима
+        // Property 1: Выбор режима на основе флага (Requirements 1.2, 1.3)
+        const progress = createProgressDisplay(options.logMode || false, logger);
 
         // Возобновление процесса
         const state = await orchestrator.resume(

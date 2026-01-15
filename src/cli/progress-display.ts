@@ -5,11 +5,13 @@
  */
 
 import { WorkflowConfig, WorkflowState, WorkflowStep, StepHistory, Logger } from '../core/types.js';
+import { IProgressDisplay } from './display-types.js';
 
 /**
  * Класс для отображения прогресса
+ * Реализует интерфейс IProgressDisplay для совместимости с оркестратором
  */
-export class ProgressDisplay {
+export class ProgressDisplay implements IProgressDisplay {
   private logger: Logger;
   private startTime: number = 0;
   private currentStepStartTime: number = 0;

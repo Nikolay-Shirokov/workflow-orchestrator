@@ -17,7 +17,8 @@ import {
   DisplayState,
   DisplayConfig,
   DisplaySection,
-  DisplayStateUtils
+  DisplayStateUtils,
+  IProgressDisplay
 } from './display-types.js';
 
 /**
@@ -31,8 +32,9 @@ export interface MenuOption {
 
 /**
  * InteractiveDisplay - класс для интерактивного отображения
+ * Реализует интерфейс IProgressDisplay для совместимости с оркестратором
  */
-export class InteractiveDisplay {
+export class InteractiveDisplay implements IProgressDisplay {
   private renderer: TerminalRenderer;
   private config: DisplayConfig;
   private state: DisplayState | null = null;

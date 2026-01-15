@@ -4,7 +4,38 @@
  * Содержит интерфейсы для состояния отображения и конфигурации
  */
 
+import { WorkflowConfig, WorkflowState, WorkflowStep, StepHistory } from '../core/types.js';
 import { TerminalColor } from './terminal-renderer.js';
+
+/**
+ * Общий интерфейс для отображения прогресса
+ * Используется как для ProgressDisplay, так и для InteractiveDisplay
+ */
+export interface IProgressDisplay {
+  /** Обработчик начала процесса */
+  onWorkflowStart(config: WorkflowConfig): void;
+  
+  /** Обработчик начала шага */
+  onStepStart?(step: WorkflowStep, stepNumber: number): void;
+  
+  /** Обработчик завершения шага */
+  onStepComplete?(step: WorkflowStep, history: StepHistory): void;
+  
+  /** Обработчик ошибки шага */
+  onStepError?(step: WorkflowStep, error: Error): void;
+  
+  /** Обработчик завершения процесса */
+  onWorkflowComplete(state: WorkflowState): void;
+  
+  /** Обработчик требования ввода пользователя */
+  onUserInputRequired?(step: WorkflowStep, message: string): void;
+  
+  /** Обработчик начала параллельного выполнения */
+  onParallelStart?(steps: WorkflowStep[]): void;
+  
+  /** Обработчик завершения параллельного выполнения */
+  onParallelComplete?(results: Array<{ stepId: string; status: string }>): void;
+}
 
 /**
  * Статус шага для отображения

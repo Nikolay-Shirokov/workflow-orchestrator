@@ -1,0 +1,18 @@
+name: test-workflow
+version: 1.0
+description: Простой тестовый процесс для проверки режимов отображения
+
+artifacts_dir: ./artifacts/test-display-mode
+
+steps:
+  - id: step1
+    name: Первый шаг
+    type: shell
+    command: echo "Шаг 1 выполнен"
+    
+  - id: step2
+    name: Второй шаг
+    type: shell
+    command: echo "Шаг 2 выполнен"
+    depends_on:
+      - step1

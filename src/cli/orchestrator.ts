@@ -16,7 +16,7 @@ import { WorkflowConfigParser } from '../core/workflow-config-parser.js';
 import { MCPManager } from '../core/mcp-manager.js';
 import { RoleManager } from '../core/role-manager.js';
 import { CLIWorkflowStatus, DryRunResult } from './index.js';
-import { ProgressDisplay } from './progress-display.js';
+import { IProgressDisplay } from './display-types.js';
 
 // Импортируем все доступные адаптеры
 import { ClaudeCLIAdapter } from '../adapters/claude-cli-adapter.js';
@@ -157,7 +157,7 @@ export class WorkflowOrchestrator {
   async run(
     configPath: string,
     initialContext: Record<string, unknown> = {},
-    progress?: ProgressDisplay
+    progress?: IProgressDisplay
   ): Promise<WorkflowState> {
     this.logger.info(`Запуск процесса из ${configPath}`);
 
@@ -186,7 +186,7 @@ export class WorkflowOrchestrator {
   async resume(
     sessionId: string,
     configPath: string,
-    progress?: ProgressDisplay,
+    progress?: IProgressDisplay,
     _options: ResumeOptions = {}
   ): Promise<WorkflowState> {
     this.logger.info(`Возобновление процесса ${sessionId}`);
