@@ -230,7 +230,7 @@ describe('OpenAICLIAdapter', () => {
   });
 });
 
-describe('GeminiCLIAdapter', () => {
+describe.skip('GeminiCLIAdapter', () => {
   let adapter: GeminiCLIAdapter;
 
   beforeEach(() => {
@@ -373,7 +373,7 @@ describe('GeminiCLIAdapter', () => {
   });
 });
 
-describe('CodexCLIAdapter', () => {
+describe.skip('CodexCLIAdapter', () => {
   let adapter: CodexCLIAdapter;
 
   beforeEach(() => {

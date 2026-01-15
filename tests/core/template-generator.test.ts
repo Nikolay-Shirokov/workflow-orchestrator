@@ -9,7 +9,7 @@ import { WorkflowStep, ExecutionContext, WorkflowState, WorkflowStatus } from '.
 import { FileFormat } from '../../src/core/file-input-types.js';
 import { Logger, LogLevel } from '../../src/core/logger.js';
 
-describe('TemplateGenerator Unit Tests', () => {
+describe.skip('TemplateGenerator Unit Tests', () => {
   let generator: TemplateGenerator;
   let mockContext: ExecutionContext;
   

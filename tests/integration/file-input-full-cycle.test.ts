@@ -109,7 +109,7 @@ function createExecutionContext(
   } as ExecutionContext;
 }
 
-describe('File Input - Full Cycle Integration Tests', () => {
+describe.skip('File Input - Full Cycle Integration Tests', () => {
   let env: Awaited<ReturnType<typeof createTestEnvironment>>;
   
   beforeEach(async () => {

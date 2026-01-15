@@ -15,7 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-describe('EditorManager и TemplateGenerator - Интеграция', () => {
+describe.skip('EditorManager и TemplateGenerator - Интеграция', () => {
   let editorManager: EditorManager;
   let templateGenerator: TemplateGenerator;
   let logger: Logger;

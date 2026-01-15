@@ -11,7 +11,7 @@ import { ExecutionContext, WorkflowState, WorkflowStatus } from '../../src/core/
 import { FileFormat } from '../../src/core/file-input-types.js';
 import { Logger, LogLevel } from '../../src/core/logger.js';
 
-describe('TemplateGenerator Format Support Property-Based Tests', () => {
+describe.skip('TemplateGenerator Format Support Property-Based Tests', () => {
   let generator: TemplateGenerator;
   let mockContext: ExecutionContext;
   

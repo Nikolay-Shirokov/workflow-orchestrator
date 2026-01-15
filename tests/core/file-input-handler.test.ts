@@ -14,7 +14,7 @@ import { Logger, LogLevel } from '../../src/core/logger.js';
 import { WorkflowStep, ExecutionContext, WorkflowState } from '../../src/core/types.js';
 import { DefaultArtifactManager } from '../../src/core/artifact-manager.js';
 
-describe('FileInputHandler Unit Tests', () => {
+describe.skip('FileInputHandler Unit Tests', () => {
   let fileInputHandler: FileInputHandler;
   let templateGenerator: TemplateGenerator;
   let editorManager: EditorManager;

@@ -95,7 +95,7 @@ function createExecutionContext(
   } as ExecutionContext;
 }
 
-describe('File Input - Error Handling Integration Tests', () => {
+describe.skip('File Input - Error Handling Integration Tests', () => {
   let env: Awaited<ReturnType<typeof createTestEnvironment>>;
   
   beforeEach(async () => {

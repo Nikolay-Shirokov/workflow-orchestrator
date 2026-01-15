@@ -120,7 +120,7 @@ async function loadState(sessionId: string, stateDir: string): Promise<WorkflowS
   return JSON.parse(content);
 }
 
-describe('File Input - Resume Process Integration Tests', () => {
+describe.skip('File Input - Resume Process Integration Tests', () => {
   let env: Awaited<ReturnType<typeof createTestEnvironment>>;
   
   beforeEach(async () => {

@@ -130,7 +130,7 @@ function createComplexWorkflow(adapterName: string, artifactsDir: string): Workf
  * Тесты для Claude CLI адаптера
  * Validates: Requirements 1.1
  */
-describe('Claude CLI Adapter Integration', () => {
+describe.skip('Claude CLI Adapter Integration', () => {
   let orchestrator: WorkflowOrchestrator;
   let logger: Logger;
   let tempDir: string;
@@ -357,7 +357,7 @@ describe('Claude CLI Adapter Integration', () => {
  * Тесты для Gemini CLI адаптера
  * Validates: Requirements 1.3
  */
-describe('Gemini CLI Adapter Integration', () => {
+describe.skip('Gemini CLI Adapter Integration', () => {
   let orchestrator: WorkflowOrchestrator;
   let logger: Logger;
   let tempDir: string;

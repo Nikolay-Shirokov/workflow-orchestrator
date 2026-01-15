@@ -44,6 +44,9 @@ test-*.js
 test-*.txt
 test-*.json
 test-output*.txt
+failed-tests-list.txt
+failed-tests.txt
+test-list.json
 
 # Артефакты тестов в корне (не должны там быть, но на всякий случай)
 step*.md

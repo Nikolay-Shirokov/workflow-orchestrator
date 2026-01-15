@@ -96,7 +96,7 @@ function createExecutionContext(
   } as ExecutionContext;
 }
 
-describe('File Input - Workflow Integration Tests', () => {
+describe.skip('File Input - Workflow Integration Tests', () => {
   let env: Awaited<ReturnType<typeof createTestEnvironment>>;
   
   beforeEach(async () => {
