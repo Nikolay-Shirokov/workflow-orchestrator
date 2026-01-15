@@ -10,10 +10,10 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "set LOG_LEVEL=error&& jest --silent",
+    "test": "set LOG_LEVEL=silent&& jest --silent",
     "test:verbose": "jest --verbose=true",
-    "test:watch": "set LOG_LEVEL=error&& jest --watch --silent",
-    "test:coverage": "set LOG_LEVEL=error&& jest --coverage --silent",
+    "test:watch": "set LOG_LEVEL=silent&& jest --watch --silent",
+    "test:coverage": "set LOG_LEVEL=silent&& jest --coverage --silent",
     "lint": "eslint src/**/*.ts",
     "start": "node dist/index.js"
   },

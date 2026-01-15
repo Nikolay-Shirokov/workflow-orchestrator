@@ -132,6 +132,10 @@ export function getLogger(): Logger {
   if (!defaultLogger) {
     // Читаем уровень логирования из переменной окружения
     const envLogLevel = process.env.LOG_LEVEL?.toLowerCase();
+    
+    // Если LOG_LEVEL=silent, отключаем консольный вывод полностью
+    const enableConsole = envLogLevel !== 'silent';
+    
     const logLevel = envLogLevel === 'debug' ? LogLevel.DEBUG :
                      envLogLevel === 'info' ? LogLevel.INFO :
                      envLogLevel === 'warn' ? LogLevel.WARNING :
@@ -141,7 +145,7 @@ export function getLogger(): Logger {
     // Создаем логгер по умолчанию, если не инициализирован
     defaultLogger = new Logger({
       level: logLevel,
-      enableConsole: true,
+      enableConsole: enableConsole,
       enableFile: false
     });
   }
