@@ -158,6 +158,7 @@ export function createCLI(): Command {
     .option('--log-mode', 'Использовать логовый режим вместо интерактивного')
     .option('--state-dir <dir>', 'Директория для файлов состояния', './state')
     .option('--skip-validation', 'Пропустить валидацию артефактов')
+    .option('--step <number>', 'Номер шага для возобновления (пропускает интерактивный выбор)')
     .action(async (sessionId: string, configPath: string, options) => {
       const logger = createSimpleLogger(options.verbose);
 
@@ -170,16 +171,73 @@ export function createCLI(): Command {
           logger
         });
 
+        // Загрузка конфигурации и состояния для интерактивного выбора шага
+        let selectedStepNumber: number | undefined;
+        
+        if (!options.step && !options.logMode) {
+          // Интерактивный режим - показываем ResumeSelector
+          // Requirements 14.1, 14.2, 14.3, 14.4
+          try {
+            const { ResumeSelector } = await import('./resume-selector.js');
+            const { WorkflowConfigParser } = await import('../core/workflow-config-parser.js');
+            const { createStateManager } = await import('../core/state-manager.js');
+            
+            // Загружаем конфигурацию и состояние
+            const parser = new WorkflowConfigParser();
+            const config = await parser.loadFromFile(configPath);
+            
+            const stateManager = createStateManager({
+              stateDir: options.stateDir,
+              logger
+            });
+            const state = await stateManager.loadState(sessionId);
+            
+            // Создаем список шагов для ResumeSelector
+            const resumeSteps = config.steps.map((step, index) => ({
+              number: index + 1,
+              id: step.id,
+              name: step.name,
+              completed: state.completedSteps.includes(step.id),
+              hasArtifacts: state.completedSteps.includes(step.id) && 
+                            Object.keys(state.artifacts).some(key => key.startsWith(step.id)),
+              artifacts: Object.keys(state.artifacts)
+                .filter(key => key.startsWith(step.id))
+                .map(key => state.artifacts[key])
+            }));
+            
+            // Показываем интерактивный селектор
+            const selector = new ResumeSelector();
+            selectedStepNumber = await selector.selectStep(resumeSteps);
+            
+            logger.info(`Выбран шаг ${selectedStepNumber} для возобновления`);
+          } catch (error) {
+            logger.warn(`Не удалось показать интерактивный селектор: ${(error as Error).message}`);
+            logger.info('Продолжение с текущего шага из состояния');
+          }
+        } else if (options.step) {
+          // Явно указан номер шага
+          selectedStepNumber = parseInt(options.step, 10);
+          if (isNaN(selectedStepNumber) || selectedStepNumber < 1) {
+            logger.error('Некорректный номер шага');
+            process.exit(1);
+          }
+          logger.info(`Возобновление с шага ${selectedStepNumber}`);
+        }
+
         // Создание индикатора прогресса на основе режима
         // Property 1: Выбор режима на основе флага (Requirements 1.2, 1.3)
         const progress = createProgressDisplay(options.logMode || false, logger);
 
-        // Возобновление процесса
+        // Возобновление процесса с выбранного шага
+        // Requirements 14.5, 14.6, 14.7
         const state = await orchestrator.resume(
           sessionId,
           configPath,
           progress,
-          { skipValidation: options.skipValidation }
+          { 
+            skipValidation: options.skipValidation,
+            fromStep: selectedStepNumber
+          }
         );
 
         // Вывод результата

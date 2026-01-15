@@ -57,12 +57,14 @@ export interface WorkflowEngine {
    * @param sessionId - ID сессии для возобновления
    * @param config - Конфигурация процесса
    * @param progress - Индикатор прогресса (опционально)
+   * @param fromStep - Номер шага для возобновления (1-based, опционально)
    * @returns Promise<WorkflowState> - Финальное состояние
    */
   resume(
     sessionId: string,
     config: WorkflowConfig,
-    progress?: IProgressDisplay
+    progress?: IProgressDisplay,
+    fromStep?: number
   ): Promise<WorkflowState>;
 
   /**
@@ -302,7 +304,8 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
   async resume(
     sessionId: string,
     config: WorkflowConfig,
-    progress?: IProgressDisplay
+    progress?: IProgressDisplay,
+    fromStep?: number
   ): Promise<WorkflowState> {
     this.logger.info(`Возобновление процесса для сессии ${sessionId}`);
 
@@ -390,6 +393,71 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
           'Начните процесс заново'
         ]
       });
+    }
+
+    // Обработка возобновления с конкретного шага
+    // Requirements 14.5, 14.6, 14.7
+    if (fromStep !== undefined) {
+      // Проверка валидности номера шага
+      if (fromStep < 1 || fromStep > config.steps.length) {
+        throw new WorkflowErrorClass({
+          code: 'INVALID_STEP_NUMBER',
+          category: 'execution',
+          severity: 'error',
+          message: `Некорректный номер шага: ${fromStep}. Допустимый диапазон: 1-${config.steps.length}`,
+          context: { fromStep, totalSteps: config.steps.length },
+          recoverable: false,
+          suggestions: [
+            `Укажите номер шага от 1 до ${config.steps.length}`,
+            'Проверьте конфигурацию процесса'
+          ]
+        });
+      }
+
+      // Получаем ID шага по номеру (1-based)
+      const selectedStepId = config.steps[fromStep - 1].id;
+      
+      this.logger.info(
+        `Возобновление с шага ${fromStep} (${selectedStepId}). ` +
+        `Инициализация артефактов предыдущих шагов...`
+      );
+
+      // Requirements 14.5: Инициализация артефактами всех предыдущих шагов
+      // Очищаем completedSteps и оставляем только шаги до выбранного
+      const stepsBeforeSelected = config.steps.slice(0, fromStep - 1).map(s => s.id);
+      state.completedSteps = state.completedSteps.filter(stepId => 
+        stepsBeforeSelected.includes(stepId)
+      );
+
+      // Requirements 14.6: Игнорирование артефактов выбранного и последующих шагов
+      // Удаляем артефакты выбранного и последующих шагов
+      const stepsToRemove = config.steps.slice(fromStep - 1).map(s => s.id);
+      for (const stepId of stepsToRemove) {
+        // Удаляем все артефакты, связанные с этими шагами
+        const artifactKeys = Object.keys(state.artifacts).filter(key => 
+          key.startsWith(stepId)
+        );
+        for (const key of artifactKeys) {
+          delete state.artifacts[key];
+        }
+      }
+
+      // Удаляем историю выполнения для выбранного и последующих шагов
+      state.history = state.history.filter(h => 
+        !stepsToRemove.includes(h.stepId)
+      );
+
+      // Устанавливаем текущий шаг
+      state.currentStep = selectedStepId;
+      
+      // Сохраняем обновленное состояние
+      await this.stateManager.saveState(state);
+      
+      this.logger.info(
+        `Состояние обновлено: ` +
+        `завершено шагов: ${state.completedSteps.length}, ` +
+        `артефактов: ${Object.keys(state.artifacts).length}`
+      );
     }
 
     // Определение оставшихся шагов для выполнения

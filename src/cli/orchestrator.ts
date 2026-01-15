@@ -44,6 +44,9 @@ export interface OrchestratorConfig {
 export interface ResumeOptions {
   /** Пропустить валидацию артефактов */
   skipValidation?: boolean;
+  
+  /** Номер шага для возобновления (1-based) */
+  fromStep?: number;
 }
 
 /**
@@ -187,7 +190,7 @@ export class WorkflowOrchestrator {
     sessionId: string,
     configPath: string,
     progress?: IProgressDisplay,
-    _options: ResumeOptions = {}
+    options: ResumeOptions = {}
   ): Promise<WorkflowState> {
     this.logger.info(`Возобновление процесса ${sessionId}`);
 
@@ -199,8 +202,14 @@ export class WorkflowOrchestrator {
       progress.onWorkflowStart(config);
     }
 
-    // Возобновление выполнения
-    const state = await this.workflowEngine.resume(sessionId, config, progress);
+    // Возобновление выполнения с учетом выбранного шага
+    // Requirements 14.5, 14.6, 14.7
+    const state = await this.workflowEngine.resume(
+      sessionId, 
+      config, 
+      progress,
+      options.fromStep
+    );
 
     // Отображение завершения
     if (progress) {
