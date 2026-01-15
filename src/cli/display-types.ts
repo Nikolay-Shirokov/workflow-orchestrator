@@ -24,6 +24,9 @@ export interface StepDisplayInfo {
   /** Название шага */
   name: string;
   
+  /** Тип шага */
+  type?: string;
+  
   /** Статус выполнения */
   status: DisplayStepStatus;
   
@@ -312,7 +315,7 @@ export class DisplayStateUtils {
     workflowName: string,
     workflowVersion: string,
     artifactsDir: string,
-    steps: Array<{ id: string; name: string; role?: string; adapter?: string; model?: string }>
+    steps: Array<{ id: string; name: string; type?: string; role?: string; adapter?: string; model?: string }>
   ): DisplayState {
     return {
       workflowName,
@@ -322,6 +325,7 @@ export class DisplayStateUtils {
         number: index + 1,
         id: step.id,
         name: step.name,
+        type: step.type,
         status: 'pending',
         role: step.role,
         adapter: step.adapter,

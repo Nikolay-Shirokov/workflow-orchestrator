@@ -559,4 +559,424 @@ describe('InteractiveDisplay Property Tests', () => {
       { numRuns: 100 }
     );
   });
+
+  /**
+   * Property 7: Полнота информации о текущем шаге
+   * Feature: interactive-cli-interface, Property 7: Полнота информации о текущем шаге
+   * Validates: Requirements 4.1, 4.2, 4.3
+   * 
+   * Для любого текущего выполняемого шага, отображение должно содержать:
+   * название, ID, тип, роль (если применимо), адаптер (если применимо),
+   * модель (если применимо), время выполнения.
+   */
+  test('Property 7: Current step information is complete', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.integer({ min: 0, max: 9 }),
+        (config, stepIndex) => {
+          // Ограничиваем индекс количеством шагов
+          const actualStepIndex = stepIndex % config.steps.length;
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          // Симулируем начало выполнения шага
+          const step = config.steps[actualStepIndex];
+          display.onStepStart(step as any, actualStepIndex + 1);
+          
+          // Очищаем вывод и рендерим снова для чистого вывода
+          mockStream.clearOutput();
+          display.render();
+          
+          const output = mockStream.output;
+
+          // Проверяем наличие обязательных полей (Requirements 4.1)
+          
+          // 1. Название шага
+          expect(output).toContain('Current Step:');
+          expect(output).toContain(step.name);
+          
+          // 2. ID шага
+          expect(output).toContain('ID:');
+          expect(output).toContain(step.id);
+          
+          // 3. Тип шага
+          expect(output).toContain('Type:');
+          expect(output).toContain(step.type);
+          
+          // 4. Роль (если применимо)
+          if (step.role) {
+            expect(output).toContain('Role:');
+            expect(output).toContain(step.role);
+          }
+          
+          // 5. Адаптер (если применимо)
+          if (step.adapter) {
+            expect(output).toContain('Adapter:');
+            expect(output).toContain(step.adapter);
+          }
+          
+          // 6. Модель (если применимо)
+          if (step.model) {
+            expect(output).toContain('Model:');
+            expect(output).toContain(step.model);
+          }
+          
+          // 7. Статус
+          expect(output).toContain('Status:');
+
+          display.cleanup();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 7.1: Артефакты отображаются корректно
+   * Feature: interactive-cli-interface, Property 7: Полнота информации о текущем шаге
+   * Validates: Requirements 4.2
+   * 
+   * Для любого шага с артефактами, должен отображаться список артефактов.
+   */
+  test('Property 7.1: Artifacts are displayed correctly', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.integer({ min: 0, max: 9 }),
+        fc.array(fc.string({ minLength: 1, maxLength: 50 }), { minLength: 1, maxLength: 10 }),
+        fc.integer({ min: 100, max: 10000 }),
+        (config, stepIndex, artifacts, duration) => {
+          const actualStepIndex = stepIndex % config.steps.length;
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          const step = config.steps[actualStepIndex];
+          display.onStepStart(step as any, actualStepIndex + 1);
+          
+          // Симулируем завершение шага с артефактами
+          const history = {
+            stepId: step.id,
+            status: 'success' as const,
+            executionTime: duration,
+            artifacts: artifacts,
+            error: undefined
+          };
+          
+          display.onStepComplete(step as any, history as any);
+          
+          mockStream.clearOutput();
+          display.render();
+          
+          const output = mockStream.output;
+
+          // Проверяем отображение артефактов (Requirements 4.2)
+          expect(output).toContain('Artifacts:');
+          expect(output).toContain(artifacts.length.toString());
+          
+          // Проверяем, что первые 3 артефакта отображаются
+          const displayedArtifacts = artifacts.slice(0, 3);
+          for (const artifact of displayedArtifacts) {
+            expect(output).toContain(artifact);
+          }
+          
+          // Если артефактов больше 3, должно быть сообщение "... and N more"
+          if (artifacts.length > 3) {
+            expect(output).toContain('... and');
+            expect(output).toContain('more');
+          }
+
+          display.cleanup();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 7.2: Ошибки отображаются корректно
+   * Feature: interactive-cli-interface, Property 7: Полнота информации о текущем шаге
+   * Validates: Requirements 4.3
+   * 
+   * Для любого шага с ошибкой, должно отображаться сообщение об ошибке.
+   */
+  test('Property 7.2: Errors are displayed correctly', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.integer({ min: 0, max: 9 }),
+        fc.string({ minLength: 1, maxLength: 200 }),
+        (config, stepIndex, errorMessage) => {
+          const actualStepIndex = stepIndex % config.steps.length;
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          const step = config.steps[actualStepIndex];
+          display.onStepStart(step as any, actualStepIndex + 1);
+          
+          // Симулируем ошибку шага
+          const error = new Error(errorMessage);
+          display.onStepError(step as any, error);
+          
+          mockStream.clearOutput();
+          display.render();
+          
+          const output = mockStream.output;
+
+          // Проверяем отображение ошибки (Requirements 4.3)
+          expect(output).toContain('Error:');
+          expect(output).toContain(errorMessage);
+          
+          // Проверяем, что ошибка выделена красным цветом
+          const redColor = '\x1b[31m';
+          expect(output).toContain(redColor);
+
+          display.cleanup();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 7.3: Время выполнения отображается корректно
+   * Feature: interactive-cli-interface, Property 7: Полнота информации о текущем шаге
+   * Validates: Requirements 4.1
+   * 
+   * Для любого шага с временем выполнения, должно отображаться
+   * отформатированное время.
+   */
+  test('Property 7.3: Duration is displayed correctly', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.integer({ min: 0, max: 9 }),
+        fc.integer({ min: 100, max: 300000 }), // от 0.1s до 5 минут
+        (config, stepIndex, duration) => {
+          const actualStepIndex = stepIndex % config.steps.length;
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          const step = config.steps[actualStepIndex];
+          display.onStepStart(step as any, actualStepIndex + 1);
+          
+          // Симулируем завершение шага
+          const history = {
+            stepId: step.id,
+            status: 'success' as const,
+            executionTime: duration,
+            artifacts: [],
+            error: undefined
+          };
+          
+          display.onStepComplete(step as any, history as any);
+          
+          mockStream.clearOutput();
+          display.render();
+          
+          const output = mockStream.output;
+
+          // Проверяем отображение времени выполнения (Requirements 4.1)
+          expect(output).toContain('Duration:');
+          
+          // Проверяем формат времени (должно быть "Xs" или "Xm Ys")
+          const hasSeconds = /\d+\.\d+s/.test(output);
+          const hasMinutes = /\d+m \d+\.\d+s/.test(output);
+          
+          expect(hasSeconds || hasMinutes).toBe(true);
+
+          display.cleanup();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 7.4: Текущий шаг обновляется при смене шага
+   * Feature: interactive-cli-interface, Property 7: Полнота информации о текущем шаге
+   * Validates: Requirements 4.1
+   * 
+   * Для любой последовательности шагов, информация о текущем шаге
+   * должна обновляться при переходе к следующему шагу.
+   */
+  test('Property 7.4: Current step updates when step changes', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        (config) => {
+          // Пропускаем конфигурации с одним шагом
+          if (config.steps.length < 2) {
+            return true;
+          }
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          // Запускаем первый шаг
+          const firstStep = config.steps[0];
+          display.onStepStart(firstStep as any, 1);
+          
+          mockStream.clearOutput();
+          display.render();
+          let output = mockStream.output;
+          
+          // Проверяем, что отображается первый шаг
+          expect(output).toContain(firstStep.name);
+          
+          // Завершаем первый шаг
+          display.onStepComplete(firstStep as any, {
+            stepId: firstStep.id,
+            status: 'success',
+            executionTime: 1000,
+            artifacts: [],
+            error: undefined
+          } as any);
+          
+          // Запускаем второй шаг
+          const secondStep = config.steps[1];
+          display.onStepStart(secondStep as any, 2);
+          
+          mockStream.clearOutput();
+          display.render();
+          output = mockStream.output;
+          
+          // Проверяем, что теперь отображается второй шаг
+          expect(output).toContain(secondStep.name);
+
+          display.cleanup();
+          return true;
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 7.5: Опциональные поля не отображаются, если отсутствуют
+   * Feature: interactive-cli-interface, Property 7: Полнота информации о текущем шаге
+   * Validates: Requirements 4.1
+   * 
+   * Для любого шага без опциональных полей (роль, адаптер, модель),
+   * эти поля не должны отображаться в выводе.
+   */
+  test('Property 7.5: Optional fields are not displayed when absent', () => {
+    fc.assert(
+      fc.property(
+        fc.record({
+          name: fc.string({ minLength: 1, maxLength: 50 }),
+          version: fc.string({ minLength: 1, maxLength: 20 }),
+          settings: fc.record({
+            artifacts_dir: fc.string({ minLength: 1, maxLength: 100 })
+          }),
+          steps: fc.array(
+            fc.record({
+              id: fc.string({ minLength: 1, maxLength: 20 }),
+              name: fc.string({ minLength: 1, maxLength: 100 }),
+              type: fc.constantFrom('model', 'transform', 'export', 'import'),
+              // Намеренно не включаем role, adapter, model
+            }),
+            { minLength: 1, maxLength: 5 }
+          )
+        }),
+        (config) => {
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          const step = config.steps[0];
+          display.onStepStart(step as any, 1);
+          
+          mockStream.clearOutput();
+          display.render();
+          
+          const output = mockStream.output;
+
+          // Проверяем, что опциональные поля не отображаются
+          // Используем более точную проверку - ищем "Role:", "Adapter:", "Model:" как отдельные строки
+          const lines = output.split('\n');
+          const hasRoleLine = lines.some(line => line.trim().startsWith('Role:'));
+          const hasAdapterLine = lines.some(line => line.trim().startsWith('Adapter:'));
+          const hasModelLine = lines.some(line => line.trim().startsWith('Model:'));
+          
+          expect(hasRoleLine).toBe(false);
+          expect(hasAdapterLine).toBe(false);
+          expect(hasModelLine).toBe(false);
+
+          display.cleanup();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
+
+  /**
+   * Property 7.6: Все обязательные поля присутствуют для текущего шага
+   * Feature: interactive-cli-interface, Property 7: Полнота информации о текущем шаге
+   * Validates: Requirements 4.1
+   * 
+   * Для любого текущего шага, обязательные поля (название, ID, тип, статус)
+   * всегда должны присутствовать в выводе.
+   */
+  test('Property 7.6: All required fields are present for current step', () => {
+    fc.assert(
+      fc.property(
+        workflowConfigArb,
+        fc.integer({ min: 0, max: 9 }),
+        (config, stepIndex) => {
+          const actualStepIndex = stepIndex % config.steps.length;
+          
+          const mockStream = new MockWriteStream();
+          const renderer = new TerminalRenderer(mockStream as any);
+          const display = new InteractiveDisplay(renderer);
+
+          display.initialize(config as WorkflowConfig);
+          
+          const step = config.steps[actualStepIndex];
+          display.onStepStart(step as any, actualStepIndex + 1);
+          
+          mockStream.clearOutput();
+          display.render();
+          
+          const output = mockStream.output;
+          const lines = output.split('\n');
+
+          // Проверяем наличие всех обязательных полей
+          const hasCurrentStep = lines.some(line => line.includes('Current Step:'));
+          const hasId = lines.some(line => line.trim().startsWith('ID:'));
+          const hasType = lines.some(line => line.trim().startsWith('Type:'));
+          const hasStatus = lines.some(line => line.trim().startsWith('Status:'));
+          
+          expect(hasCurrentStep).toBe(true);
+          expect(hasId).toBe(true);
+          expect(hasType).toBe(true);
+          expect(hasStatus).toBe(true);
+
+          display.cleanup();
+        }
+      ),
+      { numRuns: 100 }
+    );
+  });
 });

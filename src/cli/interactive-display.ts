@@ -71,6 +71,7 @@ export class InteractiveDisplay {
     const steps = workflowConfig.steps.map(step => ({
       id: step.id,
       name: step.name,
+      type: step.type,
       role: step.role,
       adapter: step.adapter,
       model: step.model
@@ -222,6 +223,7 @@ export class InteractiveDisplay {
   /**
    * Создание секции текущего шага
    * Property 7: Полнота информации о текущем шаге
+   * Requirements 4.1: Отображение названия, ID, типа, роли, адаптера, модели, времени
    */
   private createCurrentStepSection(): DisplaySection {
     if (!this.state || this.state.currentStepIndex < 0) {
@@ -245,6 +247,11 @@ export class InteractiveDisplay {
       `  Status: ${this.renderer.formatStatus(currentStep.status)}`
     ];
 
+    // Отображение типа шага (Requirements 4.1)
+    if (currentStep.type) {
+      content.push(`  Type: ${currentStep.type}`);
+    }
+
     if (currentStep.role) {
       content.push(`  Role: ${currentStep.role}`);
     }
@@ -262,6 +269,7 @@ export class InteractiveDisplay {
       content.push(`  Duration: ${duration}`);
     }
 
+    // Отображение артефактов (Requirements 4.2)
     if (currentStep.artifacts && currentStep.artifacts.length > 0) {
       content.push(`  Artifacts: ${currentStep.artifacts.length}`);
       for (const artifact of currentStep.artifacts.slice(0, 3)) {
@@ -272,6 +280,7 @@ export class InteractiveDisplay {
       }
     }
 
+    // Отображение ошибки (Requirements 4.3)
     if (currentStep.error) {
       content.push(`  Error: ${this.renderer.colorize(currentStep.error, TerminalColor.Red)}`);
     }
