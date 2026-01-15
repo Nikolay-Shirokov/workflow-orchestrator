@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Движок рабочих процессов
  * 
  * Отвечает за:
@@ -428,23 +428,20 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       state.completedSteps = state.completedSteps.filter(stepId => 
         stepsBeforeSelected.includes(stepId)
       );
-
       // Requirements 14.6: Игнорирование артефактов выбранного и последующих шагов
-      // Удаляем артефакты выбранного и последующих шагов
-      const stepsToRemove = config.steps.slice(fromStep - 1).map(s => s.id);
-      for (const stepId of stepsToRemove) {
-        // Удаляем все артефакты, связанные с этими шагами
-        const artifactKeys = Object.keys(state.artifacts).filter(key => 
-          key.startsWith(stepId)
-        );
-        for (const key of artifactKeys) {
-          delete state.artifacts[key];
-        }
-      }
+      const stepsToKeep = new Set(stepsBeforeSelected);
 
-      // Удаляем историю выполнения для выбранного и последующих шагов
-      state.history = state.history.filter(h => 
-        !stepsToRemove.includes(h.stepId)
+      // Оставляем историю только для шагов до выбранного
+      state.history = state.history.filter(h => stepsToKeep.has(h.stepId));
+
+      // Пересобираем артефакты по оставшейся истории
+      const allowedArtifacts = new Set(
+        state.history.flatMap(history => history.artifacts)
+      );
+      state.artifacts = Object.fromEntries(
+        Object.entries(state.artifacts).filter(([, artifactPath]) => 
+          allowedArtifacts.has(artifactPath)
+        )
       );
 
       // Устанавливаем текущий шаг
@@ -807,3 +804,7 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
 export function createWorkflowEngine(config: WorkflowEngineConfig): WorkflowEngine {
   return new DefaultWorkflowEngine(config);
 }
+
+
+
+

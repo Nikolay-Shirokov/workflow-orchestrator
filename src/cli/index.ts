@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CLI интерфейс для Workflow Orchestrator
  * 
  * Предоставляет команды для:
@@ -193,17 +193,22 @@ export function createCLI(): Command {
             const state = await stateManager.loadState(sessionId);
             
             // Создаем список шагов для ResumeSelector
-            const resumeSteps = config.steps.map((step, index) => ({
-              number: index + 1,
-              id: step.id,
-              name: step.name,
-              completed: state.completedSteps.includes(step.id),
-              hasArtifacts: state.completedSteps.includes(step.id) && 
-                            Object.keys(state.artifacts).some(key => key.startsWith(step.id)),
-              artifacts: Object.keys(state.artifacts)
-                .filter(key => key.startsWith(step.id))
-                .map(key => state.artifacts[key])
-            }));
+            const artifactsByStepId = new Map(
+              state.history.map(history => [history.stepId, history.artifacts])
+            );
+
+            const resumeSteps = config.steps.map((step, index) => {
+              const historyArtifacts = artifactsByStepId.get(step.id) ?? [];
+
+              return {
+                number: index + 1,
+                id: step.id,
+                name: step.name,
+                completed: state.completedSteps.includes(step.id),
+                hasArtifacts: historyArtifacts.length > 0,
+                artifacts: historyArtifacts
+              };
+            });
             
             // Показываем интерактивный селектор
             const selector = new ResumeSelector();
@@ -790,3 +795,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   });
 }
+
+
