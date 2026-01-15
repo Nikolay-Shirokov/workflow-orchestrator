@@ -438,7 +438,19 @@ interface DisplayConfig {
 
 *Для любого* выбранного шага при возобновлении, процесс должен быть инициализирован артефактами всех предыдущих шагов, а артефакты выбранного и последующих шагов должны быть проигнорированы.
 
-**Validates: Requirements 13.5, 13.6**
+**Validates: Requirements 14.5, 14.6**
+
+### Property 18: Компактность вывода успешных тестов
+
+*Для любого* успешно пройденного теста, вывод должен содержать только имя теста и статус, без дополнительных деталей.
+
+**Validates: Requirements 13.2**
+
+### Property 19: Полнота вывода упавших тестов
+
+*Для любого* упавшего теста, вывод должен содержать: имя теста, сообщение об ошибке, stack trace, и входные данные (для property-based тестов).
+
+**Validates: Requirements 13.3**
 
 
 
@@ -577,4 +589,106 @@ const artifactsArbitrary = fc.array(
 - Возобновление процесса с выбором шага
 - Обработка параллельного выполнения
 - Открытие результатов после завершения
+
+
+
+## Конфигурация Jest для компактного вывода
+
+Для реализации компактного вывода тестов необходимо настроить Jest:
+
+### Вариант 1: Использование встроенных опций Jest
+
+```javascript
+// jest.config.js
+export default {
+  // ... существующая конфигурация
+  
+  // Отключить verbose для компактного вывода
+  verbose: false,
+  
+  // Показывать только summary
+  silent: false,
+  
+  // Использовать более компактный reporter
+  reporters: [
+    'default'
+  ],
+  
+  // Настройка для CI/CD
+  ci: process.env.CI === 'true',
+};
+```
+
+### Вариант 2: Использование npm скриптов
+
+```json
+// package.json
+{
+  "scripts": {
+    "test": "jest --verbose=false",
+    "test:verbose": "jest --verbose=true",
+    "test:watch": "jest --watch --verbose=false",
+    "test:coverage": "jest --coverage --verbose=false"
+  }
+}
+```
+
+### Вариант 3: Кастомный Reporter (для максимального контроля)
+
+```typescript
+// tests/utils/compact-reporter.ts
+import type { AggregatedResult, Test, TestResult } from '@jest/test-result';
+import type { Config } from '@jest/types';
+
+class CompactReporter {
+  private _globalConfig: Config.GlobalConfig;
+  
+  constructor(globalConfig: Config.GlobalConfig) {
+    this._globalConfig = globalConfig;
+  }
+  
+  onTestResult(_test: Test, testResult: TestResult): void {
+    const { testFilePath, numFailingTests, testResults } = testResult;
+    const fileName = testFilePath.split('/').pop() || testFilePath;
+    
+    if (numFailingTests > 0) {
+      // Детальный вывод для упавших тестов
+      console.log(`\n❌ ${fileName}`);
+      
+      testResults.forEach(result => {
+        if (result.status === 'failed') {
+          console.log(`  ✗ ${result.title}`);
+          result.failureMessages.forEach(msg => {
+            console.log(`    ${msg.split('\n')[0]}`); // Только первая строка ошибки
+          });
+        }
+      });
+    } else {
+      // Компактный вывод для успешных тестов
+      process.stdout.write('.');
+    }
+  }
+  
+  onRunComplete(_contexts: Set<unknown>, results: AggregatedResult): void {
+    const { numTotalTests, numPassedTests, numFailedTests, numPendingTests } = results;
+    
+    console.log('\n\n' + '='.repeat(60));
+    console.log('Test Summary:');
+    console.log(`  Total:   ${numTotalTests}`);
+    console.log(`  Passed:  ${numPassedTests} ✓`);
+    console.log(`  Failed:  ${numFailedTests} ✗`);
+    console.log(`  Skipped: ${numPendingTests} ○`);
+    console.log('='.repeat(60));
+  }
+}
+
+export default CompactReporter;
+```
+
+### Рекомендуемый подход
+
+Использовать **Вариант 2** (npm скрипты) как самый простой и гибкий:
+- По умолчанию компактный вывод (`--verbose=false`)
+- Опция `test:verbose` для детального вывода при необходимости
+- Не требует дополнительного кода
 
