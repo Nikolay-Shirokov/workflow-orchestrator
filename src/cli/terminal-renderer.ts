@@ -61,17 +61,21 @@ export class TerminalRenderer {
   private output: NodeJS.WriteStream;
   private capabilities: TerminalCapabilities;
   private resizeListeners: Array<() => void> = [];
+  private resizeHandler: (() => void) | null = null;
 
   constructor(output: NodeJS.WriteStream = process.stdout) {
     this.output = output;
     this.capabilities = this.detectCapabilities();
     
+    // Создаем обработчик изменения размера
+    this.resizeHandler = () => {
+      this.capabilities = this.detectCapabilities();
+      this.notifyResizeListeners();
+    };
+    
     // Подписываемся на изменение размера терминала
     if (this.capabilities.isInteractive) {
-      process.stdout.on('resize', () => {
-        this.capabilities = this.detectCapabilities();
-        this.notifyResizeListeners();
-      });
+      process.stdout.on('resize', this.resizeHandler);
     }
   }
 
@@ -367,5 +371,19 @@ export class TerminalRenderer {
     const icon = this.getStatusIcon(status);
     const color = this.getStatusColor(status);
     return this.colorize(icon, color);
+  }
+
+  /**
+   * Очистка ресурсов
+   */
+  public dispose(): void {
+    // Отписываемся от события resize
+    if (this.resizeHandler) {
+      process.stdout.off('resize', this.resizeHandler);
+      this.resizeHandler = null;
+    }
+    
+    // Очищаем слушателей
+    this.resizeListeners = [];
   }
 }

@@ -44,14 +44,14 @@
   - **Property 9: Корректность вычисления прогресса**
   - **Validates: Requirements 6.2**
 
-- [ ] 5. Реализация InteractiveDisplay - базовая структура
+- [x] 5. Реализация InteractiveDisplay - базовая структура
   - Создать класс InteractiveDisplay
   - Реализовать метод initialize()
   - Реализовать метод render() для отрисовки всех секций
   - Реализовать метод cleanup()
   - _Requirements: 2.1, 2.2_
 
-- [ ] 5.1 Написать property тесты для InteractiveDisplay
+- [x] 5.1 Написать property тесты для InteractiveDisplay
   - **Property 3: Наличие обязательных секций**
   - **Validates: Requirements 2.1**
 
