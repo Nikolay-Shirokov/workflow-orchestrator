@@ -75,7 +75,12 @@ export class TerminalRenderer {
     
     // Подписываемся на изменение размера терминала
     if (this.capabilities.isInteractive) {
-      process.stdout.on('resize', this.resizeHandler);
+      // Увеличиваем лимит слушателей для тестов
+      const currentMaxListeners = this.output.getMaxListeners();
+      if (currentMaxListeners !== 0 && currentMaxListeners < 100) {
+        this.output.setMaxListeners(100);
+      }
+      this.output.on('resize', this.resizeHandler);
     }
   }
 
@@ -378,8 +383,8 @@ export class TerminalRenderer {
    */
   public dispose(): void {
     // Отписываемся от события resize
-    if (this.resizeHandler) {
-      process.stdout.off('resize', this.resizeHandler);
+    if (this.resizeHandler && this.capabilities.isInteractive) {
+      this.output.off('resize', this.resizeHandler);
       this.resizeHandler = null;
     }
     

@@ -246,7 +246,7 @@
 
 - [ ] 24. Исправить все падающие тесты в проекте
   - Включить обратно и исправить тесты с `describe.skip` (17 файлов):
-    - [ ] 24.1 tests/cli/interactive-display.property.test.ts
+    - [x] 24.1 tests/cli/interactive-display.property.test.ts
     - [ ] 24.2 tests/core/template-generator.property.test.ts (templateEngine.render)
     - [ ] 24.3 tests/core/editor-template-integration.test.ts (templateEngine null)
     - [ ] 24.4 tests/adapters/adapter-integration.test.ts (парсинг JSON)

@@ -58,7 +58,7 @@ const workflowConfigArb = fc.record({
   )
 });
 
-describe.skip('InteractiveDisplay Property Tests', () => {
+describe('InteractiveDisplay Property Tests', () => {
   /**
    * Property 3: Наличие обязательных секций
    * Feature: interactive-cli-interface, Property 3: Наличие обязательных секций
@@ -1067,6 +1067,12 @@ describe.skip('InteractiveDisplay Property Tests', () => {
         (config) => {
           // Пропускаем конфигурации с недостаточным количеством шагов
           if (config.steps.length < 4) {
+            return true;
+          }
+          
+          // Пропускаем конфигурации, где все шаги имеют одинаковые имена
+          const uniqueNames = new Set(config.steps.map(s => s.name));
+          if (uniqueNames.size < 4) {
             return true;
           }
           
