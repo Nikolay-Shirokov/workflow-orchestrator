@@ -170,7 +170,7 @@ export class WorkflowOrchestrator {
     }
 
     // Выполнение процесса
-    const state = await this.workflowEngine.execute(config, initialContext);
+    const state = await this.workflowEngine.execute(config, initialContext, progress);
 
     // Отображение завершения
     if (progress) {
@@ -200,7 +200,7 @@ export class WorkflowOrchestrator {
     }
 
     // Возобновление выполнения
-    const state = await this.workflowEngine.resume(sessionId, config);
+    const state = await this.workflowEngine.resume(sessionId, config, progress);
 
     // Отображение завершения
     if (progress) {

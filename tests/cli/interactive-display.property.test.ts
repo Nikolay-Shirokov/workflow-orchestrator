@@ -56,6 +56,16 @@ const workflowConfigArb = fc.record({
     }),
     { minLength: 1, maxLength: 10 }
   )
+}).map(config => {
+  // Гарантируем уникальность ID шагов
+  const uniqueSteps = config.steps.map((step, index) => ({
+    ...step,
+    id: `${step.id}_${index}` // Добавляем индекс к ID для уникальности
+  }));
+  return {
+    ...config,
+    steps: uniqueSteps
+  };
 });
 
 describe('InteractiveDisplay Property Tests', () => {

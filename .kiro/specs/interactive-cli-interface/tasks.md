@@ -133,6 +133,19 @@
   - **Property 14: Полнота итоговой информации**
   - **Validates: Requirements 11.1, 11.2, 11.3**
 
+- [x] 12.2 Интеграция обработчиков событий с workflow engine
+  - ✅ Добавлен параметр `progress?: IProgressDisplay` в методы `execute()` и `resume()` workflow engine
+  - ✅ Обработчики событий вызываются автоматически во время выполнения:
+    * `onStepStart(step, stepNumber)` - перед выполнением каждого шага
+    * `onStepComplete(step, history)` - после успешного завершения шага
+    * `onStepError(step, error)` - при ошибке выполнения шага
+  - ✅ Progress display передается из оркестратора в workflow engine
+  - ✅ Директория артефактов устанавливается в InteractiveDisplay после инициализации
+  - ✅ Создан интеграционный тест `workflow-engine-progress-integration.test.ts` (3/3 passed)
+  - ✅ Исправлен генератор `workflowConfigArb` для гарантии уникальности ID шагов
+  - ✅ Все property тесты InteractiveDisplay проходят (30/30 passed)
+  - _Requirements: 3.3, 4.1, 5.2_
+
 - [ ] 13. Реализация поддержки параллельного выполнения
   - Реализовать onParallelStart()
   - Реализовать onParallelComplete()

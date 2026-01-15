@@ -26,6 +26,7 @@ import { WorkflowConfigParser, DependencyGraph } from './workflow-config-parser.
 import { StateManager } from './state-manager.js';
 import { RoleManager } from './role-manager.js';
 import { MCPManager, MCPContext } from './mcp-manager.js';
+import { IProgressDisplay } from '../cli/display-types.js';
 
 /**
  * Интерфейс движка рабочих процессов
@@ -42,20 +43,27 @@ export interface WorkflowEngine {
    * Запуск выполнения рабочего процесса
    * @param config - Конфигурация процесса
    * @param initialContext - Начальный контекст (опционально)
+   * @param progress - Индикатор прогресса (опционально)
    * @returns Promise<WorkflowState> - Финальное состояние
    */
   execute(
     config: WorkflowConfig,
-    initialContext?: Record<string, unknown>
+    initialContext?: Record<string, unknown>,
+    progress?: IProgressDisplay
   ): Promise<WorkflowState>;
 
   /**
    * Возобновление выполнения процесса с сохраненного состояния
    * @param sessionId - ID сессии для возобновления
    * @param config - Конфигурация процесса
+   * @param progress - Индикатор прогресса (опционально)
    * @returns Promise<WorkflowState> - Финальное состояние
    */
-  resume(sessionId: string, config: WorkflowConfig): Promise<WorkflowState>;
+  resume(
+    sessionId: string,
+    config: WorkflowConfig,
+    progress?: IProgressDisplay
+  ): Promise<WorkflowState>;
 
   /**
    * Определение порядка выполнения шагов
@@ -199,7 +207,8 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
    */
   async execute(
     config: WorkflowConfig,
-    initialContext: Record<string, unknown> = {}
+    initialContext: Record<string, unknown> = {},
+    progress?: IProgressDisplay
   ): Promise<WorkflowState> {
     this.logger.info(`Начало выполнения процесса: ${config.name} v${config.version}`);
 
@@ -278,14 +287,23 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
     // Сохранение начального состояния
     await this.stateManager.saveState(state);
 
+    // Установка директории артефактов в progress display
+    if (progress && 'setArtifactsDir' in progress) {
+      (progress as any).setArtifactsDir(artifactsDir);
+    }
+
     // Выполнение процесса
-    return this.executeWorkflow(config, state, executionOrder);
+    return this.executeWorkflow(config, state, executionOrder, progress);
   }
 
   /**
    * Возобновление выполнения процесса с сохраненного состояния
    */
-  async resume(sessionId: string, config: WorkflowConfig): Promise<WorkflowState> {
+  async resume(
+    sessionId: string,
+    config: WorkflowConfig,
+    progress?: IProgressDisplay
+  ): Promise<WorkflowState> {
     this.logger.info(`Возобновление процесса для сессии ${sessionId}`);
 
     // Регистрация адаптеров из конфигурации, если они определены
@@ -436,8 +454,13 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
 
     this.logger.info(`Возобновление с шага ${executionOrder[0]}, осталось ${executionOrder.length} шагов`);
 
+    // Установка директории артефактов в progress display
+    if (progress && 'setArtifactsDir' in progress && state.context.artifacts_dir) {
+      (progress as any).setArtifactsDir(state.context.artifacts_dir as string);
+    }
+
     // Продолжение выполнения
-    return this.executeWorkflow(config, state, executionOrder);
+    return this.executeWorkflow(config, state, executionOrder, progress);
   }
 
   /**
@@ -528,7 +551,8 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
   private async executeWorkflow(
     config: WorkflowConfig,
     state: WorkflowState,
-    executionOrder: string[]
+    executionOrder: string[],
+    progress?: IProgressDisplay
   ): Promise<WorkflowState> {
     // Создаем Map шагов для быстрого поиска
     // Используем только те шаги, которые есть в executionOrder
@@ -540,7 +564,9 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
     }
 
     // Выполнение шагов в порядке
+    let stepNumber = 0;
     for (const stepId of executionOrder) {
+      stepNumber++;
       const step = stepsMap.get(stepId);
       if (!step) {
         throw new WorkflowErrorClass({
@@ -583,6 +609,11 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       state.currentStep = stepId;
       await this.stateManager.saveState(state);
 
+      // Вызов обработчика начала шага
+      if (progress && progress.onStepStart) {
+        progress.onStepStart(step, stepNumber);
+      }
+
       // Создание контекста выполнения
       const context: ExecutionContext = {
         state,
@@ -604,6 +635,15 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
         // Обновление состояния после успешного выполнения
         await this.updateStateAfterStep(state, step, result);
 
+        // Вызов обработчика завершения шага
+        if (progress && progress.onStepComplete) {
+          // Находим историю для этого шага
+          const history = state.history.find(h => h.stepId === step.id);
+          if (history) {
+            progress.onStepComplete(step, history);
+          }
+        }
+
         // Если шаг приостановил процесс, выходим из цикла
         if (wasPausedByStep) {
           this.logger.info(`Процесс приостановлен на шаге ${stepId}. Выход из цикла выполнения.`);
@@ -613,6 +653,11 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
 
       } catch (error) {
         this.logger.error(`Ошибка выполнения шага ${stepId}:`, error);
+
+        // Вызов обработчика ошибки шага
+        if (progress && progress.onStepError) {
+          progress.onStepError(step, error as Error);
+        }
 
         // Обновление состояния с ошибкой
         state.status = 'failed';
