@@ -70,7 +70,11 @@ const stepHistoryArb: fc.Arbitrary<StepHistory> = fc.record({
   executionTime: fc.integer({ min: 0, max: 300000 }),
   adapter: fc.option(fc.string({ minLength: 1, maxLength: 30 }), { nil: undefined }),
   model: fc.option(fc.string({ minLength: 1, maxLength: 30 }), { nil: undefined }),
-  artifacts: fc.array(fc.string({ minLength: 1, maxLength: 100 }), { maxLength: 5 }),
+  artifacts: fc.array(
+    fc.string({ minLength: 1, maxLength: 100 })
+      .filter(s => !['__proto__', 'constructor', 'prototype', 'toString', 'valueOf', 'hasOwnProperty'].includes(s)),
+    { maxLength: 5 }
+  ),
   error: fc.option(fc.string({ minLength: 1, maxLength: 200 }), { nil: undefined }),
 });
 

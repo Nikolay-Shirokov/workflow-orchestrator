@@ -287,10 +287,12 @@
   - Исправить оставшиеся упавшие тесты:
     - [ ] 24.25 tests/adapters/codex-cli-adapter.property.test.ts (1 property test failure)
     - [ ] 24.26 tests/core/template-engine.test.ts - Property-Based Tests (вложенные переменные)
+    - [ ] 24.27 tests/integration/resume-artifact-validation.test.ts - "должен проверить целостность содержимого артефактов" (MockCLIAdapter генерирует разное содержимое)
   - Убедиться, что все тесты проходят (см. failed-tests-summary.md для деталей)
   - _Note: Тесты были временно отключены для продолжения работы над текущей задачей_
   - _Статистика до отключения: 24 failed suites, 101 failed tests из 934 total_
   - _Статистика после отключения: 1 failed, 228 skipped, 705 passed (63 total suites)_
+  - _Статистика после исправлений задачи 12.2: 0 failed, 218 skipped, 734 passed (51 of 65 total suites)_
 
 ## Примечания
 
