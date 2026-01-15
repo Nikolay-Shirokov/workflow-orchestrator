@@ -16,6 +16,7 @@ import { Logger, LogLevel } from '../core/logger.js';
 // Экспорт компонентов Terminal Layer
 export { TerminalRenderer, TerminalColor, TerminalCapabilities, TerminalSize } from './terminal-renderer.js';
 export { IProgressDisplay } from './display-types.js';
+export { ResumeSelector, ResumeStepInfo } from './resume-selector.js';
 
 /**
  * Создание простого логгера для CLI
