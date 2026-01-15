@@ -12,6 +12,12 @@ import { Command } from 'commander';
 import { WorkflowOrchestrator } from './orchestrator.js';
 import { ProgressDisplay } from './progress-display.js';
 import { Logger, LogLevel } from '../core/logger.js';
+import { EditorManager } from '../core/editor-manager.js';
+import type { WorkflowState } from '../core/types.js';
+import type { EditorConfig } from '../core/file-input-types.js';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as readline from 'readline';
 
 // Экспорт компонентов Terminal Layer
 export { TerminalRenderer, TerminalColor } from './terminal-renderer.js';
@@ -78,6 +84,7 @@ export function createCLI(): Command {
     .option('-v, --verbose', 'Подробный вывод логов')
     .option('--log-level <level>', 'Уровень логирования (debug, info, warning, error)', 'info')
     .option('--log-mode', 'Использовать логовый режим вместо интерактивного')
+    .option('--no-open', 'Не предлагать открывать основной документ')
     .option('--state-dir <dir>', 'Директория для файлов состояния', './state')
     .option('--artifacts-dir <dir>', 'Директория для артефактов')
     .action(async (configPath: string, options) => {
@@ -125,6 +132,7 @@ export function createCLI(): Command {
 
         // Вывод результата
         if (state.status === 'completed') {
+          await handleAutoOpen(state, options, logger);
           logger.info(`✓ Процесс завершен успешно (сессия: ${state.sessionId})`);
           logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
           logger.info(`  Создано артефактов: ${Object.keys(state.artifacts).length}`);
@@ -158,6 +166,7 @@ export function createCLI(): Command {
     .option('-v, --verbose', 'Подробный вывод логов')
     .option('--log-level <level>', 'Уровень логирования (debug, info, warning, error)', 'info')
     .option('--log-mode', 'Использовать логовый режим вместо интерактивного')
+    .option('--no-open', 'Не предлагать открывать основной документ')
     .option('--state-dir <dir>', 'Директория для файлов состояния', './state')
     .option('--skip-validation', 'Пропустить валидацию артефактов')
     .option('--step <number>', 'Номер шага для возобновления (пропускает интерактивный выбор)')
@@ -249,6 +258,7 @@ export function createCLI(): Command {
 
         // Вывод результата
         if (state.status === 'completed') {
+          await handleAutoOpen(state, options, logger);
           logger.info(`✓ Процесс завершен успешно`);
           logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
           process.exit(0);
@@ -515,6 +525,155 @@ export function createCLI(): Command {
 /**
  * Отображение статуса процесса
  */
+
+const MAIN_OUTPUT_EXTENSIONS = new Set(['.md', '.txt', '.yaml', '.json']);
+
+interface AutoOpenOptions {
+  noOpen?: boolean;
+  logMode?: boolean;
+}
+
+function isMainOutputFile(filePath: string): boolean {
+  return MAIN_OUTPUT_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function findMainOutputPath(state: WorkflowState): Promise<string | undefined> {
+  const historyCandidates: string[] = [];
+
+  for (const history of state.history || []) {
+    for (const artifactPath of history.artifacts || []) {
+      if (isMainOutputFile(artifactPath)) {
+        historyCandidates.push(artifactPath);
+      }
+    }
+  }
+
+  for (let i = historyCandidates.length - 1; i >= 0; i--) {
+    if (await fileExists(historyCandidates[i])) {
+      return historyCandidates[i];
+    }
+  }
+
+  const artifactPaths = Object.values(state.artifacts || {});
+  const timestampCandidates: Array<{ path: string; mtime: number }> = [];
+
+  for (const artifactPath of artifactPaths) {
+    if (!isMainOutputFile(artifactPath)) {
+      continue;
+    }
+
+    try {
+      const stats = await fs.stat(artifactPath);
+      timestampCandidates.push({
+        path: artifactPath,
+        mtime: stats.mtimeMs || stats.birthtimeMs
+      });
+    } catch {
+      // Игнорируем отсутствующие артефакты
+    }
+  }
+
+  if (timestampCandidates.length === 0) {
+    return undefined;
+  }
+
+  timestampCandidates.sort((a, b) => a.mtime - b.mtime);
+  return timestampCandidates[timestampCandidates.length - 1].path;
+}
+
+function getDefaultEditorConfig(context: Record<string, unknown>): EditorConfig | undefined {
+  const candidate = context?.default_editor;
+  if (!candidate || typeof candidate !== 'object') {
+    return undefined;
+  }
+
+  return candidate as EditorConfig;
+}
+
+async function askOpenConfirmation(filePath: string): Promise<boolean> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return false;
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  const answer = await new Promise<string>((resolve) => {
+    rl.question(`Открыть основной результат в редакторе? [Y/n]\n${filePath}\n> `, resolve);
+  });
+
+  rl.close();
+
+  const normalized = answer.trim().toLowerCase();
+  return normalized === '' || normalized === 'y' || normalized === 'yes' || normalized === 'д' || normalized === 'да';
+}
+
+async function openInEditor(
+  filePath: string,
+  editorConfig: EditorConfig | undefined,
+  logger: Logger
+): Promise<void> {
+  const editorManager = new EditorManager(logger);
+
+  try {
+    if (editorConfig?.command) {
+      await editorManager.launchEditor(filePath, editorConfig);
+      logger.info('Файл открыт в указанном редакторе');
+      return;
+    }
+
+    await editorManager.launchEditor(filePath);
+    logger.info('Файл открыт в системном редакторе');
+  } catch (error) {
+    logger.warn(`Не удалось открыть файл в редакторе: ${(error as Error).message}`);
+    logger.info(`Откройте файл вручную: ${filePath}`);
+  }
+}
+
+async function handleAutoOpen(
+  state: WorkflowState,
+  options: AutoOpenOptions,
+  logger: Logger
+): Promise<void> {
+  if (options.noOpen) {
+    return;
+  }
+
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
+
+  const mainOutput = await findMainOutputPath(state);
+  if (!mainOutput) {
+    logger.info('Основной выходной документ не найден');
+    return;
+  }
+
+  if (options.logMode || !process.stdout.isTTY) {
+    logger.info(`Основной результат: ${mainOutput}`);
+    return;
+  }
+
+  const shouldOpen = await askOpenConfirmation(mainOutput);
+  if (!shouldOpen) {
+    logger.info(`Открытие пропущено. Файл: ${mainOutput}`);
+    return;
+  }
+
+  const editorConfig = getDefaultEditorConfig(state.context);
+  await openInEditor(mainOutput, editorConfig, logger);
+}
 function displayStatus(
   status: CLIWorkflowStatus,
   detailed: boolean,
@@ -797,6 +956,11 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   });
 }
+
+
+
+
+
 
 
 
