@@ -71,14 +71,19 @@ export class InteractiveDisplay implements IProgressDisplay {
     }
 
     // Создание начального состояния
-    const steps = workflowConfig.steps.map(step => ({
-      id: step.id,
-      name: step.name,
-      type: step.type,
-      role: step.role,
-      adapter: step.adapter,
-      model: step.model
-    }));
+    const roles = workflowConfig.roles ?? {};
+    const steps = workflowConfig.steps.map(step => {
+      const roleConfig = step.role ? roles[step.role] : undefined;
+
+      return {
+        id: step.id,
+        name: step.name,
+        type: step.type,
+        role: step.role,
+        adapter: step.adapter ?? roleConfig?.adapter,
+        model: step.model ?? roleConfig?.model
+      };
+    });
 
     this.state = DisplayStateUtils.createInitialState(
       workflowConfig.name,
@@ -121,13 +126,8 @@ export class InteractiveDisplay implements IProgressDisplay {
       return;
     }
 
-    // Получаем размер терминала
     const size = this.renderer.getSize();
 
-    // Очищаем экран
-    this.renderer.clearScreen();
-
-    // Создаем секции
     const sections: DisplaySection[] = [
       this.createHeaderSection(),
       this.createArtifactsSection(),
@@ -137,17 +137,41 @@ export class InteractiveDisplay implements IProgressDisplay {
       this.createProgressSection()
     ];
 
-    // Отрисовываем секции
-    let currentLine = 1;
+    const lines: string[] = [];
+    const separator = this.renderer.dim('-'.repeat(Math.min(size.width - 2, 60)));
+    let firstSection = true;
+
     for (const section of sections) {
-      this.renderSection(section, currentLine, size.width);
-      currentLine += section.content.length + 2; // +2 для разделителя и пустой строки
+      if (lines.length >= size.height) {
+        break;
+      }
+
+      if (!firstSection) {
+        lines.push(separator);
+      }
+      firstSection = false;
+
+      for (const line of section.content) {
+        if (lines.length >= size.height) {
+          break;
+        }
+        lines.push(line);
+      }
     }
+
+    this.renderer.clearScreen();
+    this.renderer.moveCursor(1, 1);
+
+    const lastIndex = lines.length - 1;
+    lines.forEach((line, index) => {
+      if (index === lastIndex) {
+        this.renderer.write(line);
+      } else {
+        this.renderer.writeLine(line);
+      }
+    });
   }
 
-  /**
-   * Создание секции заголовка
-   */
   private createHeaderSection(): DisplaySection {
     if (!this.state) {
       return { title: '', content: [] };
@@ -333,7 +357,7 @@ export class InteractiveDisplay implements IProgressDisplay {
     const content: string[] = ['Recent Activity:'];
 
     for (const activity of this.state.recentActivity) {
-      const icon = activity.status === 'success' ? '✓' : '✗';
+      const icon = activity.status === 'success' ? 'OK' : '✗';
       const color = activity.status === 'success' ? TerminalColor.Green : TerminalColor.Red;
       const coloredIcon = this.renderer.colorize(icon, color);
       const duration = DisplayStateUtils.formatExecutionTime(activity.duration);
@@ -386,20 +410,6 @@ export class InteractiveDisplay implements IProgressDisplay {
 
   /**
    * Отрисовка секции
-   */
-  private renderSection(section: DisplaySection, _startLine: number, width: number): void {
-    // Отрисовываем разделитель
-    const separator = '─'.repeat(Math.min(width - 2, 60));
-    this.renderer.writeLine(this.renderer.dim(separator));
-
-    // Отрисовываем содержимое секции
-    for (const line of section.content) {
-      this.renderer.writeLine(line);
-    }
-  }
-
-  /**
-   * Обработчик начала процесса
    */
   public onWorkflowStart(config: WorkflowConfig): void {
     if (!this.isInitialized) {
@@ -495,7 +505,7 @@ export class InteractiveDisplay implements IProgressDisplay {
     
     if (state.status === 'completed') {
       this.renderer.writeLine(
-        this.renderer.colorize('✓ Workflow completed successfully', TerminalColor.Green)
+        this.renderer.colorize('OK Workflow completed successfully', TerminalColor.Green)
       );
     } else if (state.status === 'failed') {
       this.renderer.writeLine(
@@ -533,13 +543,13 @@ export class InteractiveDisplay implements IProgressDisplay {
 
     // Отображаем сообщение о требовании ввода (Requirements 10.1)
     this.renderer.writeLine('');
-    this.renderer.writeLine('─'.repeat(60));
+    this.renderer.writeLine('-'.repeat(60));
     this.renderer.writeLine(
-      this.renderer.colorize('⏸ Требуется ввод пользователя', TerminalColor.Yellow)
+      this.renderer.colorize('????????? ???? ????????????', TerminalColor.Yellow)
     );
-    this.renderer.writeLine(`  Шаг: ${this.renderer.bold(step.name)}`);
+    this.renderer.writeLine(`  ???: ${this.renderer.bold(step.name)}`);
     this.renderer.writeLine(`  ${message}`);
-    this.renderer.writeLine('─'.repeat(60));
+    this.renderer.writeLine('-'.repeat(60));
     this.renderer.writeLine('');
   }
 

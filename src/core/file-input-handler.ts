@@ -26,21 +26,24 @@ export class FileInputHandler {
   private userInputHandler: UserInputHandler;
   private logger: Logger;
   private testMode: boolean;
+  private menuHandler?: (options: Array<{ label: string; value: UserCommand }>, config?: { title?: string; defaultIndex?: number }) => Promise<UserCommand>;
   
   constructor(
     templateGenerator: TemplateGenerator,
     editorManager: EditorManager,
     userInputHandler: UserInputHandler,
     logger: Logger,
-    testMode: boolean = false
+    testMode: boolean = false,
+    menuHandler?: (options: Array<{ label: string; value: UserCommand }>, config?: { title?: string; defaultIndex?: number }) => Promise<UserCommand>
   ) {
     this.templateGenerator = templateGenerator;
     this.editorManager = editorManager;
     this.userInputHandler = userInputHandler;
     this.logger = logger;
     this.testMode = testMode;
+    this.menuHandler = menuHandler;
   }
-  
+
   /**
    * Обработка файлового ввода для шага
    * 
@@ -169,7 +172,7 @@ export class FileInputHandler {
       // Сохраняем частично заполненный файл
       await this.savePartialState(filePath, step, context);
       
-      console.log('✓ Состояние сохранено');
+      console.log('OK Состояние сохранено');
       console.log(`\nФайл: ${filePath}`);
       console.log('Резервная копия: ' + filePath + '.backup');
       console.log('\nВы можете возобновить процесс позже.');
@@ -407,7 +410,7 @@ export class FileInputHandler {
         
         try {
           await fs.writeFile(path, content, { encoding: 'utf-8' });
-          console.log(`\n✓ Файл успешно создан: ${path}\n`);
+          console.log(`\nOK Файл успешно создан: ${path}\n`);
           resolve(path);
         } catch (error) {
           console.log(`\n❌ Ошибка создания файла: ${(error as Error).message}\n`);
@@ -504,7 +507,7 @@ export class FileInputHandler {
           await this.editorManager.launchEditor(filePath, { command: editorCommand });
           
           console.log('\n' + '='.repeat(70));
-          console.log('✓ Файл открыт в альтернативном редакторе');
+          console.log('OK Файл открыт в альтернативном редакторе');
           console.log('='.repeat(70));
           console.log(`\nРедактор: ${editorCommand}`);
           console.log(`Файл: ${filePath}`);
@@ -587,114 +590,105 @@ export class FileInputHandler {
    * @returns Promise<UserCommand> - Команда пользователя
    */
   private async waitForUserConfirmation(filePath: string): Promise<UserCommand> {
-    // В тестовом режиме автоматически возвращаем 'postpone'
     if (this.testMode) {
-      this.logger.debug('Тестовый режим: автоматически выбран "postpone"');
+      this.logger.debug('???????? ?????: ????????????? ?????? "????????"');
       return 'postpone';
     }
-    
+
+    if (this.menuHandler) {
+      try {
+        return await this.menuHandler(
+          [
+            { label: '??????????', value: 'continue' },
+            { label: '????????', value: 'postpone' }
+          ],
+          { title: '???? ????? ? ??????????', defaultIndex: 0 }
+        );
+      } catch {
+        // ????????? ? ??????????? ????
+      }
+    }
+
     return new Promise((resolve) => {
-      const options = ['Продолжить', 'Отложить'];
-      let selectedIndex = 0; // По умолчанию выбран "Продолжить"
-      
-      // Функция для отображения меню
-      const displayMenu = () => {
-        // Очищаем предыдущий вывод (перемещаем курсор вверх)
-        if (selectedIndex !== 0 || process.stdout.isTTY) {
-          readline.clearLine(process.stdout, 0);
-          readline.cursorTo(process.stdout, 0);
+      const options = ['??????????', '????????'];
+      let selectedIndex = 0;
+      const canClear = process.stdout.isTTY;
+
+      const clearMenuScreen = () => {
+        if (!canClear) {
+          return;
         }
-        
+        process.stdout.write('\x1b[2J');
+        process.stdout.write('\x1b[H');
+      };
+
+      const displayMenu = () => {
+        clearMenuScreen();
         console.log('\n' + '='.repeat(70));
-        console.log('📝 Файл готов к заполнению');
+        console.log('???? ????? ? ??????????');
         console.log('='.repeat(70));
-        console.log(`\nФайл: ${filePath}`);
-        console.log('\nВыберите действие (используйте стрелочки ↑↓ и Enter):\n');
-        
+        console.log(`\n????: ${filePath}`);
+        console.log('\n???????? ???????? (??????? ?????/???? ? Enter):\n');
+
         options.forEach((option, index) => {
-          const prefix = index === selectedIndex ? '▶' : ' ';
-          const marker = index === selectedIndex ? '●' : '○';
-          console.log(`  ${prefix} ${marker} ${option}`);
+          const prefix = index === selectedIndex ? '>' : ' ';
+          console.log(`  ${prefix} ${option}`);
         });
-        
+
         console.log('\n' + '='.repeat(70));
       };
-      
-      // Отображаем начальное меню
+
       displayMenu();
-      
-      // Настраиваем readline для обработки нажатий клавиш
+
       if (process.stdin.isTTY) {
         readline.emitKeypressEvents(process.stdin);
         process.stdin.setRawMode(true);
       }
-      
+
       const onKeypress = (_str: string, key: readline.Key) => {
         if (key.name === 'up') {
-          // Стрелка вверх
           selectedIndex = Math.max(0, selectedIndex - 1);
-          
-          // Перемещаем курсор вверх для перерисовки
-          readline.moveCursor(process.stdout, 0, -(options.length + 6));
           displayMenu();
-          
-        } else if (key.name === 'down') {
-          // Стрелка вниз
+          return;
+        }
+
+        if (key.name === 'down') {
           selectedIndex = Math.min(options.length - 1, selectedIndex + 1);
-          
-          // Перемещаем курсор вверх для перерисовки
-          readline.moveCursor(process.stdout, 0, -(options.length + 6));
           displayMenu();
-          
-        } else if (key.name === 'return') {
-          // Enter - подтверждение выбора
+          return;
+        }
+
+        if (key.name === 'return') {
           if (process.stdin.isTTY) {
             process.stdin.setRawMode(false);
           }
           process.stdin.removeListener('keypress', onKeypress);
           process.stdin.pause();
-          
+
           const command: UserCommand = selectedIndex === 0 ? 'continue' : 'postpone';
-          
-          console.log(`\n✓ Выбрано: ${options[selectedIndex]}\n`);
-          
+          console.log(`\n???????: ${options[selectedIndex]}\n`);
+          clearMenuScreen();
           resolve(command);
-          
-        } else if (key.ctrl && key.name === 'c') {
-          // Ctrl+C - выход
+          return;
+        }
+
+        if (key.ctrl && key.name === 'c') {
           if (process.stdin.isTTY) {
             process.stdin.setRawMode(false);
           }
           process.stdin.removeListener('keypress', onKeypress);
           process.stdin.pause();
-          
-          console.log('\n\n⚠️  Процесс прерван пользователем\n');
+          console.log('\n\n??????? ??????? ?????????????\n');
+          clearMenuScreen();
           process.exit(0);
         }
       };
-      
+
       process.stdin.on('keypress', onKeypress);
       process.stdin.resume();
     });
   }
-  
-  /**
-   * Чтение и валидация заполненного файла
-   * 
-   * Читает файл, парсит его согласно формату и выполняет валидацию.
-   * При ошибках валидации предлагает повторное редактирование.
-   * 
-   * Обработка удаленного файла:
-   * 1. Проверка существования файла
-   * 2. Предложение создать новый файл
-   * 3. Попытка восстановления из резервной копии
-   * 
-   * @param filePath - Путь к файлу
-   * @param step - Шаг user_input
-   * @param context - Контекст выполнения
-   * @returns Promise<ParsedUserInput> - Распарсенные данные
-   * @throws WorkflowErrorClass - При критических ошибках
-   */
+
   private async readAndValidate(
     filePath: string,
     step: WorkflowStep,
@@ -724,7 +718,7 @@ export class FileInputHandler {
               try {
                 await fs.copyFile(backupPath, filePath);
                 this.logger.info(`Файл восстановлен из резервной копии: ${backupPath}`);
-                console.log(`\n✓ Файл восстановлен из резервной копии\n`);
+                console.log(`\nOK Файл восстановлен из резервной копии\n`);
                 // Продолжаем чтение восстановленного файла
               } catch (restoreError) {
                 this.logger.error(`Не удалось восстановить файл из резервной копии: ${(restoreError as Error).message}`);
@@ -994,7 +988,7 @@ export class FileInputHandler {
       this.logger.debug('Тестовый режим: автоматически выбран "восстановить из резервной копии"');
       return true;
     }
-    
+
     return new Promise((resolve) => {
       const rl = readline.createInterface({
         input: process.stdin,
@@ -1028,7 +1022,7 @@ export class FileInputHandler {
       this.logger.debug('Тестовый режим: автоматически выбран "не создавать новый файл"');
       return false;
     }
-    
+
     return new Promise((resolve) => {
       const rl = readline.createInterface({
         input: process.stdin,
@@ -1083,7 +1077,7 @@ export class FileInputHandler {
       this.logger.debug('Тестовый режим: автоматически выбран "не повторять"');
       return false;
     }
-    
+
     return new Promise((resolve) => {
       const rl = readline.createInterface({
         input: process.stdin,

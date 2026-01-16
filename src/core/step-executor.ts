@@ -24,6 +24,7 @@ import {
 } from './types.js';
 import { RoleManager } from './role-manager.js';
 import { MCPManager, MCPContext } from './mcp-manager.js';
+import type { Logger as CoreLogger } from './logger.js';
 
 /**
  * Конфигурация исполнителя шагов
@@ -984,20 +985,22 @@ export class DefaultStepExecutor implements StepExecutor {
     const { TemplateGenerator } = await import('./template-generator.js');
     const { EditorManager } = await import('./editor-manager.js');
     const { UserInputHandler } = await import('./user-input-handler.js');
-    const { Logger, LogLevel } = await import('./logger.js');
     
     // Создаем экземпляры компонентов
     const templateGenerator = new TemplateGenerator();
     
     // Создаем Logger для EditorManager
-    const editorLogger = new Logger({
-      level: LogLevel.INFO,
-      enableConsole: true,
-      enableFile: false
-    });
-    
-    const editorManager = new EditorManager(editorLogger);
+    const editorManager = new EditorManager(context.logger as unknown as CoreLogger);
     const userInputHandler = new UserInputHandler();
+
+    const progress = (context as { progress?: { showMenu?: (options: Array<{ label: string; value: string }>, config?: { title?: string; defaultIndex?: number }) => Promise<string> } }).progress;
+    const showMenu = typeof progress?.showMenu === 'function' ? progress.showMenu.bind(progress) : undefined;
+    const menuHandler = showMenu
+      ? async (options: Array<{ label: string; value: string }>, config?: { title?: string; defaultIndex?: number }) => {
+          const result = await showMenu(options, config);
+          return result as 'continue' | 'postpone';
+        }
+      : undefined;
     
     // Создаем обертку для context.logger, чтобы использовать его с FileInputHandler
     const loggerWrapper = {
@@ -1012,7 +1015,8 @@ export class DefaultStepExecutor implements StepExecutor {
       editorManager,
       userInputHandler,
       loggerWrapper as never, // Используем as never для обхода проверки типов
-      process.env.NODE_ENV === 'test' // testMode = true в тестовом окружении
+      process.env.NODE_ENV === 'test',
+      menuHandler
     );
     
     try {

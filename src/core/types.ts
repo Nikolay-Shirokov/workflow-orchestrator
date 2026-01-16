@@ -641,6 +641,8 @@ export interface ExecutionContext {
   
   /** Логгер */
   logger: Logger;
+  /** Индикатор прогресса (для интерактивного режима, опционально) */
+  progress?: unknown;
 }
 
 /**

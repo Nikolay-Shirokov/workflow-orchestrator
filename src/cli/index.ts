@@ -16,7 +16,10 @@ import { EditorManager } from '../core/editor-manager.js';
 import { findMainOutputPath } from './auto-open-utils.js';
 import type { WorkflowState } from '../core/types.js';
 import type { EditorConfig } from '../core/file-input-types.js';
+import { createRequire } from 'module';
 import * as readline from 'readline';
+
+const require = createRequire(import.meta.url);
 
 // Экспорт компонентов Terminal Layer
 export { TerminalRenderer, TerminalColor, TerminalCapabilities, TerminalSize } from './terminal-renderer.js';
@@ -87,6 +90,11 @@ export function createCLI(): Command {
     .action(async (configPath: string, options) => {
       const logger = createSimpleLogger(options.verbose);
 
+      const interactivePreferred = !options.logMode && process.stdout.isTTY && process.stdin.isTTY;
+      if (interactivePreferred) {
+        logger.setLevel(LogLevel.ERROR);
+      }
+
       try {
         logger.info(`Запуск процесса из конфигурации: ${configPath}`);
 
@@ -130,7 +138,7 @@ export function createCLI(): Command {
         // Вывод результата
         if (state.status === 'completed') {
           await handleAutoOpen(state, options, logger);
-          logger.info(`✓ Процесс завершен успешно (сессия: ${state.sessionId})`);
+          logger.info(`OK Процесс завершен успешно (сессия: ${state.sessionId})`);
           logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
           logger.info(`  Создано артефактов: ${Object.keys(state.artifacts).length}`);
           process.exit(0);
@@ -169,6 +177,11 @@ export function createCLI(): Command {
     .option('--step <number>', 'Номер шага для возобновления (пропускает интерактивный выбор)')
     .action(async (sessionId: string, configPath: string, options) => {
       const logger = createSimpleLogger(options.verbose);
+
+      const interactivePreferred = !options.logMode && process.stdout.isTTY && process.stdin.isTTY;
+      if (interactivePreferred) {
+        logger.setLevel(LogLevel.ERROR);
+      }
 
       try {
         logger.info(`Возобновление процесса (сессия: ${sessionId})`);
@@ -256,7 +269,7 @@ export function createCLI(): Command {
         // Вывод результата
         if (state.status === 'completed') {
           await handleAutoOpen(state, options, logger);
-          logger.info(`✓ Процесс завершен успешно`);
+          logger.info(`OK Процесс завершен успешно`);
           logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
           process.exit(0);
         } else if (state.status === 'paused') {
@@ -414,7 +427,7 @@ export function createCLI(): Command {
         await manager.saveExport(result, outputPath);
 
         // Вывод информации
-        logger.info(`✓ Экспорт завершен успешно`);
+        logger.info(`OK Экспорт завершен успешно`);
         logger.info(`  Процесс: ${config.name} v${config.version}`);
         logger.info(`  Шагов: ${config.steps.length}`);
         if (result.embeddedFiles) {
@@ -478,7 +491,7 @@ export function createCLI(): Command {
             resolvedConflicts: result.resolvedConflicts
           }, null, 2));
         } else {
-          logger.info(`✓ Импорт завершен успешно`);
+          logger.info(`OK Импорт завершен успешно`);
           logger.info(`  Процесс: ${result.config.name} v${result.config.version}`);
           logger.info(`  Шагов: ${result.config.steps.length}`);
           logger.info(`  Экспортирован: ${new Date(result.metadata.exportedAt).toLocaleString()}`);
@@ -538,19 +551,44 @@ async function askOpenConfirmation(filePath: string): Promise<boolean> {
     return false;
   }
 
+  try {
+    const { InteractiveMenu } = await import('./interactive-menu.js');
+    const { TerminalRenderer } = await import('./terminal-renderer.js');
+    const renderer = new TerminalRenderer();
+
+    renderer.writeLine();
+    renderer.writeLine(`????: ${filePath}`);
+    renderer.writeLine();
+
+    const menu = new InteractiveMenu(renderer);
+    const choice = await menu.show(
+      [
+        { label: '???????', value: 'open' },
+        { label: '?? ?????????', value: 'skip' }
+      ],
+      { title: '??????? ???????? ??????????', defaultIndex: 0 }
+    );
+
+    return choice === 'open';
+  } catch {
+    // ????????? ? ?????????? ?????????????
+  }
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
   });
 
   const answer = await new Promise<string>((resolve) => {
-    rl.question(`Открыть основной результат в редакторе? [Y/n]\n${filePath}\n> `, resolve);
+    rl.question(`??????? ???????? ?????????? [Y/n]
+${filePath}
+> `, resolve);
   });
 
   rl.close();
 
   const normalized = answer.trim().toLowerCase();
-  return normalized === '' || normalized === 'y' || normalized === 'yes' || normalized === 'д' || normalized === 'да';
+  return normalized === '' || normalized === 'y' || normalized === 'yes' || normalized === '?' || normalized === '??';
 }
 
 async function openInEditor(
@@ -573,6 +611,12 @@ async function openInEditor(
     logger.warn(`Не удалось открыть файл в редакторе: ${(error as Error).message}`);
     logger.info(`Откройте файл вручную: ${filePath}`);
   }
+}
+
+
+interface AutoOpenOptions {
+  noOpen?: boolean;
+  logMode?: boolean;
 }
 
 async function handleAutoOpen(
@@ -650,7 +694,7 @@ function displayStatus(
   if (detailed) {
     logger.info(`\n--- История выполнения ---`);
     for (const step of status.history) {
-      const emoji = step.status === 'success' ? '✓' : step.status === 'failed' ? '✗' : '○';
+      const emoji = step.status === 'success' ? 'OK' : step.status === 'failed' ? '✗' : '○';
       logger.info(`${emoji} ${step.stepName} (${step.stepId})`);
       logger.info(`  Статус: ${step.status}`);
       logger.info(`  Время: ${step.executionTime}ms`);
@@ -685,7 +729,7 @@ function displayDryRunResult(result: DryRunResult, logger: Logger): void {
   logger.info(`\n=== Результат валидации ===`);
   
   if (result.valid) {
-    logger.info(`✓ Конфигурация валидна`);
+    logger.info(`OK Конфигурация валидна`);
   } else {
     logger.error(`✗ Конфигурация содержит ошибки`);
   }
@@ -767,12 +811,12 @@ function displayDryRunResult(result: DryRunResult, logger: Logger): void {
       result.resourceCheck.missingVariables.length === 0 &&
       result.resourceCheck.unavailableAdapters.length === 0
     ) {
-      logger.info(`✓ Все ресурсы доступны`);
+      logger.info(`OK Все ресурсы доступны`);
     }
   }
 
   if (result.valid) {
-    logger.info(`\n✓ Процесс готов к выполнению`);
+    logger.info(`\nOK Процесс готов к выполнению`);
   } else {
     logger.error(`\n✗ Исправьте ошибки перед запуском процесса`);
   }
@@ -788,7 +832,7 @@ function getStatusEmoji(status: string): string {
     case 'paused':
       return '⏸';
     case 'completed':
-      return '✓';
+      return 'OK';
     case 'failed':
       return '✗';
     default:

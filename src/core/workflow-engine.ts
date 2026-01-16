@@ -685,7 +685,8 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
         adapters: this.adapterRegistry,
         templateEngine: this.templateEngine,
         artifactManager: this.artifactManager,
-        logger: this.logger
+        logger: this.logger,
+        progress
       };
 
       try {
