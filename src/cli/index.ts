@@ -557,21 +557,21 @@ async function askOpenConfirmation(filePath: string): Promise<boolean> {
     const renderer = new TerminalRenderer();
 
     renderer.writeLine();
-    renderer.writeLine(`????: ${filePath}`);
+    renderer.writeLine(`Файл: ${filePath}`);
     renderer.writeLine();
 
     const menu = new InteractiveMenu(renderer);
     const choice = await menu.show(
       [
-        { label: '???????', value: 'open' },
-        { label: '?? ?????????', value: 'skip' }
+        { label: 'Открыть', value: 'open' },
+        { label: 'Не открывать', value: 'skip' }
       ],
-      { title: '??????? ???????? ??????????', defaultIndex: 0 }
+      { title: 'Открыть основной результат?', defaultIndex: 0 }
     );
 
     return choice === 'open';
   } catch {
-    // ????????? ? ?????????? ?????????????
+    // Переходим к текстовому подтверждению
   }
 
   const rl = readline.createInterface({
@@ -580,7 +580,7 @@ async function askOpenConfirmation(filePath: string): Promise<boolean> {
   });
 
   const answer = await new Promise<string>((resolve) => {
-    rl.question(`??????? ???????? ?????????? [Y/n]
+    rl.question(`Открыть основной результат? [Y/n]
 ${filePath}
 > `, resolve);
   });
@@ -588,7 +588,7 @@ ${filePath}
   rl.close();
 
   const normalized = answer.trim().toLowerCase();
-  return normalized === '' || normalized === 'y' || normalized === 'yes' || normalized === '?' || normalized === '??';
+  return normalized === '' || normalized === 'y' || normalized === 'yes' || normalized === 'д' || normalized === 'да';
 }
 
 async function openInEditor(

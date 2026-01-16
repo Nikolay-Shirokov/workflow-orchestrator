@@ -493,37 +493,37 @@ export class InteractiveDisplay implements IProgressDisplay {
       return;
     }
 
-    // Финальная отрисовка
-    this.render();
+    this.pauseRendering();
 
-    // Показываем курсор
+    this.render();
     this.renderer.showCursor();
 
-    // Выводим итоговую информацию
     this.renderer.writeLine('');
-    this.renderer.writeLine('═'.repeat(60));
-    
+    this.renderer.writeLine('-'.repeat(60));
+
     if (state.status === 'completed') {
       this.renderer.writeLine(
-        this.renderer.colorize('OK Workflow completed successfully', TerminalColor.Green)
+        this.renderer.colorize('Процесс завершен успешно', TerminalColor.Green)
       );
     } else if (state.status === 'failed') {
       this.renderer.writeLine(
-        this.renderer.colorize('✗ Workflow failed', TerminalColor.Red)
+        this.renderer.colorize('Процесс завершился с ошибкой', TerminalColor.Red)
       );
     }
 
     const totalTime = DisplayStateUtils.formatExecutionTime(Date.now() - this.state.startTime);
-    this.renderer.writeLine(`Total time: ${totalTime}`);
-    this.renderer.writeLine(`Completed steps: ${state.completedSteps.length}/${this.state.totalSteps}`);
-    this.renderer.writeLine(`Artifacts: ${Object.keys(state.artifacts).length}`);
-    
+    this.renderer.writeLine(`Общее время: ${totalTime}`);
+    this.renderer.writeLine(`Завершено шагов: ${state.completedSteps.length}/${this.state.totalSteps}`);
+    this.renderer.writeLine(`Артефакты: ${Object.keys(state.artifacts).length}`);
+
     if (state.errors.length > 0) {
-      this.renderer.writeLine(`Errors: ${state.errors.length}`);
+      this.renderer.writeLine(`Ошибки: ${state.errors.length}`);
     }
 
-    this.renderer.writeLine(`Session: ${state.sessionId}`);
-    this.renderer.writeLine('═'.repeat(60));
+    this.renderer.writeLine(`Сессия: ${state.sessionId}`);
+    this.renderer.writeLine('-'.repeat(60));
+
+    this.isInitialized = false;
   }
 
   /**
@@ -538,16 +538,14 @@ export class InteractiveDisplay implements IProgressDisplay {
       return;
     }
 
-    // Приостанавливаем обновление интерфейса (Requirements 10.2)
     this.pauseRendering();
 
-    // Отображаем сообщение о требовании ввода (Requirements 10.1)
     this.renderer.writeLine('');
     this.renderer.writeLine('-'.repeat(60));
     this.renderer.writeLine(
-      this.renderer.colorize('????????? ???? ????????????', TerminalColor.Yellow)
+      this.renderer.colorize('Требуется ввод пользователя', TerminalColor.Yellow)
     );
-    this.renderer.writeLine(`  ???: ${this.renderer.bold(step.name)}`);
+    this.renderer.writeLine(`  Шаг: ${this.renderer.bold(step.name)}`);
     this.renderer.writeLine(`  ${message}`);
     this.renderer.writeLine('-'.repeat(60));
     this.renderer.writeLine('');

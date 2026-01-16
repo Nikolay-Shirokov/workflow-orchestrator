@@ -591,7 +591,7 @@ export class FileInputHandler {
    */
   private async waitForUserConfirmation(filePath: string): Promise<UserCommand> {
     if (this.testMode) {
-      this.logger.debug('???????? ?????: ????????????? ?????? "????????"');
+      this.logger.debug('Тестовый режим: автоматически выбран "Отложить"');
       return 'postpone';
     }
 
@@ -599,18 +599,18 @@ export class FileInputHandler {
       try {
         return await this.menuHandler(
           [
-            { label: '??????????', value: 'continue' },
-            { label: '????????', value: 'postpone' }
+            { label: 'Продолжить', value: 'continue' },
+            { label: 'Отложить', value: 'postpone' }
           ],
-          { title: '???? ????? ? ??????????', defaultIndex: 0 }
+          { title: 'Файл готов к заполнению', defaultIndex: 0 }
         );
       } catch {
-        // ????????? ? ??????????? ????
+        // Переходим к консольному меню
       }
     }
 
     return new Promise((resolve) => {
-      const options = ['??????????', '????????'];
+      const options = ['Продолжить', 'Отложить'];
       let selectedIndex = 0;
       const canClear = process.stdout.isTTY;
 
@@ -625,10 +625,10 @@ export class FileInputHandler {
       const displayMenu = () => {
         clearMenuScreen();
         console.log('\n' + '='.repeat(70));
-        console.log('???? ????? ? ??????????');
+        console.log('Файл готов к заполнению');
         console.log('='.repeat(70));
-        console.log(`\n????: ${filePath}`);
-        console.log('\n???????? ???????? (??????? ?????/???? ? Enter):\n');
+        console.log(`\nФайл: ${filePath}`);
+        console.log('\nВыберите действие (стрелки вверх/вниз и Enter):\n');
 
         options.forEach((option, index) => {
           const prefix = index === selectedIndex ? '>' : ' ';
@@ -666,7 +666,7 @@ export class FileInputHandler {
           process.stdin.pause();
 
           const command: UserCommand = selectedIndex === 0 ? 'continue' : 'postpone';
-          console.log(`\n???????: ${options[selectedIndex]}\n`);
+          console.log(`\nВыбрано: ${options[selectedIndex]}\n`);
           clearMenuScreen();
           resolve(command);
           return;
@@ -678,7 +678,7 @@ export class FileInputHandler {
           }
           process.stdin.removeListener('keypress', onKeypress);
           process.stdin.pause();
-          console.log('\n\n??????? ??????? ?????????????\n');
+          console.log('\n\nПроцесс прерван пользователем\n');
           clearMenuScreen();
           process.exit(0);
         }
