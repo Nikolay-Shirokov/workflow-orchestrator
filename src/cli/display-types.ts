@@ -309,16 +309,21 @@ export class DisplayStateUtils {
     }
 
     // Обновление истории последних действий
-    const newActivity: RecentActivityItem = {
+    // Не добавляем skipped шаги в историю (они не были выполнены)
+    const shouldAddToActivity = status === 'completed' || status === 'failed';
+
+    const newActivity: RecentActivityItem | null = shouldAddToActivity ? {
       stepName: updatedSteps[stepIndex].name,
       status: status === 'completed' ? 'success' : 'failed',
       duration,
       artifacts
-    };
+    } : null;
 
     // Ограничение размера истории (Property 8)
     const maxRecentActivity = 3;
-    const updatedActivity = [newActivity, ...state.recentActivity].slice(0, maxRecentActivity);
+    const updatedActivity = newActivity
+      ? [newActivity, ...state.recentActivity].slice(0, maxRecentActivity)
+      : state.recentActivity;
 
     // Подсчет завершенных шагов
     const completedSteps = updatedSteps.filter(
