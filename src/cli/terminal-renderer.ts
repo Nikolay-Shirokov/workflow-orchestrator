@@ -355,20 +355,18 @@ export class TerminalRenderer {
   public getStatusIcon(status: 'completed' | 'running' | 'pending' | 'failed' | 'skipped'): string {
     switch (status) {
       case 'completed':
-        return 'x';
+        return '✓';
       case 'running':
-        return '>'; 
+        return '⏳';
       case 'pending':
-        return ' '; 
+        return '○';
       case 'failed':
-        return '!';
+        return '✗';
       case 'skipped':
-        return '-';
+        return '○';
       default:
         return '?';
     }
-
-
   }
   /**
    * Форматирование статуса с цветом и иконкой

@@ -380,7 +380,7 @@ export class DisplayStateUtils {
     return {
       mode,
       interactive: {
-        refreshInterval: 1000,
+        refreshInterval: 100,
         maxRecentActivity: 3,
         showProgressBar: true,
         showElapsedTime: true

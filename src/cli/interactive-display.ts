@@ -357,19 +357,19 @@ export class InteractiveDisplay implements IProgressDisplay {
     const content: string[] = ['Recent Activity:'];
 
     for (const activity of this.state.recentActivity) {
-      const icon = activity.status === 'success' ? 'OK' : '✗';
+      const icon = activity.status === 'success' ? '✓' : '✗';
       const color = activity.status === 'success' ? TerminalColor.Green : TerminalColor.Red;
       const coloredIcon = this.renderer.colorize(icon, color);
       const duration = DisplayStateUtils.formatExecutionTime(activity.duration);
-      
+
       let line = ` ${coloredIcon} ${activity.stepName}`;
-      
+
       if (activity.artifacts.length > 0) {
         line += ` → ${activity.artifacts.length} artifact(s)`;
       }
-      
+
       line += ` ${this.renderer.dim(`(${duration})`)}`;
-      
+
       content.push(line);
     }
 
@@ -499,29 +499,29 @@ export class InteractiveDisplay implements IProgressDisplay {
     this.renderer.showCursor();
 
     this.renderer.writeLine('');
-    this.renderer.writeLine('-'.repeat(60));
+    this.renderer.writeLine('═'.repeat(60));
 
     if (state.status === 'completed') {
       this.renderer.writeLine(
-        this.renderer.colorize('Процесс завершен успешно', TerminalColor.Green)
+        this.renderer.colorize('✓ Workflow completed successfully', TerminalColor.Green)
       );
     } else if (state.status === 'failed') {
       this.renderer.writeLine(
-        this.renderer.colorize('Процесс завершился с ошибкой', TerminalColor.Red)
+        this.renderer.colorize('✗ Workflow failed', TerminalColor.Red)
       );
     }
 
     const totalTime = DisplayStateUtils.formatExecutionTime(Date.now() - this.state.startTime);
-    this.renderer.writeLine(`Общее время: ${totalTime}`);
-    this.renderer.writeLine(`Завершено шагов: ${state.completedSteps.length}/${this.state.totalSteps}`);
-    this.renderer.writeLine(`Артефакты: ${Object.keys(state.artifacts).length}`);
+    this.renderer.writeLine(`Total time: ${totalTime}`);
+    this.renderer.writeLine(`Completed steps: ${state.completedSteps.length}/${this.state.totalSteps}`);
+    this.renderer.writeLine(`Artifacts: ${Object.keys(state.artifacts).length}`);
 
     if (state.errors.length > 0) {
-      this.renderer.writeLine(`Ошибки: ${state.errors.length}`);
+      this.renderer.writeLine(`Errors: ${state.errors.length}`);
     }
 
-    this.renderer.writeLine(`Сессия: ${state.sessionId}`);
-    this.renderer.writeLine('-'.repeat(60));
+    this.renderer.writeLine(`Session: ${state.sessionId}`);
+    this.renderer.writeLine('═'.repeat(60));
 
     this.isInitialized = false;
   }
@@ -541,13 +541,13 @@ export class InteractiveDisplay implements IProgressDisplay {
     this.pauseRendering();
 
     this.renderer.writeLine('');
-    this.renderer.writeLine('-'.repeat(60));
+    this.renderer.writeLine('─'.repeat(60));
     this.renderer.writeLine(
-      this.renderer.colorize('Требуется ввод пользователя', TerminalColor.Yellow)
+      this.renderer.colorize('⏸ Требуется ввод пользователя', TerminalColor.Yellow)
     );
     this.renderer.writeLine(`  Шаг: ${this.renderer.bold(step.name)}`);
     this.renderer.writeLine(`  ${message}`);
-    this.renderer.writeLine('-'.repeat(60));
+    this.renderer.writeLine('─'.repeat(60));
     this.renderer.writeLine('');
   }
 

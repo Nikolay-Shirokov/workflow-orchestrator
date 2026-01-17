@@ -694,7 +694,7 @@ function displayStatus(
   if (detailed) {
     logger.info(`\n--- История выполнения ---`);
     for (const step of status.history) {
-      const emoji = step.status === 'success' ? 'OK' : step.status === 'failed' ? '✗' : '○';
+      const emoji = step.status === 'success' ? '✓' : step.status === 'failed' ? '✗' : '○';
       logger.info(`${emoji} ${step.stepName} (${step.stepId})`);
       logger.info(`  Статус: ${step.status}`);
       logger.info(`  Время: ${step.executionTime}ms`);
@@ -832,7 +832,7 @@ function getStatusEmoji(status: string): string {
     case 'paused':
       return '⏸';
     case 'completed':
-      return 'OK';
+      return '✓';
     case 'failed':
       return '✗';
     default:
