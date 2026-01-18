@@ -479,8 +479,11 @@ export class InteractiveDisplay implements IProgressDisplay {
    */
   public syncWithState(workflowState: WorkflowState): void {
     if (!this.state) {
+      console.error('[InteractiveDisplay] syncWithState: state is null');
       return;
     }
+
+    console.log(`[InteractiveDisplay] syncWithState: completedSteps = ${workflowState.completedSteps.length}, history = ${workflowState.history.length}`);
 
     // Обновляем статусы шагов на основе completedSteps
     const completedStepIds = new Set(workflowState.completedSteps);
@@ -495,10 +498,19 @@ export class InteractiveDisplay implements IProgressDisplay {
       const history = historyMap.get(step.id);
 
       if (completedStepIds.has(step.id) && history) {
+        // КРИТИЧНО: Маппим StepStatus -> DisplayStepStatus
+        // 'success' -> 'completed', остальные совпадают
+        const displayStatus: DisplayStepStatus =
+          history.status === 'success' ? 'completed' :
+          history.status === 'failed' ? 'failed' :
+          'skipped';
+
+        console.log(`[InteractiveDisplay] syncWithState: step ${step.id} -> ${displayStatus} (from ${history.status})`);
+
         // Шаг выполнен - обновляем статус и информацию
         return {
           ...step,
-          status: history.status as DisplayStepStatus,
+          status: displayStatus,
           duration: history.executionTime,
           artifacts: history.artifacts,
           error: history.error
@@ -510,6 +522,8 @@ export class InteractiveDisplay implements IProgressDisplay {
 
     // Подсчитываем количество завершенных шагов
     const completedCount = updatedSteps.filter(s => s.status === 'completed').length;
+
+    console.log(`[InteractiveDisplay] syncWithState: completedCount = ${completedCount}`);
 
     // Обновляем состояние
     this.state = {
