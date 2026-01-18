@@ -504,40 +504,55 @@ export class InteractiveDisplay implements IProgressDisplay {
       return;
     }
 
-    this.pauseRendering();
+    try {
+      // Останавливаем обновления
+      this.pauseRendering();
 
-    // Последняя отрисовка в альтернативном буфере
-    this.render();
+      // Последняя отрисовка в альтернативном буфере
+      this.render();
 
-    // Выходим из альтернативного буфера перед выводом итоговой информации
-    this.renderer.showCursor();
-    this.renderer.exitAlternateBuffer();
+      // Выходим из альтернативного буфера
+      this.renderer.showCursor();
+      this.renderer.exitAlternateBuffer();
 
-    // Теперь в основном буфере - итоговая информация останется на экране
-    this.renderer.writeLine('');
-    this.renderer.writeLine('═'.repeat(60));
-
-    if (state.status === 'completed') {
-      this.renderer.writeLine(
-        this.renderer.colorize('✓ Workflow completed successfully', TerminalColor.Green)
-      );
-    } else if (state.status === 'failed') {
-      this.renderer.writeLine(
-        this.renderer.colorize('✗ Workflow failed', TerminalColor.Red)
-      );
+    } catch (error) {
+      // Даже при ошибке восстанавливаем терминал
+      try {
+        this.renderer.showCursor();
+        this.renderer.exitAlternateBuffer();
+      } catch {}
     }
 
-    const totalTime = DisplayStateUtils.formatExecutionTime(Date.now() - this.state.startTime);
-    this.renderer.writeLine(`Total time: ${totalTime}`);
-    this.renderer.writeLine(`Completed steps: ${state.completedSteps.length}/${this.state.totalSteps}`);
-    this.renderer.writeLine(`Artifacts: ${Object.keys(state.artifacts).length}`);
+    // Безопасный вывод итоговой информации
+    try {
+      this.renderer.writeLine('');
+      this.renderer.writeLine('═'.repeat(60));
 
-    if (state.errors.length > 0) {
-      this.renderer.writeLine(`Errors: ${state.errors.length}`);
+      if (state.status === 'completed') {
+        this.renderer.writeLine(
+          this.renderer.colorize('✓ Workflow completed successfully', TerminalColor.Green)
+        );
+      } else if (state.status === 'failed') {
+        this.renderer.writeLine(
+          this.renderer.colorize('✗ Workflow failed', TerminalColor.Red)
+        );
+      }
+
+      const totalTime = DisplayStateUtils.formatExecutionTime(Date.now() - this.state.startTime);
+      this.renderer.writeLine(`Total time: ${totalTime}`);
+      this.renderer.writeLine(`Completed steps: ${state.completedSteps.length}/${this.state.totalSteps}`);
+      this.renderer.writeLine(`Artifacts: ${Object.keys(state.artifacts).length}`);
+
+      if (state.errors.length > 0) {
+        this.renderer.writeLine(`Errors: ${state.errors.length}`);
+      }
+
+      this.renderer.writeLine(`Session: ${state.sessionId}`);
+      this.renderer.writeLine('═'.repeat(60));
+    } catch (error) {
+      // Логируем, но не прерываем
+      console.error('Error outputting final information:', error);
     }
-
-    this.renderer.writeLine(`Session: ${state.sessionId}`);
-    this.renderer.writeLine('═'.repeat(60));
 
     this.isInitialized = false;
   }
@@ -692,27 +707,36 @@ export class InteractiveDisplay implements IProgressDisplay {
    * Очистка ресурсов
    */
   public cleanup(): void {
-    // Удаляем обработчики сигналов
-    if (this.signalHandlers) {
-      process.off('SIGINT', this.signalHandlers.sigint);
-      process.off('SIGTERM', this.signalHandlers.sigterm);
-      this.signalHandlers = undefined;
+    try {
+      // Удаляем обработчики сигналов
+      if (this.signalHandlers) {
+        process.off('SIGINT', this.signalHandlers.sigint);
+        process.off('SIGTERM', this.signalHandlers.sigterm);
+        this.signalHandlers = undefined;
+      }
+
+      // Останавливаем интервал обновления, если он был запущен
+      if (this.renderInterval) {
+        clearInterval(this.renderInterval);
+        this.renderInterval = null;
+      }
+    } catch {}
+
+    // КРИТИЧНО: Восстановление терминала должно выполниться
+    try {
+      this.renderer.showCursor();
+      this.renderer.exitAlternateBuffer();
+    } catch (error) {
+      // Последняя попытка хотя бы показать курсор
+      try {
+        this.renderer.showCursor();
+      } catch {}
     }
 
-    // Останавливаем интервал обновления, если он был запущен
-    if (this.renderInterval) {
-      clearInterval(this.renderInterval);
-      this.renderInterval = null;
-    }
+    try {
+      this.renderer.dispose();
+    } catch {}
 
-    // Показываем курсор и выходим из альтернативного буфера
-    this.renderer.showCursor();
-    this.renderer.exitAlternateBuffer();
-
-    // Очищаем ресурсы renderer
-    this.renderer.dispose();
-
-    // Сбрасываем состояние
     this.isInitialized = false;
     this.state = null;
   }
