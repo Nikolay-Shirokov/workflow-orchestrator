@@ -98,9 +98,15 @@ export class ResumeSelector {
       defaultIndex: selectedIndex
     });
 
+    // Очищаем экран после выбора, чтобы не оставлять артефакты
+    // Это важно, т.к. InteractiveDisplay использует альтернативный буфер
+    // и при выходе из него возвращается к этому экрану
+    this.renderer.clearScreen();
+    this.renderer.moveCursor(1, 1);
+
     // Парсим выбранное значение (номер шага)
     const stepNumber = parseInt(selectedValue, 10);
-    
+
     if (isNaN(stepNumber) || stepNumber < 1 || stepNumber > steps.length) {
       throw new Error('Invalid step selection');
     }

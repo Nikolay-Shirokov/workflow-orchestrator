@@ -118,6 +118,13 @@ export class InteractiveDisplay implements IProgressDisplay {
     // Начальная отрисовка
     this.render();
 
+    // Запускаем интервал обновления
+    if (this.config.interactive?.refreshInterval) {
+      this.renderInterval = setInterval(() => {
+        this.render();
+      }, this.config.interactive.refreshInterval);
+    }
+
     // Устанавливаем обработчики сигналов
     this.setupSignalHandlers();
   }
