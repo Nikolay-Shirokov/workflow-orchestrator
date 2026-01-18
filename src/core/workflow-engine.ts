@@ -693,6 +693,12 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
         // Выполнение шага
         const result = await this.executeStepWithRetries(step, context, config);
 
+        // Детальное логирование для отладки
+        this.logger.debug(`После выполнения шага ${stepId}:`);
+        this.logger.debug(`  result.status = ${result.status}`);
+        this.logger.debug(`  state.status = ${state.status}`);
+        this.logger.debug(`  context.state.status = ${context.state.status}`);
+
         // КРИТИЧЕСКАЯ ПРОВЕРКА: если процесс приостановлен после выполнения шага,
         // прерываем выполнение ДО обновления состояния
         // Это важно для шагов user_input, которые устанавливают статус 'paused'
@@ -702,6 +708,9 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
         // Шаг останется в pending и будет выполнен при возобновлении
         if (wasPausedByStep) {
           this.logger.info(`Процесс приостановлен на шаге ${stepId}. Шаг НЕ добавлен в историю выполнения.`);
+          this.logger.info(`  Текущий статус: ${state.status}`);
+          this.logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+          this.logger.info(`  История содержит ${state.history.length} записей`);
           await this.stateManager.saveState(state);
           return state;
         }

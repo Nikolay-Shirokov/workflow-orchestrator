@@ -95,19 +95,22 @@ export class FileInputHandler {
       // Если пользователь выбрал отложить
       if (userCommand === 'postpone') {
         this.logger.info('Пользователь выбрал отложить выполнение');
-        
+
         // Сохраняем частично заполненный файл
         await this.savePartialState(filePath, step, context);
-        
+
         // Обновляем статус процесса
+        const oldStatus = context.state.status;
         context.state.status = 'paused';
-        
+        this.logger.info(`Статус процесса изменен: ${oldStatus} -> ${context.state.status}`);
+        this.logger.debug(`context.state === state: ${context.state === (context as any).state}`);
+
         // Удаляем обработчик прерывания
         if (interruptHandler) {
           process.off('SIGINT', interruptHandler);
           process.off('SIGTERM', interruptHandler);
         }
-        
+
         return {
           success: false,
           filePath,
