@@ -99,6 +99,11 @@ export class InteractiveDisplay implements IProgressDisplay {
 
     this.isInitialized = true;
 
+    // Очищаем основной буфер перед входом в альтернативный
+    // Это важно при возобновлении, чтобы не оставались артефакты от ResumeSelector
+    this.renderer.clearScreen();
+    this.renderer.moveCursor(1, 1);
+
     // Входим в альтернативный буфер
     this.renderer.enterAlternateBuffer();
 

@@ -228,12 +228,15 @@ export class InteractiveMenu {
    */
   private cleanup(): void {
     this.isActive = false;
-    
+
     if (this.input.isTTY) {
       this.input.setRawMode(false);
     }
-    
+
     this.renderer.showCursor();
+
+    // Очищаем строку перед переходом на новую, чтобы не оставлять артефакты
+    this.renderer.clearLine();
     this.renderer.writeLine();
   }
 
