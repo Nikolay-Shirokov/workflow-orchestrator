@@ -474,6 +474,54 @@ export class InteractiveDisplay implements IProgressDisplay {
   }
 
   /**
+   * Синхронизация с загруженным состоянием (для resume)
+   * Обновляет статусы шагов на основе completedSteps и history
+   */
+  public syncWithState(workflowState: WorkflowState): void {
+    if (!this.state) {
+      return;
+    }
+
+    // Обновляем статусы шагов на основе completedSteps
+    const completedStepIds = new Set(workflowState.completedSteps);
+
+    // Создаем карту истории для получения информации о выполненных шагах
+    const historyMap = new Map(
+      workflowState.history.map(h => [h.stepId, h])
+    );
+
+    // Обновляем каждый шаг
+    const updatedSteps = this.state.steps.map(step => {
+      const history = historyMap.get(step.id);
+
+      if (completedStepIds.has(step.id) && history) {
+        // Шаг выполнен - обновляем статус и информацию
+        return {
+          ...step,
+          status: history.status as DisplayStepStatus,
+          duration: history.executionTime,
+          artifacts: history.artifacts,
+          error: history.error
+        };
+      }
+
+      return step;
+    });
+
+    // Подсчитываем количество завершенных шагов
+    const completedCount = updatedSteps.filter(s => s.status === 'completed').length;
+
+    // Обновляем состояние
+    this.state = {
+      ...this.state,
+      steps: updatedSteps,
+      completedSteps: completedCount
+    };
+
+    this.render();
+  }
+
+  /**
    * Обработчик начала шага
    */
   public onStepStart(_step: WorkflowStep, stepNumber: number): void {

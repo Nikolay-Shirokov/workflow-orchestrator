@@ -40,6 +40,14 @@ export class ProgressDisplay implements IProgressDisplay {
   }
 
   /**
+   * Синхронизация с загруженным состоянием (для resume)
+   * В логовом режиме не требуется - логи не сохраняются
+   */
+  syncWithState(_state: WorkflowState): void {
+    // Ничего не делаем - логи линейные и не требуют синхронизации
+  }
+
+  /**
    * Обработчик начала шага
    */
   onStepStart(step: WorkflowStep, stepNumber: number): void {

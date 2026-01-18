@@ -36,6 +36,9 @@ export interface IProgressDisplay {
   /** Обработчик завершения параллельного выполнения */
   onParallelComplete?(results: Array<{ stepId: string; status: string }>): void;
 
+  /** Синхронизация с загруженным состоянием (для resume) */
+  syncWithState?(state: WorkflowState): void;
+
   /** Финализация отображения - вызывается после всех интерактивных действий */
   finalize?(): void;
 }

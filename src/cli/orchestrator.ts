@@ -202,11 +202,21 @@ export class WorkflowOrchestrator {
       progress.onWorkflowStart(config);
     }
 
+    // Загружаем состояние для синхронизации с progress display
+    // Это важно для resume - чтобы показать уже выполненные шаги
+    const loadedState = await this.stateManager.loadState(sessionId);
+
+    // Синхронизируем progress display с загруженным состоянием
+    // Это обновит статусы шагов в InteractiveDisplay
+    if (progress && typeof progress.syncWithState === 'function') {
+      progress.syncWithState(loadedState);
+    }
+
     // Возобновление выполнения с учетом выбранного шага
     // Requirements 14.5, 14.6, 14.7
     const state = await this.workflowEngine.resume(
-      sessionId, 
-      config, 
+      sessionId,
+      config,
       progress,
       options.fromStep
     );
