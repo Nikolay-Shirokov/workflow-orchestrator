@@ -745,6 +745,12 @@ export class InteractiveDisplay implements IProgressDisplay {
    * Установка обработчиков сигналов для корректного завершения
    */
   private setupSignalHandlers(): void {
+    // Увеличиваем лимит слушателей для тестов (0 = неограниченно)
+    const currentMaxListeners = process.getMaxListeners();
+    if (currentMaxListeners !== 0) {
+      process.setMaxListeners(0);
+    }
+
     const sigintHandler: NodeJS.SignalsListener = () => {
       this.handleInterruption();
     };
