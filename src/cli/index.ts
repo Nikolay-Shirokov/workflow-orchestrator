@@ -144,9 +144,36 @@ export function createCLI(): Command {
             progress.finalize();
           }
 
-          logger.info(`✓ Процесс завершен успешно (сессия: ${state.sessionId})`);
-          logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
-          logger.info(`  Создано артефактов: ${Object.keys(state.artifacts).length}`);
+          // В интерактивном режиме выводим напрямую в stdout после выхода из alt buffer
+          if (interactivePreferred) {
+            process.stdout.write('\n');
+            process.stdout.write('═'.repeat(60) + '\n');
+            process.stdout.write('✓ Процесс завершен успешно\n');
+            process.stdout.write('═'.repeat(60) + '\n');
+            process.stdout.write('  Workflow: ' + state.workflowName + ' v' + state.workflowVersion + '\n');
+            process.stdout.write('  Сессия: ' + state.sessionId + '\n');
+            process.stdout.write('  Выполнено шагов: ' + state.completedSteps.length + '\n');
+            process.stdout.write('  Создано артефактов: ' + Object.keys(state.artifacts).length + '\n');
+
+            // Выводим основной артефакт, если есть
+            const mainArtifacts = Object.entries(state.artifacts).filter(([key]) =>
+              key.includes('document') || key.includes('result') || key.includes('output')
+            );
+            if (mainArtifacts.length > 0) {
+              process.stdout.write('  Основной документ: ' + mainArtifacts[0][1] + '\n');
+            }
+
+            process.stdout.write('═'.repeat(60) + '\n');
+            process.stdout.write('\n');
+
+            // Даем время на flush буфера перед exit
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } else {
+            logger.info(`✓ Процесс завершен успешно (сессия: ${state.sessionId})`);
+            logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+            logger.info(`  Создано артефактов: ${Object.keys(state.artifacts).length}`);
+          }
+
           process.exit(0);
         } else if (state.status === 'paused') {
           // Финализируем интерактивный режим
@@ -307,8 +334,35 @@ export function createCLI(): Command {
             progress.finalize();
           }
 
-          logger.info(`✓ Процесс завершен успешно`);
-          logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+          // В интерактивном режиме выводим напрямую в stdout после выхода из alt buffer
+          if (interactivePreferred) {
+            process.stdout.write('\n');
+            process.stdout.write('═'.repeat(60) + '\n');
+            process.stdout.write('✓ Процесс завершен успешно\n');
+            process.stdout.write('═'.repeat(60) + '\n');
+            process.stdout.write('  Workflow: ' + state.workflowName + ' v' + state.workflowVersion + '\n');
+            process.stdout.write('  Сессия: ' + state.sessionId + '\n');
+            process.stdout.write('  Выполнено шагов: ' + state.completedSteps.length + '\n');
+            process.stdout.write('  Создано артефактов: ' + Object.keys(state.artifacts).length + '\n');
+
+            // Выводим основной артефакт, если есть
+            const mainArtifacts = Object.entries(state.artifacts).filter(([key]) =>
+              key.includes('document') || key.includes('result') || key.includes('output')
+            );
+            if (mainArtifacts.length > 0) {
+              process.stdout.write('  Основной документ: ' + mainArtifacts[0][1] + '\n');
+            }
+
+            process.stdout.write('═'.repeat(60) + '\n');
+            process.stdout.write('\n');
+
+            // Даем время на flush буфера перед exit
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } else {
+            logger.info(`✓ Процесс завершен успешно`);
+            logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+          }
+
           process.exit(0);
         } else if (state.status === 'paused') {
           // Финализируем интерактивный режим

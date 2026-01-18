@@ -425,7 +425,7 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       // Requirements 14.5: Инициализация артефактами всех предыдущих шагов
       // Очищаем completedSteps и оставляем только шаги до выбранного
       const stepsBeforeSelected = config.steps.slice(0, fromStep - 1).map(s => s.id);
-      state.completedSteps = state.completedSteps.filter(stepId => 
+      state.completedSteps = state.completedSteps.filter(stepId =>
         stepsBeforeSelected.includes(stepId)
       );
       // Requirements 14.6: Игнорирование артефактов выбранного и последующих шагов
@@ -439,9 +439,39 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
         state.history.flatMap(history => history.artifacts)
       );
       state.artifacts = Object.fromEntries(
-        Object.entries(state.artifacts).filter(([, artifactPath]) => 
+        Object.entries(state.artifacts).filter(([, artifactPath]) =>
           allowedArtifacts.has(artifactPath)
         )
+      );
+
+      // КРИТИЧНО: Очищаем контекст от данных шагов, которые будут переВыполнены
+      // Собираем все output ключи из шагов начиная с выбранного
+      const stepsToReset = config.steps.slice(fromStep - 1); // Шаги от выбранного и далее
+      const outputKeysToRemove = new Set<string>();
+
+      for (const step of stepsToReset) {
+        if (step.outputs) {
+          for (const outputKey of Object.keys(step.outputs)) {
+            outputKeysToRemove.add(outputKey);
+          }
+        }
+      }
+
+      // Удаляем эти ключи из контекста
+      for (const key of outputKeysToRemove) {
+        if (key in state.context) {
+          delete state.context[key];
+          this.logger.debug(`Удален ключ из контекста при resume: ${key}`);
+        }
+      }
+
+      // Также удаляем служебные ключи от user_input шагов
+      if ('awaiting_user_input' in state.context) {
+        delete state.context['awaiting_user_input'];
+      }
+
+      this.logger.info(
+        `Очищено ${outputKeysToRemove.size} ключей из контекста для переВыполнения шагов`
       );
 
       // Устанавливаем текущий шаг
