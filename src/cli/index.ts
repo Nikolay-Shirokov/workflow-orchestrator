@@ -146,6 +146,9 @@ export function createCLI(): Command {
 
           // В интерактивном режиме выводим напрямую в stdout после выхода из alt buffer
           if (interactivePreferred) {
+            // Находим основной документ
+            const mainOutput = await findMainOutputPath(state);
+
             process.stdout.write('\n');
             process.stdout.write('═'.repeat(60) + '\n');
             process.stdout.write('✓ Процесс завершен успешно\n');
@@ -155,12 +158,9 @@ export function createCLI(): Command {
             process.stdout.write('  Выполнено шагов: ' + state.completedSteps.length + '\n');
             process.stdout.write('  Создано артефактов: ' + Object.keys(state.artifacts).length + '\n');
 
-            // Выводим основной артефакт, если есть
-            const mainArtifacts = Object.entries(state.artifacts).filter(([key]) =>
-              key.includes('document') || key.includes('result') || key.includes('output')
-            );
-            if (mainArtifacts.length > 0) {
-              process.stdout.write('  Основной документ: ' + mainArtifacts[0][1] + '\n');
+            // Выводим путь к основному документу
+            if (mainOutput) {
+              process.stdout.write('  Основной документ: ' + mainOutput + '\n');
             }
 
             process.stdout.write('═'.repeat(60) + '\n');
@@ -336,6 +336,9 @@ export function createCLI(): Command {
 
           // В интерактивном режиме выводим напрямую в stdout после выхода из alt buffer
           if (interactivePreferred) {
+            // Находим основной документ
+            const mainOutput = await findMainOutputPath(state);
+
             process.stdout.write('\n');
             process.stdout.write('═'.repeat(60) + '\n');
             process.stdout.write('✓ Процесс завершен успешно\n');
@@ -345,12 +348,9 @@ export function createCLI(): Command {
             process.stdout.write('  Выполнено шагов: ' + state.completedSteps.length + '\n');
             process.stdout.write('  Создано артефактов: ' + Object.keys(state.artifacts).length + '\n');
 
-            // Выводим основной артефакт, если есть
-            const mainArtifacts = Object.entries(state.artifacts).filter(([key]) =>
-              key.includes('document') || key.includes('result') || key.includes('output')
-            );
-            if (mainArtifacts.length > 0) {
-              process.stdout.write('  Основной документ: ' + mainArtifacts[0][1] + '\n');
+            // Выводим путь к основному документу
+            if (mainOutput) {
+              process.stdout.write('  Основной документ: ' + mainOutput + '\n');
             }
 
             process.stdout.write('═'.repeat(60) + '\n');
