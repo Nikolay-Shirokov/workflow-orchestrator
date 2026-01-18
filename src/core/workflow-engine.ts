@@ -698,6 +698,14 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
         // Это важно для шагов user_input, которые устанавливают статус 'paused'
         const wasPausedByStep = state.status === 'paused';
 
+        // Если шаг приостановил процесс, выходим из цикла БЕЗ обновления истории
+        // Шаг останется в pending и будет выполнен при возобновлении
+        if (wasPausedByStep) {
+          this.logger.info(`Процесс приостановлен на шаге ${stepId}. Шаг НЕ добавлен в историю выполнения.`);
+          await this.stateManager.saveState(state);
+          return state;
+        }
+
         // Обновление состояния после успешного выполнения
         await this.updateStateAfterStep(state, step, result);
 
@@ -708,13 +716,6 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
           if (history) {
             progress.onStepComplete(step, history);
           }
-        }
-
-        // Если шаг приостановил процесс, выходим из цикла
-        if (wasPausedByStep) {
-          this.logger.info(`Процесс приостановлен на шаге ${stepId}. Выход из цикла выполнения.`);
-          await this.stateManager.saveState(state);
-          return state;
         }
 
       } catch (error) {
