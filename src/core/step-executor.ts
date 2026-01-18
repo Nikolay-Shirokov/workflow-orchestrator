@@ -1001,7 +1001,7 @@ export class DefaultStepExecutor implements StepExecutor {
           return result as 'continue' | 'postpone';
         }
       : undefined;
-    
+
     // Создаем обертку для context.logger, чтобы использовать его с FileInputHandler
     const loggerWrapper = {
       debug: (message: string, ...args: unknown[]) => context.logger.debug(message, ...args),
@@ -1009,7 +1009,9 @@ export class DefaultStepExecutor implements StepExecutor {
       warn: (message: string, ...args: unknown[]) => context.logger.warn(message, ...args),
       error: (message: string, ...args: unknown[]) => context.logger.error(message, ...args)
     };
-    
+
+    context.logger.debug(`user_input шаг ${step.id}: progress=${!!progress}, showMenu=${!!showMenu}, menuHandler=${!!menuHandler}`);
+
     const fileInputHandler = new FileInputHandler(
       templateGenerator,
       editorManager,

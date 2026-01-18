@@ -66,12 +66,15 @@ export class FileInputHandler {
     const startTime = Date.now();
     let filePath: string | undefined;
     let interruptHandler: NodeJS.SignalsListener | undefined;
-    
+
     try {
       this.logger.info(`Начало обработки файлового ввода для шага: ${step.id}`);
-      
+      this.logger.debug(`testMode: ${this.testMode}`);
+      this.logger.debug(`menuHandler: ${this.menuHandler ? 'есть' : 'нет'}`);
+
       // 1. Создание файла-шаблона
       filePath = await this.createTemplateFile(step, context);
+      this.logger.info(`Файл создан: ${filePath}`);
       
       // Устанавливаем обработчик прерывания для автосохранения
       if (!this.testMode) {
@@ -87,10 +90,14 @@ export class FileInputHandler {
       const editorConfig = step.editor || (context.state.context.default_editor as EditorConfig | undefined);
       this.logger.debug(`Конфигурация редактора: ${JSON.stringify(editorConfig)}`);
       this.logger.debug(`context.state.context.default_editor: ${JSON.stringify(context.state.context.default_editor)}`);
+
+      this.logger.info(`Открытие файла в редакторе...`);
       await this.openInEditor(filePath, editorConfig);
-      
+      this.logger.info(`Редактор закрыт, ожидание подтверждения пользователя...`);
+
       // 3. Ожидание подтверждения пользователя
       const userCommand = await this.waitForUserConfirmation(filePath);
+      this.logger.info(`Пользователь выбрал: ${userCommand}`);
       
       // Если пользователь выбрал отложить
       if (userCommand === 'postpone') {

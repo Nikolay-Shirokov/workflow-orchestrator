@@ -466,15 +466,25 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
         this.logger.info(`Удаление ${artifactsToDelete.length} артефактов переВыполняемых шагов...`);
         const fs = await import('fs/promises');
 
+        let deletedCount = 0;
+        let skippedCount = 0;
+
         for (const artifactPath of artifactsToDelete) {
           try {
+            this.logger.debug(`Попытка удалить: ${artifactPath}`);
             await fs.unlink(artifactPath);
-            this.logger.debug(`Удален файл: ${artifactPath}`);
+            deletedCount++;
+            this.logger.info(`✓ Удален файл: ${artifactPath}`);
           } catch (error) {
+            skippedCount++;
             // Игнорируем ошибки удаления (файл может не существовать)
-            this.logger.debug(`Не удалось удалить файл ${artifactPath}: ${(error as Error).message}`);
+            this.logger.debug(`✗ Не удалось удалить файл ${artifactPath}: ${(error as Error).message}`);
           }
         }
+
+        this.logger.info(`Удалено файлов: ${deletedCount}, пропущено: ${skippedCount}`);
+      } else {
+        this.logger.debug(`Нет артефактов для удаления`);
       }
 
       // КРИТИЧНО: Очищаем контекст от данных шагов, которые будут переВыполнены
