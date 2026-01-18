@@ -45,6 +45,7 @@ export class InteractiveDisplay implements IProgressDisplay {
     sigint: NodeJS.SignalsListener;
     sigterm: NodeJS.SignalsListener;
   };
+  private lastRenderedLines: string[] = [];
 
   constructor(renderer?: TerminalRenderer, config?: DisplayConfig) {
     this.renderer = renderer || new TerminalRenderer();
@@ -110,6 +111,7 @@ export class InteractiveDisplay implements IProgressDisplay {
 
     // Подписываемся на изменение размера терминала
     this.renderer.onResize(() => {
+      this.lastRenderedLines = []; // Сброс кеша при resize
       this.render();
     });
 
@@ -170,6 +172,37 @@ export class InteractiveDisplay implements IProgressDisplay {
       }
     }
 
+    // Дифференциальная перерисовка
+    this.renderDiff(lines);
+    this.lastRenderedLines = lines;
+  }
+
+  /**
+   * Умная перерисовка - только изменившиеся строки
+   */
+  private renderDiff(newLines: string[]): void {
+    const oldLines = this.lastRenderedLines;
+
+    // Полная перерисовка при первом вызове или изменении размера
+    if (oldLines.length === 0 || oldLines.length !== newLines.length) {
+      this.renderFull(newLines);
+      return;
+    }
+
+    // Построчное обновление
+    for (let i = 0; i < newLines.length; i++) {
+      if (newLines[i] !== oldLines[i]) {
+        this.renderer.moveCursor(1, i + 1);
+        this.renderer.clearLine();
+        this.renderer.write(newLines[i]);
+      }
+    }
+  }
+
+  /**
+   * Полная перерисовка экрана
+   */
+  private renderFull(lines: string[]): void {
     this.renderer.clearScreen();
     this.renderer.moveCursor(1, 1);
 
@@ -766,6 +799,7 @@ export class InteractiveDisplay implements IProgressDisplay {
 
     this.isInitialized = false;
     this.state = null;
+    this.lastRenderedLines = [];
   }
 
   /**
