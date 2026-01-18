@@ -138,7 +138,13 @@ export function createCLI(): Command {
         // Вывод результата
         if (state.status === 'completed') {
           await handleAutoOpen(state, options, logger);
-          logger.info(`OK Процесс завершен успешно (сессия: ${state.sessionId})`);
+
+          // Финализируем интерактивный режим после всех действий
+          if (progress && typeof progress.finalize === 'function') {
+            progress.finalize();
+          }
+
+          logger.info(`✓ Процесс завершен успешно (сессия: ${state.sessionId})`);
           logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
           logger.info(`  Создано артефактов: ${Object.keys(state.artifacts).length}`);
           process.exit(0);
@@ -269,7 +275,13 @@ export function createCLI(): Command {
         // Вывод результата
         if (state.status === 'completed') {
           await handleAutoOpen(state, options, logger);
-          logger.info(`OK Процесс завершен успешно`);
+
+          // Финализируем интерактивный режим после всех действий
+          if (progress && typeof progress.finalize === 'function') {
+            progress.finalize();
+          }
+
+          logger.info(`✓ Процесс завершен успешно`);
           logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
           process.exit(0);
         } else if (state.status === 'paused') {

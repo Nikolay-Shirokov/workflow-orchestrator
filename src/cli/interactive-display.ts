@@ -511,9 +511,9 @@ export class InteractiveDisplay implements IProgressDisplay {
       // Последняя отрисовка в альтернативном буфере
       this.render();
 
-      // Выходим из альтернативного буфера
+      // Показываем курсор, но НЕ выходим из альтернативного буфера
+      // Выход произойдет позже в finalize() после обработки открытия файла
       this.renderer.showCursor();
-      this.renderer.exitAlternateBuffer();
 
     } catch (error) {
       // Даже при ошибке восстанавливаем терминал
@@ -521,9 +521,11 @@ export class InteractiveDisplay implements IProgressDisplay {
         this.renderer.showCursor();
         this.renderer.exitAlternateBuffer();
       } catch {}
+      this.isInitialized = false;
+      return;
     }
 
-    // Безопасный вывод итоговой информации
+    // Безопасный вывод итоговой информации В альтернативном буфере
     try {
       this.renderer.writeLine('');
       this.renderer.writeLine('═'.repeat(60));
@@ -549,9 +551,31 @@ export class InteractiveDisplay implements IProgressDisplay {
 
       this.renderer.writeLine(`Session: ${state.sessionId}`);
       this.renderer.writeLine('═'.repeat(60));
+      this.renderer.writeLine('');
     } catch (error) {
       // Логируем, но не прерываем
       console.error('Error outputting final information:', error);
+    }
+
+    // НЕ сбрасываем isInitialized, чтобы finalize() мог быть вызван
+  }
+
+  /**
+   * Финализация интерактивного режима - выход из альтернативного буфера
+   * Должен вызываться после onWorkflowComplete() и всех интерактивных действий
+   */
+  public finalize(): void {
+    if (!this.isInitialized) {
+      return;
+    }
+
+    try {
+      this.renderer.exitAlternateBuffer();
+    } catch (error) {
+      // Последняя попытка выйти из буфера
+      try {
+        this.renderer.exitAlternateBuffer();
+      } catch {}
     }
 
     this.isInitialized = false;
@@ -627,6 +651,9 @@ export class InteractiveDisplay implements IProgressDisplay {
 
     // Показываем курсор для интерактивного меню
     this.renderer.showCursor();
+
+    // Добавляем перевод строки для отделения меню от основного интерфейса
+    this.renderer.writeLine('');
 
     // Создаем и отображаем меню
     const { InteractiveMenu } = await import('./interactive-menu.js');

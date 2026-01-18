@@ -171,6 +171,13 @@ export class ProgressDisplay implements IProgressDisplay {
   }
 
   /**
+   * Финализация отображения - пустая реализация для логового режима
+   */
+  finalize(): void {
+    // Не требуется для логового режима
+  }
+
+  /**
    * Создание индикатора прогресса
    */
   private createProgressBar(progress: number, width: number): string {
