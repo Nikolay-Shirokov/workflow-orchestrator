@@ -154,12 +154,19 @@ export function createCLI(): Command {
             progress.finalize();
           }
 
+          // Восстанавливаем уровень логирования для вывода информации
+          if (interactivePreferred && !options.verbose) {
+            logger.setLevel(LogLevel.INFO);
+          }
+
+          logger.info('');
           logger.info(`⏸ Процесс приостановлен (сессия: ${state.sessionId})`);
           logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
           logger.info(`  Текущий шаг: ${state.currentStep}`);
           logger.info('');
           logger.info(`→ Для продолжения выполните:`);
           logger.info(`  resume ${state.sessionId} ${configPath}`);
+          logger.info('');
           process.exit(0);
         } else {
           logger.error(`✗ Процесс завершился с ошибкой (статус: ${state.status})`);
@@ -297,12 +304,19 @@ export function createCLI(): Command {
             progress.finalize();
           }
 
+          // Восстанавливаем уровень логирования для вывода информации
+          if (interactivePreferred && !options.verbose) {
+            logger.setLevel(LogLevel.INFO);
+          }
+
+          logger.info('');
           logger.info(`⏸ Процесс снова приостановлен (сессия: ${state.sessionId})`);
           logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
           logger.info(`  Текущий шаг: ${state.currentStep}`);
           logger.info('');
           logger.info(`→ Для продолжения выполните:`);
           logger.info(`  resume ${state.sessionId} ${configPath}`);
+          logger.info('');
           process.exit(0);
         } else {
           logger.error(`✗ Процесс завершился с ошибкой (статус: ${state.status})`);
