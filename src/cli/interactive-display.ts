@@ -558,39 +558,56 @@ export class InteractiveDisplay implements IProgressDisplay {
       return;
     }
 
-    // Безопасный вывод итоговой информации В альтернативном буфере
-    // При паузе не выводим ничего - информация выведется в CLI после finalize()
-    if (state.status !== 'paused') {
-      try {
-        this.renderer.writeLine('');
-        this.renderer.writeLine('═'.repeat(60));
+    // Безопасный вывод итоговой информации
+    try {
+      this.renderer.writeLine('');
+      this.renderer.writeLine('═'.repeat(60));
 
-        if (state.status === 'completed') {
-          this.renderer.writeLine(
-            this.renderer.colorize('✓ Workflow completed successfully', TerminalColor.Green)
-          );
-        } else if (state.status === 'failed') {
-          this.renderer.writeLine(
-            this.renderer.colorize('✗ Workflow failed', TerminalColor.Red)
-          );
-        }
-
-        const totalTime = DisplayStateUtils.formatExecutionTime(Date.now() - this.state.startTime);
-        this.renderer.writeLine(`Total time: ${totalTime}`);
-        this.renderer.writeLine(`Completed steps: ${state.completedSteps.length}/${this.state.totalSteps}`);
-        this.renderer.writeLine(`Artifacts: ${Object.keys(state.artifacts).length}`);
-
-        if (state.errors.length > 0) {
-          this.renderer.writeLine(`Errors: ${state.errors.length}`);
-        }
-
-        this.renderer.writeLine(`Session: ${state.sessionId}`);
-        this.renderer.writeLine('═'.repeat(60));
-        this.renderer.writeLine('');
-      } catch (error) {
-        // Логируем, но не прерываем
-        console.error('Error outputting final information:', error);
+      if (state.status === 'completed') {
+        this.renderer.writeLine(
+          this.renderer.colorize('✓ Workflow completed successfully', TerminalColor.Green)
+        );
+      } else if (state.status === 'failed') {
+        this.renderer.writeLine(
+          this.renderer.colorize('✗ Workflow failed', TerminalColor.Red)
+        );
+      } else if (state.status === 'paused') {
+        this.renderer.writeLine(
+          this.renderer.colorize('⏸ Workflow paused', TerminalColor.Yellow)
+        );
       }
+
+      const totalTime = DisplayStateUtils.formatExecutionTime(Date.now() - this.state.startTime);
+      this.renderer.writeLine(`Total time: ${totalTime}`);
+      this.renderer.writeLine(`Completed steps: ${state.completedSteps.length}/${this.state.totalSteps}`);
+
+      if (state.status === 'paused') {
+        this.renderer.writeLine(`Current step: ${state.currentStep}`);
+      }
+
+      this.renderer.writeLine(`Artifacts: ${Object.keys(state.artifacts).length}`);
+
+      if (state.errors.length > 0) {
+        this.renderer.writeLine(`Errors: ${state.errors.length}`);
+      }
+
+      this.renderer.writeLine(`Session: ${state.sessionId}`);
+
+      if (state.status === 'paused') {
+        this.renderer.writeLine('');
+        this.renderer.writeLine('→ To resume:');
+        this.renderer.writeLine(`  resume ${state.sessionId} <config-file>`);
+      }
+
+      this.renderer.writeLine('═'.repeat(60));
+
+      // Для паузы НЕ добавляем пустую строку в конце - выйдем из буфера сразу
+      if (state.status !== 'paused') {
+        this.renderer.writeLine('');
+      }
+    } catch (error) {
+      // Логируем, но не прерываем
+      console.error('Error outputting final information:', error);
     }
 
     // НЕ сбрасываем isInitialized, чтобы finalize() мог быть вызван
@@ -607,10 +624,15 @@ export class InteractiveDisplay implements IProgressDisplay {
 
     try {
       this.renderer.exitAlternateBuffer();
+
+      // После выхода из альтернативного буфера добавляем несколько переводов строк
+      // чтобы гарантировать, что последующий вывод будет виден
+      process.stdout.write('\n\n');
     } catch (error) {
       // Последняя попытка выйти из буфера
       try {
         this.renderer.exitAlternateBuffer();
+        process.stdout.write('\n\n');
       } catch {}
     }
 

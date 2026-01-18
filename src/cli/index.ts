@@ -154,19 +154,31 @@ export function createCLI(): Command {
             progress.finalize();
           }
 
-          // Восстанавливаем уровень логирования для вывода информации
-          if (interactivePreferred && !options.verbose) {
-            logger.setLevel(LogLevel.INFO);
-          }
+          // В интерактивном режиме выводим напрямую в stdout после выхода из alt buffer
+          // т.к. logger может не работать из-за уровня ERROR
+          if (interactivePreferred) {
+            process.stdout.write('\n');
+            process.stdout.write('⏸ Процесс приостановлен (сессия: ' + state.sessionId + ')\n');
+            process.stdout.write('  Выполнено шагов: ' + state.completedSteps.length + '\n');
+            process.stdout.write('  Текущий шаг: ' + state.currentStep + '\n');
+            process.stdout.write('\n');
+            process.stdout.write('→ Для продолжения выполните:\n');
+            process.stdout.write('  resume ' + state.sessionId + ' ' + configPath + '\n');
+            process.stdout.write('\n');
 
-          logger.info('');
-          logger.info(`⏸ Процесс приостановлен (сессия: ${state.sessionId})`);
-          logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
-          logger.info(`  Текущий шаг: ${state.currentStep}`);
-          logger.info('');
-          logger.info(`→ Для продолжения выполните:`);
-          logger.info(`  resume ${state.sessionId} ${configPath}`);
-          logger.info('');
+            // Даем время на flush буфера перед exit
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } else {
+            // В логовом режиме используем logger
+            logger.info('');
+            logger.info(`⏸ Процесс приостановлен (сессия: ${state.sessionId})`);
+            logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+            logger.info(`  Текущий шаг: ${state.currentStep}`);
+            logger.info('');
+            logger.info(`→ Для продолжения выполните:`);
+            logger.info(`  resume ${state.sessionId} ${configPath}`);
+            logger.info('');
+          }
           process.exit(0);
         } else {
           logger.error(`✗ Процесс завершился с ошибкой (статус: ${state.status})`);
@@ -304,19 +316,30 @@ export function createCLI(): Command {
             progress.finalize();
           }
 
-          // Восстанавливаем уровень логирования для вывода информации
-          if (interactivePreferred && !options.verbose) {
-            logger.setLevel(LogLevel.INFO);
-          }
+          // В интерактивном режиме выводим напрямую в stdout после выхода из alt buffer
+          if (interactivePreferred) {
+            process.stdout.write('\n');
+            process.stdout.write('⏸ Процесс снова приостановлен (сессия: ' + state.sessionId + ')\n');
+            process.stdout.write('  Выполнено шагов: ' + state.completedSteps.length + '\n');
+            process.stdout.write('  Текущий шаг: ' + state.currentStep + '\n');
+            process.stdout.write('\n');
+            process.stdout.write('→ Для продолжения выполните:\n');
+            process.stdout.write('  resume ' + state.sessionId + ' ' + configPath + '\n');
+            process.stdout.write('\n');
 
-          logger.info('');
-          logger.info(`⏸ Процесс снова приостановлен (сессия: ${state.sessionId})`);
-          logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
-          logger.info(`  Текущий шаг: ${state.currentStep}`);
-          logger.info('');
-          logger.info(`→ Для продолжения выполните:`);
-          logger.info(`  resume ${state.sessionId} ${configPath}`);
-          logger.info('');
+            // Даем время на flush буфера перед exit
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } else {
+            // В логовом режиме используем logger
+            logger.info('');
+            logger.info(`⏸ Процесс снова приостановлен (сессия: ${state.sessionId})`);
+            logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+            logger.info(`  Текущий шаг: ${state.currentStep}`);
+            logger.info('');
+            logger.info(`→ Для продолжения выполните:`);
+            logger.info(`  resume ${state.sessionId} ${configPath}`);
+            logger.info('');
+          }
           process.exit(0);
         } else {
           logger.error(`✗ Процесс завершился с ошибкой (статус: ${state.status})`);
