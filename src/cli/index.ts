@@ -149,10 +149,17 @@ export function createCLI(): Command {
           logger.info(`  Создано артефактов: ${Object.keys(state.artifacts).length}`);
           process.exit(0);
         } else if (state.status === 'paused') {
-          logger.info(`○ Процесс приостановлен (сессия: ${state.sessionId})`);
+          // Финализируем интерактивный режим
+          if (progress && typeof progress.finalize === 'function') {
+            progress.finalize();
+          }
+
+          logger.info(`⏸ Процесс приостановлен (сессия: ${state.sessionId})`);
           logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
           logger.info(`  Текущий шаг: ${state.currentStep}`);
-          logger.info(`  Для продолжения используйте: resume ${state.sessionId}`);
+          logger.info('');
+          logger.info(`→ Для продолжения выполните:`);
+          logger.info(`  resume ${state.sessionId} ${configPath}`);
           process.exit(0);
         } else {
           logger.error(`✗ Процесс завершился с ошибкой (статус: ${state.status})`);
@@ -285,9 +292,17 @@ export function createCLI(): Command {
           logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
           process.exit(0);
         } else if (state.status === 'paused') {
-          logger.info(`○ Процесс снова приостановлен (сессия: ${state.sessionId})`);
+          // Финализируем интерактивный режим
+          if (progress && typeof progress.finalize === 'function') {
+            progress.finalize();
+          }
+
+          logger.info(`⏸ Процесс снова приостановлен (сессия: ${state.sessionId})`);
           logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
           logger.info(`  Текущий шаг: ${state.currentStep}`);
+          logger.info('');
+          logger.info(`→ Для продолжения выполните:`);
+          logger.info(`  resume ${state.sessionId} ${configPath}`);
           process.exit(0);
         } else {
           logger.error(`✗ Процесс завершился с ошибкой (статус: ${state.status})`);

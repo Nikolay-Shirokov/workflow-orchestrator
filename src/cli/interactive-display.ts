@@ -571,11 +571,20 @@ export class InteractiveDisplay implements IProgressDisplay {
         this.renderer.writeLine(
           this.renderer.colorize('✗ Workflow failed', TerminalColor.Red)
         );
+      } else if (state.status === 'paused') {
+        this.renderer.writeLine(
+          this.renderer.colorize('⏸ Workflow paused', TerminalColor.Yellow)
+        );
       }
 
       const totalTime = DisplayStateUtils.formatExecutionTime(Date.now() - this.state.startTime);
       this.renderer.writeLine(`Total time: ${totalTime}`);
       this.renderer.writeLine(`Completed steps: ${state.completedSteps.length}/${this.state.totalSteps}`);
+
+      if (state.status === 'paused') {
+        this.renderer.writeLine(`Current step: ${state.currentStep}`);
+      }
+
       this.renderer.writeLine(`Artifacts: ${Object.keys(state.artifacts).length}`);
 
       if (state.errors.length > 0) {
@@ -583,6 +592,17 @@ export class InteractiveDisplay implements IProgressDisplay {
       }
 
       this.renderer.writeLine(`Session: ${state.sessionId}`);
+
+      if (state.status === 'paused') {
+        this.renderer.writeLine('');
+        this.renderer.writeLine(
+          this.renderer.colorize('→ To resume:', TerminalColor.Cyan)
+        );
+        this.renderer.writeLine(
+          this.renderer.bold(`  resume ${state.sessionId} <config-file>`)
+        );
+      }
+
       this.renderer.writeLine('═'.repeat(60));
       this.renderer.writeLine('');
     } catch (error) {
