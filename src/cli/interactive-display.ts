@@ -526,11 +526,17 @@ export class InteractiveDisplay implements IProgressDisplay {
    */
   public onStepStart(_step: WorkflowStep, stepNumber: number): void {
     if (!this.state) {
+      console.error('[InteractiveDisplay] onStepStart: state is null');
       return;
     }
 
     const stepIndex = stepNumber - 1;
+    console.log(`[InteractiveDisplay] onStepStart: step #${stepNumber} (index ${stepIndex}, id ${_step.id})`);
+
     this.state = DisplayStateUtils.updateStateOnStepStart(this.state, stepIndex);
+
+    console.log(`[InteractiveDisplay] After update: step ${stepIndex} status = ${this.state.steps[stepIndex].status}`);
+
     this.render();
   }
 
@@ -539,18 +545,23 @@ export class InteractiveDisplay implements IProgressDisplay {
    */
   public onStepComplete(step: WorkflowStep, history: StepHistory): void {
     if (!this.state) {
+      console.error('[InteractiveDisplay] onStepComplete: state is null');
       return;
     }
 
     const stepIndex = this.state.steps.findIndex(s => s.id === step.id);
     if (stepIndex < 0) {
+      console.error(`[InteractiveDisplay] onStepComplete: step ${step.id} not found in state.steps`);
+      console.error(`  Available step IDs: ${this.state.steps.map(s => s.id).join(', ')}`);
       return;
     }
 
-    const status = history.status === 'success' ? 'completed' : 
+    const status = history.status === 'success' ? 'completed' :
                    history.status === 'failed' ? 'failed' : 'skipped';
-    
+
     const duration = history.executionTime;
+
+    console.log(`[InteractiveDisplay] onStepComplete: step ${step.id} (index ${stepIndex}) -> ${status}, duration ${duration}ms`);
 
     this.state = DisplayStateUtils.updateStateOnStepComplete(
       this.state,
@@ -560,6 +571,8 @@ export class InteractiveDisplay implements IProgressDisplay {
       history.artifacts,
       history.error
     );
+
+    console.log(`[InteractiveDisplay] After update: step ${stepIndex} status = ${this.state.steps[stepIndex].status}`);
 
     this.render();
   }
