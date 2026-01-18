@@ -521,9 +521,14 @@ export class InteractiveDisplay implements IProgressDisplay {
     });
 
     // Подсчитываем количество завершенных шагов
-    const completedCount = updatedSteps.filter(s => s.status === 'completed').length;
+    // ВАЖНО: Используем ту же логику, что и в updateStateOnStepComplete
+    // Считаем completed, failed и skipped шаги
+    const completedCount = updatedSteps.filter(
+      s => s.status === 'completed' || s.status === 'failed' || s.status === 'skipped'
+    ).length;
 
     console.log(`[InteractiveDisplay] syncWithState: completedCount = ${completedCount}`);
+    console.log(`[InteractiveDisplay] syncWithState: step statuses = ${updatedSteps.map(s => `${s.id}:${s.status}`).join(', ')}`);
 
     // Обновляем состояние
     this.state = {
