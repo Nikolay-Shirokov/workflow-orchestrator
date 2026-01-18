@@ -431,6 +431,15 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       // Requirements 14.6: Игнорирование артефактов выбранного и последующих шагов
       const stepsToKeep = new Set(stepsBeforeSelected);
 
+      // КРИТИЧНО: Перед очисткой собираем пути к файлам, которые нужно удалить
+      // Это важно для user_input шагов - их файлы должны быть пересозданы
+      const artifactsToDelete: string[] = [];
+      for (const historyEntry of state.history) {
+        if (!stepsToKeep.has(historyEntry.stepId)) {
+          artifactsToDelete.push(...historyEntry.artifacts);
+        }
+      }
+
       // Оставляем историю только для шагов до выбранного
       state.history = state.history.filter(h => stepsToKeep.has(h.stepId));
 
@@ -438,11 +447,35 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       const allowedArtifacts = new Set(
         state.history.flatMap(history => history.artifacts)
       );
+
+      // Также собираем пути из state.artifacts для удаления
+      for (const [, artifactPath] of Object.entries(state.artifacts)) {
+        if (!allowedArtifacts.has(artifactPath)) {
+          artifactsToDelete.push(artifactPath);
+        }
+      }
+
       state.artifacts = Object.fromEntries(
         Object.entries(state.artifacts).filter(([, artifactPath]) =>
           allowedArtifacts.has(artifactPath)
         )
       );
+
+      // Удаляем физические файлы артефактов
+      if (artifactsToDelete.length > 0) {
+        this.logger.info(`Удаление ${artifactsToDelete.length} артефактов переВыполняемых шагов...`);
+        const fs = await import('fs/promises');
+
+        for (const artifactPath of artifactsToDelete) {
+          try {
+            await fs.unlink(artifactPath);
+            this.logger.debug(`Удален файл: ${artifactPath}`);
+          } catch (error) {
+            // Игнорируем ошибки удаления (файл может не существовать)
+            this.logger.debug(`Не удалось удалить файл ${artifactPath}: ${(error as Error).message}`);
+          }
+        }
+      }
 
       // КРИТИЧНО: Очищаем контекст от данных шагов, которые будут переВыполнены
       // Собираем все output ключи из шагов начиная с выбранного
@@ -659,9 +692,7 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
     }
 
     // Выполнение шагов в порядке
-    let stepNumber = 0;
     for (const stepId of executionOrder) {
-      stepNumber++;
       const step = stepsMap.get(stepId);
       if (!step) {
         throw new WorkflowErrorClass({
@@ -678,6 +709,10 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
         });
       }
 
+      // ВАЖНО: Вычисляем глобальный номер шага из config.steps (1-based)
+      // Это необходимо для корректного отображения в InteractiveDisplay
+      const stepNumber = config.steps.findIndex(s => s.id === stepId) + 1;
+
       // Проверка условия выполнения шага
       if (!this.shouldExecuteStep(step, state)) {
         // Пропускаем шаг, добавляем его в историю как пропущенный
@@ -692,11 +727,11 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
           artifacts: [],
           error: `Условие не выполнено: ${step.condition}`
         };
-        
+
         state.history.push(skippedHistory);
         // НЕ добавляем в completedSteps - пропущенные шаги не считаются завершенными
         await this.stateManager.saveState(state);
-        
+
         continue;
       }
 
