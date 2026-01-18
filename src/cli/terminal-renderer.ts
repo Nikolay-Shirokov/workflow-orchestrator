@@ -247,6 +247,26 @@ export class TerminalRenderer {
   }
 
   /**
+   * Включение альтернативного буфера экрана
+   * Используется для создания "полноэкранного" интерфейса как в vim/htop
+   */
+  public enterAlternateBuffer(): void {
+    if (this.capabilities.supportsAnsi) {
+      this.output.write('\x1b[?1049h');
+    }
+  }
+
+  /**
+   * Выключение альтернативного буфера экрана
+   * Возвращает к основному буферу терминала
+   */
+  public exitAlternateBuffer(): void {
+    if (this.capabilities.supportsAnsi) {
+      this.output.write('\x1b[?1049l');
+    }
+  }
+
+  /**
    * Цветовое форматирование текста
    */
   public colorize(text: string, color: TerminalColor): string {
