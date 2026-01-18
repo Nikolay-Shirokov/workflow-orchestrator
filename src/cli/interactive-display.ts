@@ -94,11 +94,15 @@ export class InteractiveDisplay implements IProgressDisplay {
 
     this.isInitialized = true;
 
+    // Входим в альтернативный буфер
+    this.renderer.enterAlternateBuffer();
+
     // Скрываем курсор для чистого отображения
     this.renderer.hideCursor();
 
-    // Очищаем экран
+    // Очищаем экран и позиционируем курсор
     this.renderer.clearScreen();
+    this.renderer.moveCursor(1, 1);
 
     // Подписываемся на изменение размера терминала
     this.renderer.onResize(() => {
@@ -495,9 +499,14 @@ export class InteractiveDisplay implements IProgressDisplay {
 
     this.pauseRendering();
 
+    // Последняя отрисовка в альтернативном буфере
     this.render();
-    this.renderer.showCursor();
 
+    // Выходим из альтернативного буфера перед выводом итоговой информации
+    this.renderer.showCursor();
+    this.renderer.exitAlternateBuffer();
+
+    // Теперь в основном буфере - итоговая информация останется на экране
     this.renderer.writeLine('');
     this.renderer.writeLine('═'.repeat(60));
 
@@ -682,8 +691,9 @@ export class InteractiveDisplay implements IProgressDisplay {
       this.renderInterval = null;
     }
 
-    // Показываем курсор
+    // Показываем курсор и выходим из альтернативного буфера
     this.renderer.showCursor();
+    this.renderer.exitAlternateBuffer();
 
     // Очищаем ресурсы renderer
     this.renderer.dispose();
