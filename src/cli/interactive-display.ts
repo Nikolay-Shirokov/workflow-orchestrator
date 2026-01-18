@@ -41,6 +41,10 @@ export class InteractiveDisplay implements IProgressDisplay {
   private state: DisplayState | null = null;
   private isInitialized: boolean = false;
   private renderInterval: NodeJS.Timeout | null = null;
+  private signalHandlers?: {
+    sigint: NodeJS.SignalsListener;
+    sigterm: NodeJS.SignalsListener;
+  };
 
   constructor(renderer?: TerminalRenderer, config?: DisplayConfig) {
     this.renderer = renderer || new TerminalRenderer();
@@ -111,6 +115,9 @@ export class InteractiveDisplay implements IProgressDisplay {
 
     // Начальная отрисовка
     this.render();
+
+    // Устанавливаем обработчики сигналов
+    this.setupSignalHandlers();
   }
 
   /**
@@ -685,6 +692,13 @@ export class InteractiveDisplay implements IProgressDisplay {
    * Очистка ресурсов
    */
   public cleanup(): void {
+    // Удаляем обработчики сигналов
+    if (this.signalHandlers) {
+      process.off('SIGINT', this.signalHandlers.sigint);
+      process.off('SIGTERM', this.signalHandlers.sigterm);
+      this.signalHandlers = undefined;
+    }
+
     // Останавливаем интервал обновления, если он был запущен
     if (this.renderInterval) {
       clearInterval(this.renderInterval);
@@ -701,6 +715,38 @@ export class InteractiveDisplay implements IProgressDisplay {
     // Сбрасываем состояние
     this.isInitialized = false;
     this.state = null;
+  }
+
+  /**
+   * Установка обработчиков сигналов для корректного завершения
+   */
+  private setupSignalHandlers(): void {
+    const sigintHandler: NodeJS.SignalsListener = () => {
+      this.handleInterruption();
+    };
+
+    const sigtermHandler: NodeJS.SignalsListener = () => {
+      this.handleInterruption();
+    };
+
+    process.on('SIGINT', sigintHandler);
+    process.on('SIGTERM', sigtermHandler);
+
+    this.signalHandlers = {
+      sigint: sigintHandler,
+      sigterm: sigtermHandler
+    };
+  }
+
+  /**
+   * Обработка прерывания процесса
+   */
+  private handleInterruption(): void {
+    try {
+      this.cleanup();
+    } finally {
+      process.exit(130); // 128 + SIGINT(2)
+    }
   }
 
   /**
