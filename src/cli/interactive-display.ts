@@ -768,6 +768,10 @@ export class InteractiveDisplay implements IProgressDisplay {
       }, this.config.interactive.refreshInterval);
     }
 
+    // Сбрасываем кеш для полной перерисовки
+    // Это важно после паузы, когда терминал мог измениться
+    this.lastRenderedLines = [];
+
     // Перерисовываем интерфейс
     this.render();
   }
@@ -782,6 +786,15 @@ export class InteractiveDisplay implements IProgressDisplay {
       clearInterval(this.renderInterval);
       this.renderInterval = null;
     }
+  }
+
+  /**
+   * Принудительная полная перерисовка
+   * Используется в тестах для сброса кеша дифференциального рендеринга
+   */
+  public forceRender(): void {
+    this.lastRenderedLines = [];
+    this.render();
   }
 
   /**

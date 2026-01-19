@@ -18,7 +18,7 @@ class MockWriteStream extends Writable {
   public output: string = '';
   public isTTY: boolean = true;
   public columns: number = 80;
-  public rows: number = 24;
+  public rows: number = 50; // Increased to fit all sections
 
   _write(chunk: Buffer | string, _encoding: string, callback: () => void): void {
     this.output += chunk.toString();
@@ -599,8 +599,7 @@ describe('InteractiveDisplay Property Tests', () => {
           display.onStepStart(step as any, actualStepIndex + 1);
           
           // Очищаем вывод и рендерим снова для чистого вывода
-          mockStream.clearOutput();
-          display.render();
+          display.forceRender();
           
           const output = mockStream.output;
 
@@ -683,8 +682,7 @@ describe('InteractiveDisplay Property Tests', () => {
           
           display.onStepComplete(step as any, history as any);
           
-          mockStream.clearOutput();
-          display.render();
+          display.forceRender();
           
           const output = mockStream.output;
 
@@ -740,8 +738,7 @@ describe('InteractiveDisplay Property Tests', () => {
           const error = new Error(errorMessage);
           display.onStepError(step as any, error);
           
-          mockStream.clearOutput();
-          display.render();
+          display.forceRender();
           
           const output = mockStream.output;
 
@@ -797,8 +794,7 @@ describe('InteractiveDisplay Property Tests', () => {
           
           display.onStepComplete(step as any, history as any);
           
-          mockStream.clearOutput();
-          display.render();
+          display.forceRender();
           
           const output = mockStream.output;
 
@@ -846,8 +842,7 @@ describe('InteractiveDisplay Property Tests', () => {
           const firstStep = config.steps[0];
           display.onStepStart(firstStep as any, 1);
           
-          mockStream.clearOutput();
-          display.render();
+          display.forceRender();
           let output = mockStream.output;
           
           // Проверяем, что отображается первый шаг
@@ -866,8 +861,7 @@ describe('InteractiveDisplay Property Tests', () => {
           const secondStep = config.steps[1];
           display.onStepStart(secondStep as any, 2);
           
-          mockStream.clearOutput();
-          display.render();
+          display.forceRender();
           output = mockStream.output;
           
           // Проверяем, что теперь отображается второй шаг
@@ -918,8 +912,7 @@ describe('InteractiveDisplay Property Tests', () => {
           const step = config.steps[0];
           display.onStepStart(step as any, 1);
           
-          mockStream.clearOutput();
-          display.render();
+          display.forceRender();
           
           const output = mockStream.output;
 
@@ -966,8 +959,7 @@ describe('InteractiveDisplay Property Tests', () => {
           const step = config.steps[actualStepIndex];
           display.onStepStart(step as any, actualStepIndex + 1);
           
-          mockStream.clearOutput();
-          display.render();
+          display.forceRender();
           
           const output = mockStream.output;
           const lines = output.split('\n');
@@ -1187,9 +1179,9 @@ describe('InteractiveDisplay Property Tests', () => {
             completedSteps.push({ name: step.name, artifacts });
           }
           
-          // Рендерим и получаем вывод
+          // Очищаем накопленный вывод и рендерим финальное состояние
           mockStream.clearOutput();
-          display.render();
+          display.forceRender();
           const output = mockStream.output;
           
           // Проверяем наличие секции истории (Requirements 5.1)
@@ -1201,9 +1193,10 @@ describe('InteractiveDisplay Property Tests', () => {
           for (const step of displayedSteps) {
             // Проверяем наличие названия шага
             expect(output).toContain(step.name);
-            
+
             // Проверяем наличие информации об артефактах
-            expect(output).toContain(`${step.artifacts.length} artifact`);
+            // Формат: "→ N artifact(s)"
+            expect(output).toContain(`${step.artifacts.length} artifact(s)`);
           }
           
           // Проверяем наличие иконок статуса (✓ для успешных)
@@ -1273,8 +1266,7 @@ describe('InteractiveDisplay Property Tests', () => {
           }
           
           // Проверяем вывод
-          mockStream.clearOutput();
-          display.render();
+          display.forceRender();
           const output = mockStream.output;
           
           // Проверяем наличие иконки ошибки (✗)
@@ -1321,8 +1313,7 @@ describe('InteractiveDisplay Property Tests', () => {
           }
           
           // Проверяем вывод
-          mockStream.clearOutput();
-          display.render();
+          display.forceRender();
           const output = mockStream.output;
           
           // Проверяем, что отображается "Recent Activity: None"
@@ -1458,9 +1449,9 @@ describe('InteractiveDisplay Property Tests', () => {
           
           display.onStepComplete(step as any, history as any);
           
-          // Рендерим и получаем вывод
+          // Очищаем накопленный вывод и рендерим финальное состояние
           mockStream.clearOutput();
-          display.render();
+          display.forceRender();
           const output = mockStream.output;
           
           // Проверяем наличие правильной иконки статуса

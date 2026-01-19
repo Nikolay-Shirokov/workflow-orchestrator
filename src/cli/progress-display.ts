@@ -189,8 +189,13 @@ export class ProgressDisplay implements IProgressDisplay {
    * Создание индикатора прогресса
    */
   private createProgressBar(progress: number, width: number): string {
-    const filled = Math.round((progress / 100) * width);
-    const empty = width - filled;
+    // Защита от невалидных значений
+    if (width <= 0) {
+      return '[]';
+    }
+
+    const filled = Math.max(0, Math.min(width, Math.round((progress / 100) * width)));
+    const empty = Math.max(0, width - filled);
     return '[' + '█'.repeat(filled) + '░'.repeat(empty) + ']';
   }
 }
