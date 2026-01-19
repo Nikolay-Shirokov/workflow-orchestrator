@@ -373,28 +373,6 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       );
     }
 
-    // Валидация целостности артефактов
-    const artifactValidation = await this.stateManager.validateArtifacts(state);
-    if (!artifactValidation.valid) {
-      throw new WorkflowErrorClass({
-        code: 'ARTIFACTS_VALIDATION_FAILED',
-        category: 'state',
-        severity: 'error',
-        message: 'Артефакты повреждены или отсутствуют',
-        context: {
-          sessionId,
-          missingArtifacts: artifactValidation.missingArtifacts,
-          corruptedArtifacts: artifactValidation.corruptedArtifacts
-        },
-        recoverable: true,
-        suggestions: [
-          'Восстановите отсутствующие артефакты',
-          'Откатитесь к более раннему шагу',
-          'Начните процесс заново'
-        ]
-      });
-    }
-
     // Обработка возобновления с конкретного шага
     // Requirements 14.5, 14.6, 14.7
     if (fromStep !== undefined) {
@@ -460,6 +438,29 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
           allowedArtifacts.has(artifactPath)
         )
       );
+
+      // Валидация целостности артефактов ПОСЛЕ очистки
+      // Проверяем только те артефакты, которые должны остаться
+      const artifactValidation = await this.stateManager.validateArtifacts(state);
+      if (!artifactValidation.valid) {
+        throw new WorkflowErrorClass({
+          code: 'ARTIFACTS_VALIDATION_FAILED',
+          category: 'state',
+          severity: 'error',
+          message: 'Артефакты повреждены или отсутствуют',
+          context: {
+            sessionId,
+            missingArtifacts: artifactValidation.missingArtifacts,
+            corruptedArtifacts: artifactValidation.corruptedArtifacts
+          },
+          recoverable: true,
+          suggestions: [
+            'Восстановите отсутствующие артефакты',
+            'Откатитесь к более раннему шагу',
+            'Начните процесс заново'
+          ]
+        });
+      }
 
       // Удаляем физические файлы артефактов
       if (artifactsToDelete.length > 0) {
