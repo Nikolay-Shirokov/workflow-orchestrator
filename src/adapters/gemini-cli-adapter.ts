@@ -187,7 +187,7 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
    */
   parseResponse(rawOutput: string): string {
     // Обработка stream-json формата (несколько JSON объектов построчно)
-    if (rawOutput.includes('\n{') || rawOutput.trim().startsWith('{')) {
+    if (rawOutput.includes('\n{') || rawOutput.trim().startsWith('{') || rawOutput.trim().startsWith('[')) {
       try {
         // Разбиваем на строки и парсим каждую как JSON
         const lines = rawOutput.trim().split('\n');
@@ -206,6 +206,18 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
             // Формат JSON: { "content": "...", "model": "...", ... }
             else if (parsed.content) {
               fullContent += parsed.content;
+            }
+            // Формат JSON: { "text": "..." }
+            else if (parsed.text) {
+              fullContent += parsed.text;
+            }
+            // Массив кандидатов: [{ "text": "..." }, ...]
+            else if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].text) {
+              fullContent += parsed[0].text;
+            }
+            // Массив кандидатов: [{ "content": "..." }, ...]
+            else if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].content) {
+              fullContent += parsed[0].content;
             }
           } catch (lineError) {
             // Пропускаем строки, которые не являются JSON
