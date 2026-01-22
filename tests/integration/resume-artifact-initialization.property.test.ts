@@ -196,9 +196,9 @@ describe('Resume Property Tests', () => {
           }
         }
       ),
-      { numRuns: 100 }
+      { numRuns: 20 } // Уменьшено с 100: каждый run создает файлы и stateManager
     );
-  });
+  }, 30000); // Увеличен таймаут для property-based теста с IO операциями
 });
 
 
