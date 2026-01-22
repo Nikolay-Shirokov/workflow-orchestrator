@@ -12,7 +12,7 @@ import { FileFormat } from '../../src/core/file-input-types.js';
 import { Logger, LogLevel } from '../../src/core/logger.js';
 import * as yaml from 'yaml';
 
-describe.skip('TemplateGenerator Property-Based Tests', () => {
+describe('TemplateGenerator Property-Based Tests', () => {
   let generator: TemplateGenerator;
   let mockContext: ExecutionContext;
   
@@ -38,7 +38,10 @@ describe.skip('TemplateGenerator Property-Based Tests', () => {
     mockContext = {
       state: mockState,
       adapters: {} as any,
-      templateEngine: {} as any,
+      templateEngine: {
+        // Мок render - просто возвращает строку без изменений
+        render: (template: string, _options?: unknown) => template
+      } as any,
       artifactManager: {} as any,
       logger: new Logger({
         level: LogLevel.ERROR,

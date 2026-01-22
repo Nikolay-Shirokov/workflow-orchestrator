@@ -98,7 +98,7 @@ function createExecutionContext(
     artifactManager,
     logger,
     adapters: {} as any,
-    templateEngine: {} as any
+    templateEngine: { render: (template: string) => template } as any
   } as ExecutionContext;
 }
 
@@ -120,7 +120,7 @@ async function loadState(sessionId: string, stateDir: string): Promise<WorkflowS
   return JSON.parse(content);
 }
 
-describe.skip('File Input - Resume Process Integration Tests', () => {
+describe('File Input - Resume Process Integration Tests', () => {
   let env: Awaited<ReturnType<typeof createTestEnvironment>>;
   
   beforeEach(async () => {

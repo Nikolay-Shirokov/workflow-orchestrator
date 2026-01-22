@@ -14,7 +14,7 @@ import { Logger, LogLevel } from '../../src/core/logger.js';
 import { WorkflowStep, ExecutionContext, WorkflowState } from '../../src/core/types.js';
 import { DefaultArtifactManager } from '../../src/core/artifact-manager.js';
 
-describe.skip('FileInputHandler Unit Tests', () => {
+describe('FileInputHandler Unit Tests', () => {
   let fileInputHandler: FileInputHandler;
   let templateGenerator: TemplateGenerator;
   let editorManager: EditorManager;
@@ -71,7 +71,9 @@ describe.skip('FileInputHandler Unit Tests', () => {
     context = {
       state,
       adapters: {} as any,
-      templateEngine: {} as any,
+      templateEngine: {
+        render: (template: string) => template
+      } as any,
       artifactManager,
       logger
     };
@@ -261,9 +263,13 @@ describe.skip('FileInputHandler Unit Tests', () => {
         name: 'Test Step',
         type: 'user_input'
       };
-      
+
       const nonExistentPath = path.join(tempDir, 'non-existent.txt');
-      
+
+      // Мокаем интерактивные методы чтобы избежать зависания
+      (fileInputHandler as any).askForBackupRestore = jest.fn().mockResolvedValue(false);
+      (fileInputHandler as any).askForFileRecreation = jest.fn().mockResolvedValue(false);
+
       await expect(
         (fileInputHandler as any).readAndValidate(nonExistentPath, step, context)
       ).rejects.toThrow();

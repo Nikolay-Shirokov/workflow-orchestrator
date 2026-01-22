@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-describe.skip('TemplateEngine Unit Tests', () => {
+describe('TemplateEngine Unit Tests', () => {
   let engine: DefaultTemplateEngine;
   let tempDir: string;
   
@@ -575,7 +575,7 @@ describe.skip('TemplateEngine Unit Tests', () => {
   });
 });
 
-describe.skip('TemplateEngine Property-Based Tests', () => {
+describe('TemplateEngine Property-Based Tests', () => {
   let engine: DefaultTemplateEngine;
   
   beforeEach(() => {

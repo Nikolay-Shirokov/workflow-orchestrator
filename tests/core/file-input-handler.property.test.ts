@@ -17,7 +17,7 @@ import { WorkflowStep, ExecutionContext, WorkflowState } from '../../src/core/ty
 import { DefaultArtifactManager } from '../../src/core/artifact-manager.js';
 import { FileFormat } from '../../src/core/file-input-types.js';
 
-describe.skip('FileInputHandler Property Tests', () => {
+describe('FileInputHandler Property Tests', () => {
   let tempDir: string;
   
   beforeAll(async () => {
@@ -96,7 +96,7 @@ describe.skip('FileInputHandler Property Tests', () => {
             const context: ExecutionContext = {
               state,
               adapters: {} as any,
-              templateEngine: {} as any,
+              templateEngine: { render: (template: string) => template } as any,
               artifactManager,
               logger
             };
@@ -198,7 +198,7 @@ describe.skip('FileInputHandler Property Tests', () => {
             const context: ExecutionContext = {
               state,
               adapters: {} as any,
-              templateEngine: {} as any,
+              templateEngine: { render: (template: string) => template } as any,
               artifactManager,
               logger
             };
@@ -296,7 +296,7 @@ describe.skip('FileInputHandler Property Tests', () => {
             const context: ExecutionContext = {
               state,
               adapters: {} as any,
-              templateEngine: {} as any,
+              templateEngine: { render: (template: string) => template } as any,
               artifactManager,
               logger
             };

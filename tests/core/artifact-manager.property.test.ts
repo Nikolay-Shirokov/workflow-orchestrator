@@ -152,6 +152,7 @@ const arbitraryContent = fc.string({
   )
 });
 
+// Пропущен: тесты требуют много времени на выполнение (property-based)
 describe.skip('ArtifactManager Property-Based Tests', () => {
   beforeEach(async () => {
     await cleanupTestDir();

@@ -130,6 +130,7 @@ function createComplexWorkflow(adapterName: string, artifactsDir: string): Workf
  * Тесты для Claude CLI адаптера
  * Validates: Requirements 1.1
  */
+// Пропущен: требует установленного Claude CLI и долго выполняется
 describe.skip('Claude CLI Adapter Integration', () => {
   let orchestrator: WorkflowOrchestrator;
   let logger: Logger;
@@ -147,16 +148,12 @@ describe.skip('Claude CLI Adapter Integration', () => {
       enableFile: false
     });
     
-    // Создание оркестратора
+    // Создание оркестратора (автоматически регистрирует все адаптеры)
     orchestrator = new WorkflowOrchestrator({
       stateDir: path.join(tempDir, 'state'),
       artifactsDir: path.join(tempDir, 'artifacts'),
       logger
     });
-    
-    // Регистрация Claude CLI адаптера
-    const claudeAdapter = new ClaudeCLIAdapter();
-    orchestrator.registerAdapter(claudeAdapter);
   });
 
   afterEach(async () => {
@@ -357,6 +354,7 @@ describe.skip('Claude CLI Adapter Integration', () => {
  * Тесты для Gemini CLI адаптера
  * Validates: Requirements 1.3
  */
+// Пропущен: требует установленного Gemini CLI и долго выполняется
 describe.skip('Gemini CLI Adapter Integration', () => {
   let orchestrator: WorkflowOrchestrator;
   let logger: Logger;
@@ -380,11 +378,7 @@ describe.skip('Gemini CLI Adapter Integration', () => {
       artifactsDir: path.join(tempDir, 'artifacts'),
       logger
     });
-    
-    // Регистрация Gemini CLI адаптера
-    const { GeminiCLIAdapter } = await import('../../src/adapters/gemini-cli-adapter.js');
-    const geminiAdapter = new GeminiCLIAdapter();
-    orchestrator.registerAdapter(geminiAdapter);
+    // Адаптеры автоматически регистрируются оркестратором
   });
 
   afterEach(async () => {

@@ -106,6 +106,7 @@ function createTestWorkflow(
   };
 }
 
+// Пропущен: требует реальных CLI адаптеров и их настройки
 describe.skip('Adapter Integration Property Tests', () => {
   let availableAdapters: AvailableAdapter[];
   let orchestrator: WorkflowOrchestrator;
@@ -130,16 +131,12 @@ describe.skip('Adapter Integration Property Tests', () => {
     });
     
     // Создание оркестратора
+    // Оркестратор автоматически регистрирует все доступные адаптеры
     orchestrator = new WorkflowOrchestrator({
       stateDir: path.join(tempDir, 'state'),
       artifactsDir: path.join(tempDir, 'artifacts'),
       logger
     });
-    
-    // Регистрация всех доступных адаптеров
-    for (const { adapter } of availableAdapters) {
-      orchestrator.registerAdapter(adapter);
-    }
   }, 30000); // Таймаут 30 секунд для beforeEach
 
   afterEach(async () => {

@@ -9,13 +9,13 @@ import { WorkflowStep, ExecutionContext, WorkflowState, WorkflowStatus } from '.
 import { FileFormat } from '../../src/core/file-input-types.js';
 import { Logger, LogLevel } from '../../src/core/logger.js';
 
-describe.skip('TemplateGenerator Unit Tests', () => {
+describe('TemplateGenerator Unit Tests', () => {
   let generator: TemplateGenerator;
   let mockContext: ExecutionContext;
-  
+
   beforeEach(() => {
     generator = new TemplateGenerator();
-    
+
     // Создаем минимальный мок контекста
     const mockState: WorkflowState = {
       sessionId: 'test-session',
@@ -31,11 +31,13 @@ describe.skip('TemplateGenerator Unit Tests', () => {
       history: [],
       errors: []
     };
-    
+
     mockContext = {
       state: mockState,
       adapters: {} as any,
-      templateEngine: {} as any,
+      templateEngine: {
+        render: (template: string) => template
+      } as any,
       artifactManager: {} as any,
       logger: new Logger({
         level: LogLevel.ERROR,
@@ -56,11 +58,12 @@ describe.skip('TemplateGenerator Unit Tests', () => {
       };
       
       const template = generator.generate('markdown', step, mockContext);
-      
+
       expect(template).toContain('# Тестовый шаг');
       expect(template).toContain('Описание шага');
-      expect(template).toContain('## Инструкции');
-      expect(template).toContain('продолжить');
+      // Инструкции теперь внутри HTML-комментария
+      expect(template).toContain('📝 Инструкции:');
+      expect(template).toContain('Продолжить');
     });
     
     it('должен генерировать YAML шаблон', () => {
@@ -244,11 +247,13 @@ c) Зеленый
       };
       
       const template = generator.generate('markdown', step, mockContext);
-      
+
       expect(template).toContain('# Тестовый шаг');
       expect(template).toContain('> Описание');
-      expect(template).toContain('## Инструкции');
-      expect(template).toContain('## Задание');
+      // Инструкции теперь внутри HTML-комментария
+      expect(template).toContain('📝 Инструкции:');
+      // Задание выводится как prompt_message, без отдельного заголовка
+      expect(template).toContain('1. Вопрос 1');
       expect(template).toContain('## Вопросы');
       expect(template).toContain('### 1. Вопрос 1');
       expect(template).toContain('### 2. Вопрос 2');
@@ -264,10 +269,11 @@ c) Зеленый
       };
       
       const template = generator.generate('markdown', step, mockContext);
-      
+
       expect(template).toContain('# Тестовый шаг');
       expect(template).not.toContain('> Описание');
-      expect(template).toContain('## Инструкции');
+      // Инструкции теперь внутри HTML-комментария
+      expect(template).toContain('📝 Инструкции:');
     });
     
     it('должен работать без вопросов', () => {
@@ -277,11 +283,26 @@ c) Зеленый
         type: 'user_input',
         prompt_message: 'Просто введите текст'
       };
-      
+
       const template = generator.generate('markdown', step, mockContext);
-      
-      expect(template).toContain('## Ваш ответ');
+
+      // При наличии prompt_message без нумерованных вопросов,
+      // текст выводится как есть, без секции "## Ваш ответ"
+      expect(template).toContain('Просто введите текст');
       expect(template).not.toContain('## Вопросы');
+    });
+
+    it('должен добавлять секцию "Ваш ответ" без prompt_message', () => {
+      const step: WorkflowStep = {
+        id: 'step1',
+        name: 'Тестовый шаг',
+        type: 'user_input'
+      };
+
+      const template = generator.generate('markdown', step, mockContext);
+
+      // Только когда нет prompt_message, добавляется секция "Ваш ответ"
+      expect(template).toContain('## Ваш ответ');
     });
   });
   

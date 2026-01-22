@@ -105,11 +105,11 @@ function createExecutionContext(
     artifactManager,
     logger,
     adapters: {} as any,
-    templateEngine: {} as any
+    templateEngine: { render: (template: string) => template } as any
   } as ExecutionContext;
 }
 
-describe.skip('File Input - Full Cycle Integration Tests', () => {
+describe('File Input - Full Cycle Integration Tests', () => {
   let env: Awaited<ReturnType<typeof createTestEnvironment>>;
   
   beforeEach(async () => {
@@ -159,7 +159,7 @@ describe.skip('File Input - Full Cycle Integration Tests', () => {
     
     // Проверяем наличие инструкций
     expect(templateContent).toContain('Инструкции');
-    expect(templateContent).toContain('заполните');
+    expect(templateContent).toContain('Заполните');
     
     // Проверяем наличие вопросов
     expect(templateContent).toContain('Как вас зовут?');

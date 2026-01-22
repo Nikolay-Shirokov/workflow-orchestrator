@@ -11,13 +11,13 @@ import { ExecutionContext, WorkflowState, WorkflowStatus } from '../../src/core/
 import { FileFormat } from '../../src/core/file-input-types.js';
 import { Logger, LogLevel } from '../../src/core/logger.js';
 
-describe.skip('TemplateGenerator Format Support Property-Based Tests', () => {
+describe('TemplateGenerator Format Support Property-Based Tests', () => {
   let generator: TemplateGenerator;
   let mockContext: ExecutionContext;
-  
+
   beforeEach(() => {
     generator = new TemplateGenerator();
-    
+
     // Создаем минимальный мок контекста
     const mockState: WorkflowState = {
       sessionId: 'test-session',
@@ -33,11 +33,13 @@ describe.skip('TemplateGenerator Format Support Property-Based Tests', () => {
       history: [],
       errors: []
     };
-    
+
     mockContext = {
       state: mockState,
       adapters: {} as any,
-      templateEngine: {} as any,
+      templateEngine: {
+        render: (template: string) => template
+      } as any,
       artifactManager: {} as any,
       logger: new Logger({
         level: LogLevel.ERROR,

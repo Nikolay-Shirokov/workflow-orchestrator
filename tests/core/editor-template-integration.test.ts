@@ -15,12 +15,13 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-describe.skip('EditorManager и TemplateGenerator - Интеграция', () => {
+describe('EditorManager и TemplateGenerator - Интеграция', () => {
   let editorManager: EditorManager;
   let templateGenerator: TemplateGenerator;
   let logger: Logger;
   let tempDir: string;
-  
+  let mockContext: any;
+
   beforeEach(() => {
     logger = new Logger({
       level: LogLevel.ERROR,
@@ -29,7 +30,29 @@ describe.skip('EditorManager и TemplateGenerator - Интеграция', () =>
     });
     editorManager = new EditorManager(logger);
     templateGenerator = new TemplateGenerator();
-    
+
+    // Мок контекста с templateEngine
+    mockContext = {
+      state: {
+        sessionId: 'test-session',
+        workflowName: 'test-workflow',
+        workflowVersion: '1.0.0',
+        currentStep: 'step1',
+        status: 'running',
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        completedSteps: [],
+        artifacts: {},
+        context: {},
+        history: [],
+        errors: []
+      },
+      templateEngine: {
+        render: (template: string) => template
+      },
+      logger
+    };
+
     // Создаем временную директорию для тестов
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'editor-template-test-'));
   });
@@ -63,7 +86,7 @@ describe.skip('EditorManager и TemplateGenerator - Интеграция', () =>
         };
         
         // Act - Генерируем шаблон
-        const template = templateGenerator.generate(format, step, null as any);
+        const template = templateGenerator.generate(format, step, mockContext);
         
         // Assert - Проверяем, что шаблон не пустой
         expect(template).toBeTruthy();
@@ -120,7 +143,7 @@ describe.skip('EditorManager и TemplateGenerator - Интеграция', () =>
       const formats: FileFormat[] = ['markdown', 'yaml', 'json', 'text'];
       
       formats.forEach((format) => {
-        const template = templateGenerator.generate(format, step, null as any);
+        const template = templateGenerator.generate(format, step, mockContext);
         
         // Assert - Проверяем, что шаблон содержит вопросы
         expect(template).toContain('зовут');
@@ -148,19 +171,19 @@ describe.skip('EditorManager и TemplateGenerator - Интеграция', () =>
       };
       
       // Act & Assert - Проверяем каждый формат
-      const markdownTemplate = templateGenerator.generate('markdown', step, null as any);
+      const markdownTemplate = templateGenerator.generate('markdown', step, mockContext);
       expect(markdownTemplate).toContain('<');
       expect(markdownTemplate).toContain('>');
       
-      const jsonTemplate = templateGenerator.generate('json', step, null as any);
+      const jsonTemplate = templateGenerator.generate('json', step, mockContext);
       const parsed = JSON.parse(jsonTemplate);
       expect(parsed._task).toContain('<');
       expect(parsed._task).toContain('>');
       
-      const yamlTemplate = templateGenerator.generate('yaml', step, null as any);
+      const yamlTemplate = templateGenerator.generate('yaml', step, mockContext);
       expect(yamlTemplate).toContain('<');
       
-      const textTemplate = templateGenerator.generate('text', step, null as any);
+      const textTemplate = templateGenerator.generate('text', step, mockContext);
       expect(textTemplate).toContain('<');
     });
   });
@@ -176,7 +199,7 @@ describe.skip('EditorManager и TemplateGenerator - Интеграция', () =>
       };
       
       // Act - Создаем шаблон и сохраняем
-      const template = templateGenerator.generate('markdown', step, null as any);
+      const template = templateGenerator.generate('markdown', step, mockContext);
       const filePath = path.join(tempDir, 'test.md');
       fs.writeFileSync(filePath, template, 'utf-8');
       

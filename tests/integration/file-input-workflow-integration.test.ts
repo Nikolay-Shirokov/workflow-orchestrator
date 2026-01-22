@@ -92,11 +92,11 @@ function createExecutionContext(
     artifactManager,
     logger,
     adapters: {} as any,
-    templateEngine: {} as any
+    templateEngine: { render: (template: string) => template } as any
   } as ExecutionContext;
 }
 
-describe.skip('File Input - Workflow Integration Tests', () => {
+describe('File Input - Workflow Integration Tests', () => {
   let env: Awaited<ReturnType<typeof createTestEnvironment>>;
   
   beforeEach(async () => {
