@@ -56,3 +56,6 @@ custom_value.meta.json
 *_input.md
 *_input.md.backup
 *_input.md.meta.json
+
+# Claude Code
+.claude/
