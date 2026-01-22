@@ -58,20 +58,22 @@ async function checkCodexExecWorks(): Promise<boolean> {
 describe('Codex CLI Adapter Integration Tests', () => {
   let adapter: CodexCLIAdapter;
   let codexWorks: boolean = false;
+  let checkedOnce: boolean = false;
 
   beforeEach(async () => {
     adapter = new CodexCLIAdapter({
       timeout: 120000 // Увеличиваем таймаут до 2 минут для реальных запросов
     });
-    
+
     // Проверяем работоспособность только один раз
-    if (!codexWorks) {
+    if (!checkedOnce) {
+      checkedOnce = true;
       const isAvailable = await checkCodexAvailability();
       if (isAvailable) {
         codexWorks = await checkCodexExecWorks();
       }
     }
-  });
+  }, 60000); // Увеличиваем таймаут хука до 60 секунд
 
   /**
    * Тест 10.1: Выполнение простого запроса
