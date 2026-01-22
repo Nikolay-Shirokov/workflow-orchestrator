@@ -40,7 +40,8 @@ function createSimpleLogger(verbose: boolean = false): Logger {
 /**
  * Создание индикатора прогресса на основе режима
  * Property 1: Выбор режима на основе флага
- * 
+ * Requirements 8.3: Fallback на логовый режим при отсутствии поддержки
+ *
  * @param logMode - Флаг логового режима
  * @param logger - Логгер
  * @returns ProgressDisplay или InteractiveDisplay
@@ -49,17 +50,43 @@ function createProgressDisplay(logMode: boolean, logger: Logger): ProgressDispla
   if (logMode) {
     // Логовый режим - используем ProgressDisplay
     return new ProgressDisplay(logger);
-  } else {
-    // Интерактивный режим - используем InteractiveDisplay
-    try {
-      // Динамический импорт InteractiveDisplay
-      const { InteractiveDisplay } = require('./interactive-display.js');
-      return new InteractiveDisplay();
-    } catch (error) {
-      // Fallback на логовый режим при ошибке
-      logger.warn('Не удалось инициализировать интерактивный режим, используется логовый режим');
+  }
+
+  // Интерактивный режим - проверяем возможности терминала
+  try {
+    // Динамический импорт для проверки capabilities
+    const { TerminalRenderer } = require('./terminal-renderer.js');
+    const { InteractiveDisplay } = require('./interactive-display.js');
+
+    // Создаем временный renderer для проверки capabilities
+    const testRenderer = new TerminalRenderer(process.stdout);
+    const capabilities = testRenderer.getCapabilities();
+
+    // Проверяем поддержку интерактивного режима (Requirements 8.3)
+    if (!capabilities.supportsAnsi) {
+      logger.warn('Терминал не поддерживает ANSI коды, используется логовый режим');
       return new ProgressDisplay(logger);
     }
+
+    if (!capabilities.isInteractive) {
+      logger.warn('Терминал не интерактивный (не TTY), используется логовый режим');
+      return new ProgressDisplay(logger);
+    }
+
+    const minWidth = 60;
+    if (capabilities.width < minWidth) {
+      logger.warn(`Терминал слишком узкий (${capabilities.width} < ${minWidth}), используется логовый режим`);
+      return new ProgressDisplay(logger);
+    }
+
+    // Все проверки пройдены - используем InteractiveDisplay
+    return new InteractiveDisplay(testRenderer);
+  } catch (error) {
+    // Fallback на логовый режим при любой ошибке
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.warn(`Не удалось инициализировать интерактивный режим: ${errorMessage}`);
+    logger.warn('Используется логовый режим');
+    return new ProgressDisplay(logger);
   }
 }
 
