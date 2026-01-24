@@ -23,8 +23,8 @@ workflow:
   # Определение ролей
   roles:
     researcher:
-      adapter: "claude-cli"
-      model: "claude-sonnet-3.5"
+      adapter: "codex-cli"
+      model: "gpt-5.1-codex-mini"
       role_definition: |
         Вы - ИССЛЕДОВАТЕЛЬ, который собирает информацию из интернета.
         Ваша роль - найти релевантные данные, примеры, best practices
@@ -34,14 +34,13 @@ workflow:
       default_permissions:
         read: ["*.md", "artifacts/**/*"]
         write: ["artifacts/**/*.md"]
-      # Capabilities для веб-поиска
+      # Capabilities для веб-поиска (Codex использует --search)
       default_capabilities:
         web_search: true
-        web_fetch: true
 
     architect:
       adapter: "claude-cli"
-      model: "claude-sonnet-3.5"
+      model: "claude-sonnet-4.5"
       role_definition: |
         Вы - ГЛАВНЫЙ АРХИТЕКТОР в процессе разработки требований.
         Ваша роль - задавать глубокие вопросы, анализировать потребности
@@ -55,8 +54,8 @@ workflow:
         write: ["artifacts/**/*.md"]
 
     copilot:
-      adapter: "claude-cli"
-      model: "claude-sonnet-3.5"
+      adapter: "gemini-cli"
+      model: "gemini-2.5-pro"
       role_definition: |
         Вы - ВТОРОЙ ПИЛОТ, предоставляющий критический анализ и альтернативные перспективы.
         Ваша роль - выявлять пробелы, предлагать улучшения и задавать вопросы,
@@ -68,6 +67,9 @@ workflow:
       default_permissions:
         read: ["*.md", "artifacts/**/*"]
         write: ["artifacts/**/*.md"]
+      # Gemini поддерживает веб-поиск
+      default_capabilities:
+        web_search: true
   
   steps:
     # ============================================================
