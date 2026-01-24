@@ -219,6 +219,10 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
       // Определяем таймаут
       const timeout = request.timeout || this.config.timeout || 300000;
 
+      // DEBUG: Log the command
+      console.log(`[codex-cli] Command: ${this.config.command} ${args.join(' ')}`);
+      console.log(`[codex-cli] Prompt length: ${request.prompt.length} chars`);
+
       // Выполняем команду с передачей промпта через stdin
       const result = await this.executeCommandWithStdin(
         this.config.command,

@@ -12,7 +12,9 @@
 
 import { spawn } from 'child_process';
 import { readFileSync } from 'fs';
+import { mkdir } from 'fs/promises';
 import { cpus } from 'os';
+import * as path from 'path';
 import {
   StepExecutor,
   WorkflowStep,
@@ -577,6 +579,11 @@ export class DefaultStepExecutor implements StepExecutor {
           firstOutputPath,
           this.createTemplateContext(context)
         );
+
+        // Создаём директорию для outputFile заранее
+        // Это необходимо для адаптеров, которые используют флаги вроде --output-last-message
+        const outputDir = path.dirname(outputFile);
+        await mkdir(outputDir, { recursive: true });
       }
     }
 
