@@ -4,12 +4,14 @@
  */
 
 import { spawn } from 'child_process';
+import * as fs from 'fs/promises';
 import {
   CLIAdapter,
   AdapterRequest,
   AdapterResponse,
   AdapterError,
-  AdapterConfig
+  AdapterConfig,
+  StepPermissions
 } from '../core/types.js';
 
 /**
@@ -295,6 +297,94 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
         ));
       });
     });
+  }
+
+  // ============================================================================
+  // Методы для работы с файловым выводом и разрешениями
+  // ============================================================================
+
+  /**
+   * Добавление инструкции записи в файл в конец промпта
+   * @param prompt - Исходный промпт
+   * @param outputPath - Путь к выходному файлу
+   * @param toolName - Имя инструмента записи (write_file для Gemini, Write для Claude)
+   * @returns string - Промпт с добавленной инструкцией
+   */
+  protected appendFileWriteInstruction(
+    prompt: string,
+    outputPath: string,
+    toolName?: string
+  ): string {
+    const instruction = toolName
+      ? `\n\nCRITICAL: Save your complete response to file: ${outputPath}
+Use the ${toolName} tool to write the file.
+If the ${toolName} tool is not available, output the full response to console.
+Note: The file path is relative to the current working directory.`
+      : `\n\nCRITICAL: Save your complete response to file: ${outputPath}
+If you cannot write to file, output the full response to console.
+Note: The file path is relative to the current working directory.`;
+
+    return prompt + instruction;
+  }
+
+  /**
+   * Чтение результата из файла с fallback на stdout
+   * Использует polling с таймаутом для ожидания создания файла
+   * @param outputPath - Путь к выходному файлу
+   * @param stdout - Вывод из stdout (fallback)
+   * @param options - Опции чтения
+   * @returns Promise<{ content: string; source: 'file' | 'stdout' }>
+   */
+  protected async readResultFromFile(
+    outputPath: string,
+    stdout: string,
+    options: { maxWaitTime?: number; pollInterval?: number } = {}
+  ): Promise<{ content: string; source: 'file' | 'stdout' }> {
+    const maxWaitTime = options.maxWaitTime ?? 5000;
+    const pollInterval = options.pollInterval ?? 200;
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < maxWaitTime) {
+      try {
+        const stat = await fs.stat(outputPath);
+        if (stat.size > 0) {
+          const content = await fs.readFile(outputPath, 'utf-8');
+          if (content.trim().length > 0) {
+            console.log(`[DEBUG] Прочитано ${content.length} байт из файла ${outputPath}`);
+            return { content: content.trim(), source: 'file' };
+          }
+        }
+      } catch {
+        // Файл еще не создан, продолжаем polling
+      }
+
+      await new Promise(r => setTimeout(r, pollInterval));
+    }
+
+    // Fallback на stdout
+    console.log(`[DEBUG] Файл ${outputPath} не найден или пуст, используем stdout`);
+    return { content: stdout.trim(), source: 'stdout' };
+  }
+
+  /**
+   * Валидация разрешений
+   * Проверяет корректность конфигурации permissions
+   * @param permissions - Разрешения для валидации
+   * @throws Error если permissions некорректны
+   */
+  protected validatePermissions(permissions: StepPermissions): void {
+    // fullAccess нельзя комбинировать с read/write
+    if (permissions.fullAccess && (permissions.read?.length || permissions.write?.length)) {
+      throw new Error('fullAccess нельзя комбинировать с read/write. Используйте либо fullAccess, либо явные разрешения.');
+    }
+
+    // Проверка паттернов на path traversal
+    const allPatterns = [...(permissions.read || []), ...(permissions.write || [])];
+    for (const pattern of allPatterns) {
+      if (pattern.includes('..')) {
+        throw new Error(`Недопустимый паттерн "${pattern}": path traversal (..) запрещен`);
+      }
+    }
   }
 
   /**
