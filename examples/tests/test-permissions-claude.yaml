@@ -1,0 +1,39 @@
+# Тест permissions для Claude CLI
+# Проверяет write permissions (Write tool)
+
+workflow:
+  name: "test-permissions-claude"
+  version: "1.0"
+  description: "Тест permissions Claude CLI"
+
+  settings:
+    artifacts_dir: "artifacts/test-perm-claude-${timestamp}"
+    log_level: "debug"
+
+  roles:
+    writer:
+      adapter: "claude-cli"
+      model: "sonnet"
+      role_definition: "Ты помощник. Записывай результат в указанный файл."
+      temperature: 0.1
+      max_tokens: 500
+      permissions:
+        - read
+        - "edit:artifacts/**/*"
+      default_permissions:
+        read: ["**/*"]
+        write: ["artifacts/**/*"]
+
+  steps:
+    # Тест: Write permission - модель должна использовать Write tool
+    - id: test_write
+      name: "Тест: Write tool"
+      type: model
+      role: writer
+      prompt_template: |
+        Создай файл с содержимым:
+        "File written by Claude using Write tool"
+
+        Используй инструмент Write для создания файла.
+      outputs:
+        result: "${artifacts_dir}/written_file.txt"

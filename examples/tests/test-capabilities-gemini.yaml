@@ -1,0 +1,39 @@
+# Тест capabilities для Gemini CLI
+# Проверяет web_search (google_web_search)
+
+workflow:
+  name: "test-capabilities-gemini"
+  version: "1.0"
+  description: "Тест capabilities Gemini CLI"
+
+  settings:
+    artifacts_dir: "artifacts/test-caps-gemini-${timestamp}"
+    log_level: "debug"
+
+  roles:
+    researcher:
+      adapter: "gemini-cli"
+      model: "gemini-2.5-pro"
+      role_definition: "Ты исследователь. Отвечай кратко."
+      temperature: 0.3
+      max_tokens: 1000
+      permissions:
+        - read
+        - "edit:artifacts/**/*"
+      default_permissions:
+        read: ["**/*"]
+        write: ["artifacts/**/*"]
+      default_capabilities:
+        web_search: true
+
+  steps:
+    # Тест: Web search capability
+    - id: test_web_search
+      name: "Тест: Web Search (google_web_search)"
+      type: model
+      role: researcher
+      prompt_template: |
+        Найди в интернете текущую версию Python.
+        Ответь одной строкой: "Python: версия X.Y.Z"
+      outputs:
+        result: "${artifacts_dir}/web_search_result.md"

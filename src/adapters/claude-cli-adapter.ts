@@ -74,12 +74,15 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
    * - permissions.execute - добавляем Bash в --tools и --allowedTools
    * - permissions.fullAccess - добавляем --dangerously-skip-permissions
    *
+   * ВАЖНО: Промпт передаётся через stdin, а не как аргумент командной строки,
+   * чтобы корректно обрабатывать многострочные промпты.
+   *
    * @param request - Запрос к адаптеру
-   * @returns string[] - Массив аргументов
+   * @returns string[] - Массив аргументов (без промпта)
    */
   protected prepareArguments(request: AdapterRequest): string[] {
     const claudeRequest = request as ClaudeAdapterRequest;
-    const args: string[] = ['-p'];
+    const args: string[] = ['--print'];
 
     // Добавляем флаг --model если модель указана
     if (request.model) {
@@ -95,16 +98,25 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
     const permissionArgs = this.mapPermissionsToArgs(request.permissions, claudeRequest);
     args.push(...permissionArgs);
 
-    // Добавляем инструкцию записи в файл если outputFile указан
+    // Промпт НЕ добавляется в args - он передаётся через stdin в executeCommand
+
+    return args;
+  }
+
+  /**
+   * Подготовка промпта для передачи через stdin
+   * @param request - Запрос к адаптеру
+   * @returns string - Подготовленный промпт
+   */
+  protected preparePrompt(request: AdapterRequest): string {
     let prompt = request.prompt;
+
+    // Добавляем инструкцию записи в файл если outputFile указан
     if (request.outputFile && request.permissions?.write?.length) {
       prompt = this.appendFileWriteInstruction(prompt, request.outputFile, 'Write');
     }
 
-    // Добавляем промпт в конце
-    args.push(prompt);
-
-    return args;
+    return prompt;
   }
 
   /**
@@ -150,39 +162,36 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
       return args;
     }
 
-    // Если permissions не указаны и нет явных tools, возвращаем пустой массив
-    if (!permissions) {
-      return args;
+    // Валидируем permissions если указаны
+    if (permissions) {
+      this.validatePermissions(permissions);
+
+      // fullAccess - полный доступ без ограничений
+      if (permissions.fullAccess) {
+        args.push('--dangerously-skip-permissions');
+        return args;
+      }
     }
 
-    // Валидируем permissions
-    this.validatePermissions(permissions);
-
-    // fullAccess - полный доступ без ограничений
-    if (permissions.fullAccess) {
-      args.push('--dangerously-skip-permissions');
-      return args;
-    }
-
-    // Формируем списки инструментов на основе permissions
+    // Формируем списки инструментов на основе permissions и capabilities
     // Если tools уже указаны явно, не добавляем автоматически
     if (!claudeRequest?.tools || claudeRequest.tools.length === 0) {
       const tools: string[] = ['Read', 'Grep', 'Glob']; // Базовые инструменты чтения
       const allowedTools: string[] = [];
 
       // permissions.write - разрешаем инструмент Write
-      if (permissions.write && permissions.write.length > 0) {
+      if (permissions?.write && permissions.write.length > 0) {
         tools.push('Write');
         allowedTools.push('Write');
       }
 
       // permissions.execute - разрешаем инструмент Bash
-      if (permissions.execute) {
+      if (permissions?.execute) {
         tools.push('Bash');
         allowedTools.push('Bash');
       }
 
-      // Добавляем инструменты из capabilities
+      // Добавляем инструменты из capabilities (обрабатываем независимо от permissions)
       const capabilities = claudeRequest ? this.mergeCapabilities(claudeRequest) : undefined;
       if (capabilities) {
         const capabilityResult = this.mapCapabilitiesToToolsAndFlags(capabilities);
@@ -220,14 +229,15 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
   }
 
   /**
-   * Переопределяем executeCommand для закрытия stdin
-   * Claude CLI может ждать ввода, если stdin открыт
+   * Переопределяем executeCommand для передачи промпта через stdin
+   * Claude CLI принимает промпт через stdin при использовании --print
    */
-  protected executeCommand(
+  protected executeCommandWithStdin(
     command: string,
     args: string[],
     env: Record<string, string>,
-    timeout: number
+    timeout: number,
+    stdinData: string
   ): Promise<any> {
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
@@ -235,16 +245,17 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
       let stderr = '';
       let timedOut = false;
 
-      // Запуск процесса
+      // Запуск процесса с shell: true для корректной работы на Windows
       const child = spawn(command, args, {
         env,
         shell: true,
-        windowsHide: true
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe']
       });
 
-      // ВАЖНО: Закрываем stdin сразу после запуска
-      // Это предотвращает ожидание ввода от Claude CLI
+      // Передаём промпт через stdin и закрываем поток
       if (child.stdin) {
+        child.stdin.write(stdinData);
         child.stdin.end();
       }
 
@@ -330,6 +341,9 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
         break;
       }
     }
+
+    // Очищаем markdown code blocks если есть
+    content = this.stripMarkdownCodeBlocks(content);
 
     return content;
   }
@@ -476,8 +490,11 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
     const startTime = Date.now();
 
     try {
-      // Подготавливаем аргументы (включая инструкцию записи в файл)
+      // Подготавливаем аргументы (без промпта - он передаётся через stdin)
       const args = this.prepareArguments(request);
+
+      // Подготавливаем промпт для передачи через stdin
+      const prompt = this.preparePrompt(request);
 
       // Подготавливаем переменные окружения
       const env = this.prepareEnvironment(request);
@@ -485,12 +502,17 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
       // Определяем таймаут
       const timeout = request.timeout || this.config.timeout || 300000;
 
-      // Выполняем команду
-      const result = await this.executeCommand(
+      // DEBUG: Log the command
+      console.log('[claude-cli] Command:', this.config.command, args.join(' '));
+      console.log('[claude-cli] Prompt length:', prompt.length, 'chars');
+
+      // Выполняем команду с передачей промпта через stdin
+      const result = await this.executeCommandWithStdin(
         this.config.command,
         args,
         env,
-        timeout
+        timeout,
+        prompt
       );
 
       // Проверяем код выхода

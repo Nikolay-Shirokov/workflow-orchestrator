@@ -150,15 +150,40 @@ export class RoleManager {
       systemPrompt = this.combinePrompts(systemPrompt, role.custom_instructions);
     }
     
+    // Объединяем permissions: step.permissions > role.default_permissions
+    let mergedPermissions = baseRequest.permissions;
+    if (role.default_permissions) {
+      if (baseRequest.permissions) {
+        // Step permissions override role defaults
+        mergedPermissions = {
+          ...role.default_permissions,
+          ...baseRequest.permissions,
+          // Merge arrays instead of replacing
+          read: baseRequest.permissions.read ?? role.default_permissions.read,
+          write: baseRequest.permissions.write ?? role.default_permissions.write,
+          // Merge capabilities if both exist
+          capabilities: baseRequest.permissions.capabilities || role.default_permissions.capabilities
+            ? {
+                ...role.default_permissions.capabilities,
+                ...baseRequest.permissions.capabilities
+              }
+            : undefined
+        };
+      } else {
+        mergedPermissions = role.default_permissions;
+      }
+    }
+
     // Создаем обогащенный запрос
     const enrichedRequest: AdapterRequest = {
       ...baseRequest,
       systemPrompt: systemPrompt || undefined,
       model: role.model || baseRequest.model,
       temperature: role.temperature ?? baseRequest.temperature,
-      maxTokens: role.max_tokens ?? baseRequest.maxTokens
+      maxTokens: role.max_tokens ?? baseRequest.maxTokens,
+      permissions: mergedPermissions
     };
-    
+
     return enrichedRequest;
   }
   

@@ -142,6 +142,24 @@ export interface RoleConfig {
    * @see StepCapabilities
    */
   default_capabilities?: StepCapabilities;
+
+  /**
+   * Разрешения по умолчанию для адаптера (передаются в CLI)
+   * Определяет какие инструменты/операции доступны модели
+   *
+   * Эти разрешения передаются в CLI-адаптер для настройки инструментов.
+   * Отличается от `permissions` (массив строк), который используется
+   * для внутренней проверки разрешений в RoleManager.
+   *
+   * @example
+   * default_permissions:
+   *   read: ["**\/*"]
+   *   write: ["artifacts/**\/*"]
+   *   execute: true
+   *
+   * @see StepPermissions
+   */
+  default_permissions?: StepPermissions;
 }
 
 /**

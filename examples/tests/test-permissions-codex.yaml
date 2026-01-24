@@ -1,0 +1,39 @@
+# Тест permissions для Codex CLI
+# Codex exec использует --full-auto для всех операций
+
+workflow:
+  name: "test-permissions-codex"
+  version: "1.0"
+  description: "Тест permissions Codex CLI"
+
+  settings:
+    artifacts_dir: "artifacts/test-perm-codex-${timestamp}"
+    log_level: "debug"
+
+  roles:
+    writer:
+      adapter: "codex-cli"
+      role_definition: "Ты помощник. Записывай результат в указанный файл."
+      temperature: 0.1
+      max_tokens: 500
+      permissions:
+        - read
+        - "edit:artifacts/**/*"
+      default_permissions:
+        read: ["**/*"]
+        write: ["artifacts/**/*"]
+        execute: true
+
+  steps:
+    # Тест: Write permission (через shell)
+    - id: test_write
+      name: "Тест: Write (shell)"
+      type: model
+      role: writer
+      prompt_template: |
+        Создай файл test-codex.txt с содержимым:
+        "File written by Codex"
+
+        Используй shell команду echo для записи.
+      outputs:
+        result: "${artifacts_dir}/written_result.txt"

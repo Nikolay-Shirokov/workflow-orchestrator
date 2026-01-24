@@ -149,9 +149,9 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
       args.push('--color', codexRequest.colorMode);
     }
     
-    // Добавляем флаг --search для включения веб-поиска (из явного параметра)
+    // --search не поддерживается в exec режиме
     if (codexRequest.enableSearch) {
-      args.push('--search');
+      console.warn(`[${this.name}] Предупреждение: enableSearch не работает в режиме exec (--search только для интерактивного режима)`);
     }
 
     // Добавляем аргументы из capabilities
@@ -667,9 +667,9 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
   override getCapabilitySupport(): Record<keyof StepCapabilities, CapabilitySupport> {
     return {
       web_search: {
-        supported: true,
-        flags: ['--search'],
-        note: 'Включает веб-поиск через флаг --search'
+        supported: false,
+        flags: [],
+        note: 'Codex exec не поддерживает --search (только интерактивный режим)'
       },
       web_fetch: {
         supported: false,
@@ -690,7 +690,7 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
    * Преобразование capabilities в аргументы командной строки Codex CLI
    *
    * Маппинг:
-   * - web_search: true → --search
+   * - web_search: warning (не поддерживается в exec режиме)
    * - mcp_tools: true → логируем что MCP доступен (настройка через codex mcp)
    * - web_fetch: warning (не поддерживается)
    * - browser: warning (не поддерживается)
@@ -701,10 +701,9 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
   protected override mapCapabilitiesToArgs(capabilities: StepCapabilities): string[] {
     const args: string[] = [];
 
-    // web_search → --search
+    // web_search - не поддерживается в exec режиме
     if (capabilities.web_search) {
-      args.push('--search');
-      console.log(`[${this.name}] Включен веб-поиск (--search)`);
+      console.warn(`[${this.name}] Предупреждение: web_search не поддерживается в режиме exec (--search работает только в интерактивном режиме)`);
     }
 
     // mcp_tools - просто логируем информацию

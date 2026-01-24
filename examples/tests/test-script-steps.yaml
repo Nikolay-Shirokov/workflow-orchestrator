@@ -1,0 +1,49 @@
+# Тест script steps
+# Проверяет корректность выполнения скриптов и копирования файлов
+
+workflow:
+  name: "test-script-steps"
+  version: "1.0"
+  description: "Тест script steps"
+
+  settings:
+    artifacts_dir: "artifacts/test-scripts-${timestamp}"
+    log_level: "debug"
+
+  roles:
+    assistant:
+      adapter: "claude-cli"
+      model: "sonnet"
+
+  steps:
+    # Тест 1: Простой echo
+    - id: test_echo
+      name: "Тест: Echo"
+      type: script
+      shell: "bash"
+      script: |
+        echo "Hello from script"
+      outputs:
+        result: "${artifacts_dir}/echo_result.txt"
+
+    # Тест 2: Копирование файла (проблемный случай)
+    - id: test_copy
+      name: "Тест: Копирование файла"
+      type: script
+      shell: "bash"
+      script: |
+        cat examples/mock-data/user_need.md
+      outputs:
+        result: "${artifacts_dir}/copied_file.md"
+
+    # Тест 3: Многострочный вывод
+    - id: test_multiline
+      name: "Тест: Многострочный вывод"
+      type: script
+      shell: "bash"
+      script: |
+        echo "Line 1"
+        echo "Line 2"
+        echo "Line 3"
+      outputs:
+        result: "${artifacts_dir}/multiline.txt"

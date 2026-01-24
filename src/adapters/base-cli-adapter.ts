@@ -125,6 +125,49 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
   }
 
   /**
+   * Очистка markdown code blocks из ответа для структурированных данных
+   * Удаляет ```json/yaml ... ``` обёртки, оставляя чистый контент
+   *
+   * ВАЖНО: Очищает ТОЛЬКО для структурированных форматов (json, yaml, xml),
+   * чтобы не повредить markdown-файлы с code blocks.
+   *
+   * Примеры:
+   * - "```json\n{...}\n```" → "{...}" (очищаем - JSON)
+   * - "```yaml\n...\n```" → "..." (очищаем - YAML)
+   * - "```python\ncode\n```" → оставляем как есть (код, не данные)
+   * - "plain text" → "plain text" (без изменений)
+   *
+   * @param content - Контент с возможными markdown code blocks
+   * @returns string - Очищенный контент
+   */
+  protected stripMarkdownCodeBlocks(content: string): string {
+    const trimmed = content.trim();
+
+    // Паттерн для markdown code block: ```[язык]\n...\n```
+    // Очищаем ТОЛЬКО структурированные данные: json, yaml, yml, xml, toml
+    const structuredDataPattern = /^```(json|yaml|yml|xml|toml)?\s*\n?([\s\S]*?)\n?```$/;
+    const match = trimmed.match(structuredDataPattern);
+
+    if (match) {
+      const language = match[1]?.toLowerCase();
+      const innerContent = match[2].trim();
+
+      // Если язык указан явно как структурированный формат - очищаем
+      if (language && ['json', 'yaml', 'yml', 'xml', 'toml'].includes(language)) {
+        return innerContent;
+      }
+
+      // Если язык не указан, проверяем содержимое
+      // Очищаем только если похоже на JSON (начинается с { или [)
+      if (!language && (innerContent.startsWith('{') || innerContent.startsWith('['))) {
+        return innerContent;
+      }
+    }
+
+    return trimmed;
+  }
+
+  /**
    * Обработка ошибок
    * @param error - Ошибка выполнения
    * @returns AdapterError - Структурированная ошибка

@@ -403,6 +403,9 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
       }
     }
 
+    // Очищаем markdown code blocks если есть
+    content = this.stripMarkdownCodeBlocks(content);
+
     return content;
   }
 

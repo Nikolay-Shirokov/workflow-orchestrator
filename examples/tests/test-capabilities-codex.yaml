@@ -1,0 +1,36 @@
+# Тест capabilities и permissions для Codex CLI
+# Codex exec НЕ поддерживает web_search (--search только в интерактивном режиме)
+
+workflow:
+  name: "test-capabilities-codex"
+  version: "1.0"
+  description: "Тест permissions Codex CLI"
+
+  settings:
+    artifacts_dir: "artifacts/test-caps-codex-${timestamp}"
+    log_level: "debug"
+
+  roles:
+    writer:
+      adapter: "codex-cli"
+      # Не указываем model - используем default
+      role_definition: "Ты помощник."
+      temperature: 0.1
+      max_tokens: 500
+      permissions:
+        - read
+        - "edit:artifacts/**/*"
+      default_permissions:
+        read: ["**/*"]
+        write: ["artifacts/**/*"]
+
+  steps:
+    # Тест: Базовый запрос без capabilities
+    - id: test_basic
+      name: "Тест: Базовый запрос"
+      type: model
+      role: writer
+      prompt_template: |
+        Скажи "Hello from Codex" и ничего больше.
+      outputs:
+        result: "${artifacts_dir}/basic_result.txt"
