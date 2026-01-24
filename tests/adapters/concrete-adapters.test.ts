@@ -358,13 +358,13 @@ describe('GeminiCLIAdapter', () => {
       model: 'gemini-pro'
     });
 
-    // Новая реализация: --allowed-tools write_file --yolo --model <model>
+    // Новая реализация: без permissions - только --model, без --yolo
     // Промпт передается через временный файл, не в аргументах
-    expect(argsWithModel).toContain('--allowed-tools');
-    expect(argsWithModel).toContain('write_file');
-    expect(argsWithModel).toContain('--yolo');
     expect(argsWithModel).toContain('--model');
     expect(argsWithModel).toContain('gemini-pro');
+    // Без permissions --yolo и --allowed-tools НЕ добавляются (безопасный режим)
+    expect(argsWithModel).not.toContain('--yolo');
+    expect(argsWithModel).not.toContain('--allowed-tools');
   });
 
   it('не должен добавлять флаг --model если модель не указана', () => {
@@ -375,12 +375,32 @@ describe('GeminiCLIAdapter', () => {
       prompt: 'test prompt'
     });
 
-    // Новая реализация: --allowed-tools write_file --yolo
+    // Новая реализация: без permissions - пустой массив (безопасный режим)
     // Промпт передается через временный файл, не в аргументах
-    expect(argsWithoutModel).toContain('--allowed-tools');
-    expect(argsWithoutModel).toContain('write_file');
-    expect(argsWithoutModel).toContain('--yolo');
     expect(argsWithoutModel).not.toContain('--model');
+    // Без permissions --yolo и --allowed-tools НЕ добавляются
+    expect(argsWithoutModel).not.toContain('--yolo');
+    expect(argsWithoutModel).not.toContain('--allowed-tools');
+  });
+
+  it('должен добавлять --allowed-tools и --yolo при permissions.write', () => {
+    const adapter = new GeminiCLIAdapter();
+
+    // Используем приватный метод через any для тестирования
+    const argsWithWrite = (adapter as any).prepareArguments({
+      prompt: 'test prompt',
+      model: 'gemini-pro',
+      permissions: {
+        write: ['*.md']
+      }
+    });
+
+    // С permissions.write добавляются инструменты записи
+    expect(argsWithWrite).toContain('--model');
+    expect(argsWithWrite).toContain('gemini-pro');
+    expect(argsWithWrite).toContain('--allowed-tools');
+    expect(argsWithWrite).toContain('write_file');
+    expect(argsWithWrite).toContain('--yolo');
   });
 });
 
