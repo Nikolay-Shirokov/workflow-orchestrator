@@ -4,7 +4,14 @@
  */
 
 import { BaseCLIAdapter } from './base-cli-adapter.js';
-import { AdapterConfig, AdapterRequest, AdapterResponse, StepPermissions } from '../core/types.js';
+import {
+  AdapterConfig,
+  AdapterRequest,
+  AdapterResponse,
+  StepPermissions,
+  StepCapabilities,
+  CapabilitySupport
+} from '../core/types.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
@@ -95,6 +102,7 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
    * - permissions.write -> добавляем write_file в --allowed-tools + --yolo
    * - permissions.execute -> добавляем shell в --allowed-tools + --yolo
    * - permissions.fullAccess -> --yolo без ограничения инструментов
+   * - permissions.capabilities -> добавляем соответствующие инструменты
    *
    * ВАЖНО: --yolo никогда не используется по умолчанию для безопасности
    *
@@ -119,8 +127,17 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
       return args;
     }
 
-    // Если permissions не указаны и нет явных allowedTools, возвращаем пустой массив (read-only)
+    // Если permissions не указаны и нет capabilities, проверяем только capabilities из запроса
     if (!permissions) {
+      // Проверяем capabilities из запроса напрямую
+      const capabilities = geminiRequest ? this.mergeCapabilities(geminiRequest) : undefined;
+      if (capabilities) {
+        const capabilityTools = this.mapCapabilitiesToTools(capabilities);
+        if (capabilityTools.length > 0 && (!geminiRequest?.allowedTools || geminiRequest.allowedTools.length === 0)) {
+          args.push('--allowed-tools', capabilityTools.join(','));
+          args.push('--yolo');
+        }
+      }
       return args;
     }
 
@@ -133,7 +150,7 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
       return args;
     }
 
-    // Формируем список инструментов на основе permissions
+    // Формируем список инструментов на основе permissions и capabilities
     // Если allowedTools уже указаны явно, не добавляем автоматически
     if (!geminiRequest?.allowedTools || geminiRequest.allowedTools.length === 0) {
       const tools: string[] = [];
@@ -146,6 +163,17 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
       // permissions.execute - разрешаем инструмент shell
       if (permissions.execute) {
         tools.push('shell');
+      }
+
+      // Добавляем инструменты из capabilities
+      const capabilities = geminiRequest ? this.mergeCapabilities(geminiRequest) : undefined;
+      if (capabilities) {
+        const capabilityTools = this.mapCapabilitiesToTools(capabilities);
+        for (const tool of capabilityTools) {
+          if (!tools.includes(tool)) {
+            tools.push(tool);
+          }
+        }
       }
 
       // Добавляем --allowed-tools и --yolo если есть инструменты
@@ -394,5 +422,98 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
     } catch (error) {
       return false;
     }
+  }
+
+  // ============================================================================
+  // Методы для работы с capabilities
+  // ============================================================================
+
+  /**
+   * Получение информации о поддержке capabilities для Gemini CLI
+   *
+   * Gemini CLI поддерживает:
+   * - web_search: через инструмент google_web_search
+   * - web_fetch: через инструмент web_fetch
+   * - mcp_tools: через mcpServers в settings.json, includeTools/excludeTools
+   *
+   * Не поддерживает:
+   * - browser
+   *
+   * @returns Record<keyof StepCapabilities, CapabilitySupport>
+   */
+  override getCapabilitySupport(): Record<keyof StepCapabilities, CapabilitySupport> {
+    return {
+      web_search: {
+        supported: true,
+        flags: ['--allowed-tools', 'google_web_search'],
+        note: 'Добавляет инструмент google_web_search для поиска в интернете'
+      },
+      web_fetch: {
+        supported: true,
+        flags: ['--allowed-tools', 'web_fetch'],
+        note: 'Добавляет инструмент web_fetch для загрузки веб-страниц'
+      },
+      mcp_tools: {
+        supported: true,
+        note: 'MCP настраивается через mcpServers в settings.json или `gemini mcp add`. Контроль через includeTools/excludeTools на уровне сервера'
+      },
+      browser: {
+        supported: false,
+        note: 'Gemini CLI не поддерживает интеграцию с браузером'
+      }
+    };
+  }
+
+  /**
+   * Преобразование capabilities в список инструментов для Gemini CLI
+   *
+   * Маппинг:
+   * - web_search: true → google_web_search
+   * - web_fetch: true → web_fetch
+   * - mcp_tools: логируем информацию (настройка через settings.json)
+   * - browser: warning (не поддерживается)
+   *
+   * @param capabilities - Capabilities для преобразования
+   * @returns string[] - Список инструментов для --allowed-tools
+   */
+  protected mapCapabilitiesToTools(capabilities: StepCapabilities): string[] {
+    const tools: string[] = [];
+
+    // web_search → google_web_search
+    if (capabilities.web_search) {
+      tools.push('google_web_search');
+      console.log(`[${this.name}] Включен веб-поиск (google_web_search)`);
+    }
+
+    // web_fetch → web_fetch
+    if (capabilities.web_fetch) {
+      tools.push('web_fetch');
+      console.log(`[${this.name}] Включена загрузка веб-страниц (web_fetch)`);
+    }
+
+    // mcp_tools - просто логируем информацию
+    if (capabilities.mcp_tools) {
+      if (Array.isArray(capabilities.mcp_tools)) {
+        console.log(`[${this.name}] Информация: MCP-инструменты [${capabilities.mcp_tools.join(', ')}] должны быть настроены в settings.json через includeTools/excludeTools`);
+      } else {
+        console.log(`[${this.name}] Информация: Все MCP-инструменты будут доступны если настроены в settings.json`);
+      }
+    }
+
+    // browser - предупреждение
+    if (capabilities.browser) {
+      console.warn(`[${this.name}] Предупреждение: browser не поддерживается Gemini CLI`);
+    }
+
+    return tools;
+  }
+
+  /**
+   * Переопределение базового mapCapabilitiesToArgs
+   * Для Gemini мы не возвращаем аргументы напрямую - они объединяются в mapPermissionsToArgs
+   */
+  protected override mapCapabilitiesToArgs(_capabilities: StepCapabilities): string[] {
+    // Возвращаем пустой массив - инструменты добавляются через mapPermissionsToArgs
+    return [];
   }
 }

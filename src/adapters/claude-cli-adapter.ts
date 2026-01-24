@@ -4,7 +4,14 @@
  */
 
 import { BaseCLIAdapter } from './base-cli-adapter.js';
-import { AdapterConfig, AdapterRequest, StepPermissions, AdapterResponse } from '../core/types.js';
+import {
+  AdapterConfig,
+  AdapterRequest,
+  StepPermissions,
+  AdapterResponse,
+  StepCapabilities,
+  CapabilitySupport
+} from '../core/types.js';
 
 /**
  * Расширенный запрос для Claude CLI с дополнительными опциями
@@ -107,6 +114,7 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
    * - permissions.write -> добавляем Write в --tools и --allowedTools
    * - permissions.execute -> добавляем Bash в --tools и --allowedTools
    * - permissions.fullAccess -> добавляем --dangerously-skip-permissions
+   * - permissions.capabilities -> добавляем соответствующие инструменты
    *
    * ВАЖНО: --dangerously-skip-permissions никогда не используется по умолчанию
    *
@@ -171,6 +179,29 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
       if (permissions.execute) {
         tools.push('Bash');
         allowedTools.push('Bash');
+      }
+
+      // Добавляем инструменты из capabilities
+      const capabilities = claudeRequest ? this.mergeCapabilities(claudeRequest) : undefined;
+      if (capabilities) {
+        const capabilityResult = this.mapCapabilitiesToToolsAndFlags(capabilities);
+
+        // Добавляем tools из capabilities (без дубликатов)
+        for (const tool of capabilityResult.tools) {
+          if (!tools.includes(tool)) {
+            tools.push(tool);
+          }
+        }
+
+        // Добавляем allowedTools из capabilities (без дубликатов)
+        for (const tool of capabilityResult.allowedTools) {
+          if (!allowedTools.includes(tool)) {
+            allowedTools.push(tool);
+          }
+        }
+
+        // Добавляем флаги из capabilities (--chrome и т.д.)
+        args.push(...capabilityResult.flags);
       }
 
       // Добавляем --tools если есть инструменты
@@ -303,6 +334,112 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
     }
 
     return content;
+  }
+
+  // ============================================================================
+  // Методы для работы с capabilities
+  // ============================================================================
+
+  /**
+   * Получение информации о поддержке capabilities для Claude CLI
+   *
+   * Claude CLI поддерживает:
+   * - web_search: через инструмент WebSearch
+   * - web_fetch: через инструмент WebFetch
+   * - mcp_tools: через --tools и --allowedTools
+   * - browser: через флаг --chrome
+   *
+   * @returns Record<keyof StepCapabilities, CapabilitySupport>
+   */
+  override getCapabilitySupport(): Record<keyof StepCapabilities, CapabilitySupport> {
+    return {
+      web_search: {
+        supported: true,
+        flags: ['--tools', 'WebSearch', '--allowedTools', 'WebSearch'],
+        note: 'Добавляет инструмент WebSearch для поиска в интернете'
+      },
+      web_fetch: {
+        supported: true,
+        flags: ['--tools', 'WebFetch', '--allowedTools', 'WebFetch'],
+        note: 'Добавляет инструмент WebFetch для загрузки веб-страниц'
+      },
+      mcp_tools: {
+        supported: true,
+        flags: ['--tools', '--allowedTools'],
+        note: 'MCP-серверы настраиваются через --mcp-config или глобальную конфигурацию'
+      },
+      browser: {
+        supported: true,
+        flags: ['--chrome'],
+        note: 'Включает интеграцию с Chrome для взаимодействия с веб-страницами'
+      }
+    };
+  }
+
+  /**
+   * Преобразование capabilities в аргументы командной строки Claude CLI
+   *
+   * Маппинг:
+   * - web_search: true → WebSearch в tools/allowedTools
+   * - web_fetch: true → WebFetch в tools/allowedTools
+   * - browser: true → --chrome
+   * - mcp_tools: true → не ограничивать MCP-инструменты
+   * - mcp_tools: ["tool1"] → добавить в allowedTools
+   *
+   * @param capabilities - Capabilities для преобразования
+   * @returns { tools: string[], allowedTools: string[], flags: string[] }
+   */
+  protected mapCapabilitiesToToolsAndFlags(capabilities: StepCapabilities): {
+    tools: string[];
+    allowedTools: string[];
+    flags: string[];
+  } {
+    const tools: string[] = [];
+    const allowedTools: string[] = [];
+    const flags: string[] = [];
+
+    // web_search → WebSearch инструмент
+    if (capabilities.web_search) {
+      tools.push('WebSearch');
+      allowedTools.push('WebSearch');
+      console.log(`[${this.name}] Включен веб-поиск (WebSearch)`);
+    }
+
+    // web_fetch → WebFetch инструмент
+    if (capabilities.web_fetch) {
+      tools.push('WebFetch');
+      allowedTools.push('WebFetch');
+      console.log(`[${this.name}] Включена загрузка веб-страниц (WebFetch)`);
+    }
+
+    // browser → --chrome
+    if (capabilities.browser) {
+      flags.push('--chrome');
+      console.log(`[${this.name}] Включена интеграция с браузером (--chrome)`);
+    }
+
+    // mcp_tools обрабатывается особым образом
+    if (capabilities.mcp_tools) {
+      if (Array.isArray(capabilities.mcp_tools)) {
+        // Конкретный список MCP-инструментов → добавляем в allowedTools
+        allowedTools.push(...capabilities.mcp_tools);
+        console.log(`[${this.name}] Разрешены MCP-инструменты: ${capabilities.mcp_tools.join(', ')}`);
+      } else {
+        // mcp_tools: true → все MCP-инструменты разрешены (не добавляем ограничения)
+        console.log(`[${this.name}] Все MCP-инструменты разрешены`);
+      }
+    }
+
+    return { tools, allowedTools, flags };
+  }
+
+  /**
+   * Переопределение базового mapCapabilitiesToArgs
+   * Возвращает только флаги (--chrome), tools обрабатываются в mapPermissionsToArgs
+   */
+  protected override mapCapabilitiesToArgs(capabilities: StepCapabilities): string[] {
+    const { flags } = this.mapCapabilitiesToToolsAndFlags(capabilities);
+    return flags;
   }
 
   /**

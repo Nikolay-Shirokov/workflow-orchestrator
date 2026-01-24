@@ -91,6 +91,16 @@ export interface RoleConfig {
   permissions?: (string | Record<string, string>)[];
   temperature?: number;
   max_tokens?: number;
+
+  /**
+   * Capabilities по умолчанию для всех шагов этой роли
+   * Шаг может переопределить capabilities частично или полностью
+   *
+   * Приоритет: step.permissions.capabilities > role.default_capabilities
+   *
+   * @see StepCapabilities
+   */
+  default_capabilities?: StepCapabilities;
 }
 
 /**
@@ -381,6 +391,88 @@ export interface PluginLoadOptions {
 }
 
 /**
+ * Дополнительные возможности модели (capabilities)
+ * Расширяет базовые разрешения на файловую систему
+ *
+ * @remarks
+ * Маппинг на CLI-флаги:
+ * - web_search: Claude → WebSearch инструмент, Codex → --search, Gemini → google_web_search
+ * - web_fetch: Claude → WebFetch инструмент, Gemini → web_fetch
+ * - mcp_tools: Claude → --tools/--allowedTools, Codex → авто через codex mcp, Gemini → settings.json
+ * - browser: Claude → --chrome (только Claude)
+ */
+export interface StepCapabilities {
+  /**
+   * Разрешить поиск в интернете
+   * - Claude: добавляет WebSearch в --tools и --allowedTools
+   * - Codex: добавляет флаг --search
+   * - Gemini: разрешает инструмент google_web_search
+   */
+  web_search?: boolean;
+
+  /**
+   * Разрешить загрузку веб-страниц по URL
+   * - Claude: добавляет WebFetch в --tools и --allowedTools
+   * - Gemini: разрешает инструмент web_fetch
+   * - Codex: не поддерживается
+   */
+  web_fetch?: boolean;
+
+  /**
+   * Разрешить использование MCP-инструментов
+   * - true: разрешить все настроенные MCP-инструменты
+   * - string[]: разрешить только указанные инструменты
+   *
+   * @remarks
+   * MCP-серверы должны быть настроены на уровне CLI-утилиты:
+   * - Claude: через --mcp-config или глобальную конфигурацию
+   * - Codex: через `codex mcp add`
+   * - Gemini: через mcpServers в settings.json или `gemini mcp add`
+   */
+  mcp_tools?: boolean | string[];
+
+  /**
+   * Разрешить интеграцию с браузером
+   * - Claude: добавляет флаг --chrome
+   * - Codex, Gemini: не поддерживается
+   */
+  browser?: boolean;
+}
+
+/**
+ * Информация о поддержке capability адаптером
+ */
+export interface CapabilitySupport {
+  /** Поддерживается ли capability данным адаптером */
+  supported: boolean;
+
+  /** CLI-флаги для включения capability */
+  flags?: string[];
+
+  /** Примечание о поддержке (например, требования к настройке) */
+  note?: string;
+}
+
+/**
+ * Адаптер с поддержкой capabilities
+ * Расширяет базовый CLIAdapter методами для работы с capabilities
+ */
+export interface CapabilityAwareAdapter extends CLIAdapter {
+  /**
+   * Получить информацию о поддержке capabilities
+   * @returns Объект с информацией о поддержке каждой capability
+   */
+  getCapabilitySupport(): Record<keyof StepCapabilities, CapabilitySupport>;
+
+  /**
+   * Преобразовать capabilities в аргументы командной строки
+   * @param capabilities - Набор capabilities для преобразования
+   * @returns Массив аргументов командной строки
+   */
+  mapCapabilitiesToArgs(capabilities: StepCapabilities): string[];
+}
+
+/**
  * Разрешения для шага workflow
  * Определяет что модель может делать во время выполнения шага
  */
@@ -396,6 +488,12 @@ export interface StepPermissions {
 
   /** Режим полного доступа без ограничений (ОПАСНО!) */
   fullAccess?: boolean;
+
+  /**
+   * Дополнительные возможности модели
+   * @see StepCapabilities
+   */
+  capabilities?: StepCapabilities;
 }
 
 /**
@@ -428,6 +526,13 @@ export interface AdapterRequest {
 
   /** Разрешения для данного запроса */
   permissions?: StepPermissions;
+
+  /**
+   * Дополнительные возможности для данного запроса
+   * Обычно извлекаются из permissions.capabilities или role.default_capabilities
+   * @see StepCapabilities
+   */
+  capabilities?: StepCapabilities;
 }
 
 /**

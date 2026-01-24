@@ -425,6 +425,64 @@ roles:
 
 Подробнее см. [SECURITY.md](SECURITY.md#6-разрешения-на-уровне-шага-steppermissions)
 
+### Что такое capabilities?
+
+Capabilities - дополнительные возможности модели, выходящие за рамки файловых операций:
+
+- `web_search` - поиск информации в интернете
+- `web_fetch` - загрузка содержимого веб-страниц по URL
+- `mcp_tools` - использование MCP-инструментов
+- `browser` - интеграция с браузером
+
+Пример использования:
+
+```yaml
+steps:
+  - id: "research"
+    type: "model"
+    role: "researcher"
+    prompt_template: "Найди информацию о ${topic}"
+    permissions:
+      read: ["docs/**/*"]
+      capabilities:
+        web_search: true
+        web_fetch: true
+```
+
+### Как использовать MCP-инструменты?
+
+MCP-серверы настраиваются **вне workflow** на уровне CLI:
+
+```bash
+# Claude
+claude mcp add my-server
+
+# Codex
+codex mcp add my-server
+
+# Gemini
+gemini mcp add my-server
+```
+
+Workflow лишь даёт разрешение на использование настроенных инструментов:
+
+```yaml
+permissions:
+  capabilities:
+    mcp_tools: true                    # все настроенные MCP-инструменты
+    # или
+    mcp_tools: ["db_query", "db_insert"]  # только указанные
+```
+
+### Какие адаптеры поддерживают какие capabilities?
+
+| Capability | Claude | Codex | Gemini |
+|------------|--------|-------|--------|
+| `web_search` | ✅ | ✅ | ✅ |
+| `web_fetch` | ✅ | ❌ | ✅ |
+| `mcp_tools` | ✅ | ⚡ авто | ✅ |
+| `browser` | ✅ | ❌ | ❌ |
+
 ### Можно ли запускать процессы в изолированной среде?
 
 Да, используйте Docker:

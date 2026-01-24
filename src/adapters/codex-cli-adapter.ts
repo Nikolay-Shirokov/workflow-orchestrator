@@ -4,7 +4,14 @@
  */
 
 import { BaseCLIAdapter } from './base-cli-adapter.js';
-import { AdapterConfig, AdapterRequest, StepPermissions, AdapterResponse } from '../core/types.js';
+import {
+  AdapterConfig,
+  AdapterRequest,
+  StepPermissions,
+  AdapterResponse,
+  StepCapabilities,
+  CapabilitySupport
+} from '../core/types.js';
 import { spawn } from 'child_process';
 
 /**
@@ -142,9 +149,21 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
       args.push('--color', codexRequest.colorMode);
     }
     
-    // Добавляем флаг --search для включения веб-поиска
+    // Добавляем флаг --search для включения веб-поиска (из явного параметра)
     if (codexRequest.enableSearch) {
       args.push('--search');
+    }
+
+    // Добавляем аргументы из capabilities
+    const capabilities = this.mergeCapabilities(codexRequest);
+    if (capabilities) {
+      const capabilityArgs = this.mapCapabilitiesToArgs(capabilities);
+      // Добавляем только если --search ещё не добавлен
+      for (const arg of capabilityArgs) {
+        if (!args.includes(arg)) {
+          args.push(arg);
+        }
+      }
     }
     
     // Добавляем флаг --json для получения вывода в формате JSONL
@@ -626,5 +645,87 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
       maxWaitTime: 5000,
       pollInterval: 200
     });
+  }
+
+  // ============================================================================
+  // Методы для работы с capabilities
+  // ============================================================================
+
+  /**
+   * Получение информации о поддержке capabilities для Codex CLI
+   *
+   * Codex CLI поддерживает:
+   * - web_search: через флаг --search
+   * - mcp_tools: автоматически доступны если настроены через `codex mcp add`
+   *
+   * Не поддерживает:
+   * - web_fetch
+   * - browser
+   *
+   * @returns Record<keyof StepCapabilities, CapabilitySupport>
+   */
+  override getCapabilitySupport(): Record<keyof StepCapabilities, CapabilitySupport> {
+    return {
+      web_search: {
+        supported: true,
+        flags: ['--search'],
+        note: 'Включает веб-поиск через флаг --search'
+      },
+      web_fetch: {
+        supported: false,
+        note: 'Codex CLI не поддерживает загрузку веб-страниц'
+      },
+      mcp_tools: {
+        supported: true,
+        note: 'MCP доступен автоматически если настроен через `codex mcp add`. Нет возможности ограничить инструменты во время exec'
+      },
+      browser: {
+        supported: false,
+        note: 'Codex CLI не поддерживает интеграцию с браузером'
+      }
+    };
+  }
+
+  /**
+   * Преобразование capabilities в аргументы командной строки Codex CLI
+   *
+   * Маппинг:
+   * - web_search: true → --search
+   * - mcp_tools: true → логируем что MCP доступен (настройка через codex mcp)
+   * - web_fetch: warning (не поддерживается)
+   * - browser: warning (не поддерживается)
+   *
+   * @param capabilities - Capabilities для преобразования
+   * @returns string[] - Массив аргументов командной строки
+   */
+  protected override mapCapabilitiesToArgs(capabilities: StepCapabilities): string[] {
+    const args: string[] = [];
+
+    // web_search → --search
+    if (capabilities.web_search) {
+      args.push('--search');
+      console.log(`[${this.name}] Включен веб-поиск (--search)`);
+    }
+
+    // mcp_tools - просто логируем информацию
+    if (capabilities.mcp_tools) {
+      if (Array.isArray(capabilities.mcp_tools)) {
+        console.log(`[${this.name}] Информация: MCP-инструменты [${capabilities.mcp_tools.join(', ')}] будут доступны если настроены через 'codex mcp add'. Codex CLI не позволяет ограничить инструменты во время exec`);
+      } else {
+        console.log(`[${this.name}] Информация: Все MCP-инструменты будут доступны если настроены через 'codex mcp add'`);
+      }
+    }
+
+    // web_fetch - предупреждение
+    if (capabilities.web_fetch) {
+      console.warn(`[${this.name}] Предупреждение: web_fetch не поддерживается Codex CLI`);
+    }
+
+    // browser - предупреждение
+    if (capabilities.browser) {
+      console.warn(`[${this.name}] Предупреждение: browser не поддерживается Codex CLI`);
+    }
+
+    return args;
   }
 }

@@ -8,12 +8,12 @@ CLI-адаптеры предоставляют унифицированный �
 
 ## Доступные адаптеры
 
-| Адаптер | CLI-утилита | Модели | Permissions |
-|---------|-------------|--------|-------------|
-| `ClaudeCLIAdapter` | `claude` | Claude Sonnet, Opus, Haiku | ✅ Полная поддержка |
-| `CodexCLIAdapter` | `codex` | GPT-4, Codex | ✅ Полная поддержка |
-| `GeminiCLIAdapter` | `gemini` | Gemini Pro, Ultra | ✅ Полная поддержка |
-| `OpenAICLIAdapter` | `openai` | GPT-4, GPT-3.5 | Базовая |
+| Адаптер | CLI-утилита | Модели | Permissions | Capabilities |
+|---------|-------------|--------|-------------|--------------|
+| `ClaudeCLIAdapter` | `claude` | Claude Sonnet, Opus, Haiku | ✅ Полная поддержка | ✅ Полная |
+| `CodexCLIAdapter` | `codex` | GPT-4, Codex | ✅ Полная поддержка | ⚡ Частичная |
+| `GeminiCLIAdapter` | `gemini` | Gemini Pro, Ultra | ✅ Полная поддержка | ⚡ Частичная |
+| `OpenAICLIAdapter` | `openai` | GPT-4, GPT-3.5 | Базовая | ❌ Нет |
 
 ### ClaudeCLIAdapter
 
@@ -202,6 +202,77 @@ const response3 = await adapter.execute({
 - `--yolo` (Codex) и `--dangerously-skip-permissions` (Claude) **НИКОГДА** не используются без явного `fullAccess: true`
 - `Bash` инструмент (Claude) **НЕДОСТУПЕН** без `execute: true`
 - `shell` инструмент (Gemini) **НЕДОСТУПЕН** без `execute: true`
+
+## Capabilities (Дополнительные возможности)
+
+Capabilities расширяют базовые разрешения файловой системы дополнительными возможностями: веб-поиск, MCP-инструменты, интеграция с браузером.
+
+### Поддержка capabilities по адаптерам
+
+| Capability | Claude CLI | Codex CLI | Gemini CLI |
+|------------|------------|-----------|------------|
+| `web_search` | ✅ WebSearch | ✅ `--search` | ✅ google_web_search |
+| `web_fetch` | ✅ WebFetch | ❌ | ✅ web_fetch |
+| `mcp_tools` | ✅ `--tools`, `--allowedTools` | ⚡ авто через `codex mcp` | ✅ settings.json |
+| `browser` | ✅ `--chrome` | ❌ | ❌ |
+
+### Структура StepCapabilities
+
+```typescript
+interface StepCapabilities {
+  web_search?: boolean;           // Поиск в интернете
+  web_fetch?: boolean;            // Загрузка веб-страниц по URL
+  mcp_tools?: boolean | string[]; // MCP-инструменты
+  browser?: boolean;              // Интеграция с браузером
+}
+```
+
+### Пример использования
+
+```typescript
+// Запрос с веб-поиском
+const response = await adapter.execute({
+  prompt: 'Найди последние новости о TypeScript 5.0',
+  permissions: {
+    capabilities: {
+      web_search: true
+    }
+  }
+});
+
+// Запрос с веб-поиском и MCP
+const response = await adapter.execute({
+  prompt: 'Исследуй API и создай интеграцию',
+  permissions: {
+    write: ['src/**/*.ts'],
+    capabilities: {
+      web_search: true,
+      web_fetch: true,
+      mcp_tools: true  // Все настроенные MCP-инструменты
+    }
+  }
+});
+
+// Запрос с конкретными MCP-инструментами
+const response = await adapter.execute({
+  prompt: 'Используй базу данных',
+  permissions: {
+    capabilities: {
+      mcp_tools: ['db_query', 'db_insert']  // Только указанные
+    }
+  }
+});
+```
+
+### Примечания по MCP
+
+MCP-серверы настраиваются **вне workflow** на уровне CLI-утилиты:
+
+- **Claude**: через `--mcp-config` или глобальную конфигурацию
+- **Codex**: через `codex mcp add` (все настроенные серверы доступны автоматически)
+- **Gemini**: через `mcpServers` в `settings.json` или `gemini mcp add`
+
+Workflow лишь **даёт разрешение** на использование уже настроенных MCP-инструментов.
 
 ## Запись результата в файл (outputFile)
 

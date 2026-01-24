@@ -11,7 +11,9 @@ import {
   AdapterResponse,
   AdapterError,
   AdapterConfig,
-  StepPermissions
+  StepPermissions,
+  StepCapabilities,
+  CapabilitySupport
 } from '../core/types.js';
 
 /**
@@ -145,21 +147,30 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
    * @returns string[] - Массив аргументов
    */
   protected prepareArguments(request: AdapterRequest): string[] {
-    if (!this.config.args) {
-      return [];
+    const args: string[] = [];
+
+    if (this.config.args) {
+      // Создаем контекст для подстановки
+      const context: Record<string, string> = {
+        prompt: request.prompt,
+        model: request.model || '',
+        temperature: request.temperature?.toString() || '',
+        maxTokens: request.maxTokens?.toString() || '',
+        systemPrompt: request.systemPrompt || ''
+      };
+
+      // Подставляем значения в аргументы
+      args.push(...this.config.args.map(arg => this.substituteVariables(arg, context)));
     }
-    
-    // Создаем контекст для подстановки
-    const context: Record<string, string> = {
-      prompt: request.prompt,
-      model: request.model || '',
-      temperature: request.temperature?.toString() || '',
-      maxTokens: request.maxTokens?.toString() || '',
-      systemPrompt: request.systemPrompt || ''
-    };
-    
-    // Подставляем значения в аргументы
-    return this.config.args.map(arg => this.substituteVariables(arg, context));
+
+    // Добавляем аргументы из capabilities
+    const capabilities = this.mergeCapabilities(request);
+    if (capabilities) {
+      const capabilityArgs = this.mapCapabilitiesToArgs(capabilities);
+      args.push(...capabilityArgs);
+    }
+
+    return args;
   }
 
   /**
@@ -385,6 +396,74 @@ Note: The file path is relative to the current working directory.`;
         throw new Error(`Недопустимый паттерн "${pattern}": path traversal (..) запрещен`);
       }
     }
+  }
+
+  // ============================================================================
+  // Методы для работы с capabilities
+  // ============================================================================
+
+  /**
+   * Получение информации о поддержке capabilities данным адаптером
+   * Базовая реализация возвращает все capabilities как неподдерживаемые
+   * Переопределите в подклассах для реальной поддержки
+   * @returns Record<keyof StepCapabilities, CapabilitySupport>
+   */
+  getCapabilitySupport(): Record<keyof StepCapabilities, CapabilitySupport> {
+    return {
+      web_search: { supported: false, note: 'Не поддерживается данным адаптером' },
+      web_fetch: { supported: false, note: 'Не поддерживается данным адаптером' },
+      mcp_tools: { supported: false, note: 'Не поддерживается данным адаптером' },
+      browser: { supported: false, note: 'Не поддерживается данным адаптером' }
+    };
+  }
+
+  /**
+   * Преобразование capabilities в аргументы командной строки
+   * Базовая реализация логирует предупреждения о неподдерживаемых capabilities
+   * Переопределите в подклассах для реального маппинга
+   * @param capabilities - Capabilities для преобразования
+   * @returns string[] - Массив аргументов командной строки
+   */
+  protected mapCapabilitiesToArgs(capabilities: StepCapabilities): string[] {
+    const support = this.getCapabilitySupport();
+    const args: string[] = [];
+
+    // Логируем предупреждения о неподдерживаемых capabilities
+    if (capabilities.web_search && !support.web_search.supported) {
+      console.warn(`[${this.name}] Предупреждение: web_search не поддерживается данным адаптером`);
+    }
+    if (capabilities.web_fetch && !support.web_fetch.supported) {
+      console.warn(`[${this.name}] Предупреждение: web_fetch не поддерживается данным адаптером`);
+    }
+    if (capabilities.mcp_tools && !support.mcp_tools.supported) {
+      console.warn(`[${this.name}] Предупреждение: mcp_tools не поддерживается данным адаптером`);
+    }
+    if (capabilities.browser && !support.browser.supported) {
+      console.warn(`[${this.name}] Предупреждение: browser не поддерживается данным адаптером`);
+    }
+
+    return args;
+  }
+
+  /**
+   * Объединение capabilities из разных источников
+   * Приоритет: request.capabilities > request.permissions.capabilities
+   * @param request - Запрос к адаптеру
+   * @returns StepCapabilities | undefined
+   */
+  protected mergeCapabilities(request: AdapterRequest): StepCapabilities | undefined {
+    const fromPermissions = request.permissions?.capabilities;
+    const fromRequest = request.capabilities;
+
+    if (!fromPermissions && !fromRequest) {
+      return undefined;
+    }
+
+    // Merge с приоритетом request.capabilities
+    return {
+      ...fromPermissions,
+      ...fromRequest
+    };
   }
 
   /**
