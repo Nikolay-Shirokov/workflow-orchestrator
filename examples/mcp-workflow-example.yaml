@@ -43,9 +43,10 @@ workflow:
       role_definition: |
         Вы - исследователь, который анализирует информацию и создает отчеты.
         Используйте доступные MCP-инструменты для сбора информации.
-      permissions:
-        - read
-        - mcp
+      # Разрешения: чтение и запись в artifacts
+      default_permissions:
+        read: ["*.md", "*.txt", "artifacts/**/*"]
+        write: ["artifacts/**/*.md", "artifacts/**/*.txt"]
   
   # Шаги процесса
   steps:
