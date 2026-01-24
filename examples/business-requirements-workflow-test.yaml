@@ -80,7 +80,7 @@ workflow:
       type: "script"
       description: "Mock-данные вместо ввода пользователя"
       shell: "bash"
-      script: "mkdir -p '${artifacts_dir}' && cp 'examples/mock-data/user_need.md' '${artifacts_dir}/step1_user_need.md' && echo 'Mock user need copied'"
+      script: "cat examples/mock-data/user_need.md"
       outputs:
         user_need: "${artifacts_dir}/step1_user_need.md"
 
@@ -440,7 +440,7 @@ workflow:
       description: "Mock-ответы вместо ввода пользователя"
       depends_on: ["step8_final_questions"]
       shell: "bash"
-      script: "cp 'examples/mock-data/user_answers.md' '${artifacts_dir}/step9_user_answers.md' && echo 'Mock answers copied'"
+      script: "cat examples/mock-data/user_answers.md"
       outputs:
         user_answers: "${artifacts_dir}/step9_user_answers.md"
 
@@ -453,6 +453,7 @@ workflow:
       role: "architect"
       depends_on: ["step9_user_answers", "step1_user_need", "step1b_web_research"]
       description: "Архитектор формирует полные бизнес-требования"
+      timeout: 600000
       permissions:
         read: ["${artifacts_dir}/*.md"]
         write: ["${artifacts_dir}/step10_*.md"]
@@ -539,6 +540,7 @@ workflow:
       role: "copilot"
       depends_on: ["step1_user_need", "step9_user_answers", "step10_final_requirements"]
       description: "Второй пилот проводит критическое ревью требований"
+      timeout: 600000
       prompt_template: |
         Напоминаю исходную потребность пользователя:
 
@@ -603,6 +605,7 @@ workflow:
       role: "architect"
       depends_on: ["step1_user_need", "step9_user_answers", "step10_final_requirements", "step11_requirements_review"]
       description: "Архитектор создает финальную версию с учетом ревью"
+      timeout: 600000
       prompt_template: |
         Напоминаю исходную потребность пользователя:
 
