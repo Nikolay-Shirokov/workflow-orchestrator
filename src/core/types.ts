@@ -381,29 +381,76 @@ export interface PluginLoadOptions {
 }
 
 /**
+ * Разрешения для шага workflow
+ * Определяет что модель может делать во время выполнения шага
+ */
+export interface StepPermissions {
+  /** Паттерны файлов разрешенных для чтения (glob) */
+  read?: string[];
+
+  /** Паттерны файлов разрешенных для записи (glob) */
+  write?: string[];
+
+  /** Разрешено ли выполнять shell-команды */
+  execute?: boolean;
+
+  /** Режим полного доступа без ограничений (ОПАСНО!) */
+  fullAccess?: boolean;
+}
+
+/**
  * Запрос к CLI-адаптеру
  */
 export interface AdapterRequest {
   /** Промпт для модели */
   prompt: string;
-  
+
   /** Модель для использования (опционально) */
   model?: string;
-  
+
   /** Температура генерации (опционально) */
   temperature?: number;
-  
+
   /** Максимальное количество токенов (опционально) */
   maxTokens?: number;
-  
+
   /** Системный промпт (опционально) */
   systemPrompt?: string;
-  
+
   /** Переменные окружения (опционально) */
   env?: Record<string, string>;
-  
+
   /** Таймаут в миллисекундах (опционально) */
   timeout?: number;
+
+  /** Путь к выходному файлу для сохранения результата */
+  outputFile?: string;
+
+  /** Разрешения для данного запроса */
+  permissions?: StepPermissions;
+}
+
+/**
+ * Метаданные ответа адаптера
+ */
+export interface AdapterResponseMetadata {
+  /** Код выхода процесса */
+  exitCode?: number;
+
+  /** Вывод в stderr */
+  stderr?: string;
+
+  /** Путь к файлу, из которого был прочитан результат */
+  outputFile?: string;
+
+  /** Источник результата: файл или stdout */
+  resultSource?: 'file' | 'stdout';
+
+  /** Примененный режим sandbox (для Codex) */
+  sandboxMode?: string;
+
+  /** Дополнительные данные */
+  [key: string]: unknown;
 }
 
 /**
@@ -412,18 +459,18 @@ export interface AdapterRequest {
 export interface AdapterResponse {
   /** Контент ответа */
   content: string;
-  
+
   /** Использованная модель */
   model: string;
-  
+
   /** Количество использованных токенов (опционально) */
   tokensUsed?: number;
-  
+
   /** Время выполнения в миллисекундах */
   executionTime: number;
-  
+
   /** Дополнительные метаданные (опционально) */
-  metadata?: Record<string, unknown>;
+  metadata?: AdapterResponseMetadata;
 }
 
 /**
