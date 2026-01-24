@@ -392,12 +392,123 @@ ${if:condition:then_text:else_text}
 ```
 step complex_task {
   // основные поля
-  
+
   timeout 600
   retries 5
   continue_on_error true
 }
 ```
+
+### 7. Разрешения на уровне шага (permissions)
+
+Система разрешений позволяет контролировать, какие действия модель может выполнять на каждом шаге. Это обеспечивает безопасность и предотвращает нежелательные действия.
+
+#### Структура permissions
+
+```
+step generate_docs {
+  type model
+  role architect
+
+  permissions {
+    read: ["*.md", "src/**/*.ts"]    // Паттерны файлов для чтения
+    write: ["docs/*.md"]              // Паттерны файлов для записи
+    execute: false                    // Запрет выполнения shell-команд
+  }
+
+  prompt "..."
+  output docs = "${artifacts_dir}/docs.md"
+}
+```
+
+#### Доступные разрешения
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `read` | string[] | Паттерны файлов, разрешённых для чтения |
+| `write` | string[] | Паттерны файлов, разрешённых для записи |
+| `execute` | boolean | Разрешено ли выполнение shell-команд |
+| `fullAccess` | boolean | Полный доступ без ограничений (ОПАСНО) |
+
+#### Маппинг на CLI-утилиты
+
+Разрешения автоматически преобразуются в флаги соответствующих CLI-утилит:
+
+**Codex CLI:**
+- Без permissions → `--sandbox read-only`
+- permissions.write → `--sandbox workspace-write`
+- permissions.execute → `--full-auto`
+- permissions.fullAccess → без sandbox (полный доступ)
+
+**Claude CLI:**
+- Базовые инструменты: `Read`, `Grep`, `Glob`
+- permissions.write → добавляет `Write` в `--tools` и `--allowedTools`
+- permissions.execute → добавляет `Bash` в `--tools` и `--allowedTools`
+- permissions.fullAccess → `--dangerously-skip-permissions`
+
+**Gemini CLI:**
+- Без permissions → безопасный режим (без `--yolo`)
+- permissions.write → `--allowed-tools write_file --yolo`
+- permissions.execute → `--allowed-tools shell --yolo`
+- permissions.fullAccess → `--yolo`
+
+#### Примеры использования
+
+**Шаг только для чтения и анализа:**
+```
+step analyze_code {
+  type model
+  role architect
+
+  permissions {
+    read: ["src/**/*.ts", "*.md"]
+  }
+
+  prompt "Проанализируй код проекта..."
+  output analysis = "${artifacts_dir}/analysis.md"
+}
+```
+
+**Шаг для генерации документации (запись в файл):**
+```
+step generate_docs {
+  type model
+  role architect
+
+  permissions {
+    read: ["src/**/*.ts"]
+    write: ["docs/*.md"]
+  }
+
+  prompt "Сгенерируй документацию..."
+  output docs = "docs/API.md"
+}
+```
+
+**Шаг для выполнения тестов:**
+```
+step run_tests {
+  type model
+  role developer
+
+  permissions {
+    read: ["src/**/*", "tests/**/*"]
+    write: ["coverage/**/*"]
+    execute: true
+  }
+
+  prompt "Запусти тесты и сгенерируй отчёт о покрытии..."
+  output coverage = "coverage/report.html"
+}
+```
+
+#### Безопасность
+
+**Важные правила:**
+- `fullAccess` нельзя комбинировать с `read`/`write` - используйте либо явные разрешения, либо полный доступ
+- Паттерны не должны содержать `..` (path traversal запрещён)
+- По умолчанию (без permissions) используется режим только чтения
+- `--yolo` и `--dangerously-skip-permissions` НИКОГДА не используются без явного `fullAccess: true`
 
 ## Полный пример
 

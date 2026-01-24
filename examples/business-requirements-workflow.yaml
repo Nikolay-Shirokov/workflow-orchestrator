@@ -32,7 +32,11 @@ workflow:
         Вы фокусируетесь на полноте, ясности и реализуемости требований.
       temperature: 0.7
       max_tokens: 4000
-    
+      # Разрешения по умолчанию для архитектора
+      default_permissions:
+        read: ["*.md", "artifacts/**/*"]
+        write: ["artifacts/**/*.md"]
+
     copilot:
       adapter: "claude-cli"
       model: "claude-sonnet-3.5"
@@ -43,6 +47,10 @@ workflow:
         Вы фокусируетесь на пользовательском опыте и практичности решения.
       temperature: 0.7
       max_tokens: 4000
+      # Разрешения по умолчанию для второго пилота
+      default_permissions:
+        read: ["*.md", "artifacts/**/*"]
+        write: ["artifacts/**/*.md"]
   
   steps:
     # ============================================================
@@ -402,6 +410,12 @@ workflow:
       role: "architect"
       depends_on: ["step9_user_answers", "step1_user_need"]
       description: "Архитектор формирует полные бизнес-требования"
+      # Явные разрешения для этого шага:
+      # - Чтение предыдущих артефактов
+      # - Запись финального документа
+      permissions:
+        read: ["${artifacts_dir}/*.md"]
+        write: ["${artifacts_dir}/step10_*.md"]
       prompt_template: |
         На основе ответов пользователя сформируй полностью описанные
         бизнес-требования.

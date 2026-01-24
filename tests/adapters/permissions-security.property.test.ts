@@ -45,16 +45,25 @@ class TestableGeminiCLIAdapter extends GeminiCLIAdapter {
 }
 
 /**
+ * Генератор безопасных паттернов файлов (без path traversal)
+ * Исключает ".." последовательности которые блокируются валидацией
+ */
+const safeFilePatternArb = fc
+  .string({ minLength: 1, maxLength: 30 })
+  .filter(s => !s.includes('..'))
+  .map(s => s || 'file.txt'); // Fallback если пустая строка
+
+/**
  * Генератор permissions БЕЗ fullAccess
  * Используется для тестирования безопасности по умолчанию
  */
 const safePermissionsArb = fc.record({
   read: fc.option(
-    fc.array(fc.string({ minLength: 1, maxLength: 30 }), { minLength: 0, maxLength: 3 }),
+    fc.array(safeFilePatternArb, { minLength: 0, maxLength: 3 }),
     { nil: undefined }
   ),
   write: fc.option(
-    fc.array(fc.string({ minLength: 1, maxLength: 30 }), { minLength: 0, maxLength: 3 }),
+    fc.array(safeFilePatternArb, { minLength: 0, maxLength: 3 }),
     { nil: undefined }
   ),
   execute: fc.option(fc.boolean(), { nil: undefined })
@@ -67,11 +76,11 @@ const safePermissionsArb = fc.record({
  */
 const noExecutePermissionsArb = fc.record({
   read: fc.option(
-    fc.array(fc.string({ minLength: 1, maxLength: 30 }), { minLength: 0, maxLength: 3 }),
+    fc.array(safeFilePatternArb, { minLength: 0, maxLength: 3 }),
     { nil: undefined }
   ),
   write: fc.option(
-    fc.array(fc.string({ minLength: 1, maxLength: 30 }), { minLength: 0, maxLength: 3 }),
+    fc.array(safeFilePatternArb, { minLength: 0, maxLength: 3 }),
     { nil: undefined }
   ),
   fullAccess: fc.option(fc.constant(false), { nil: undefined })
@@ -265,7 +274,7 @@ describe('Security Property Tests - Gemini Adapter', () => {
           fc.string({ minLength: 1, maxLength: 100 }),
           fc.record({
             read: fc.option(
-              fc.array(fc.string({ minLength: 1, maxLength: 30 }), { minLength: 0, maxLength: 3 }),
+              fc.array(safeFilePatternArb, { minLength: 0, maxLength: 3 }),
               { nil: undefined }
             )
             // Только read, без write/execute/fullAccess
@@ -296,11 +305,11 @@ describe('Security Property Tests - Gemini Adapter', () => {
         fc.property(
           fc.record({
             read: fc.option(
-              fc.array(fc.string({ minLength: 1, maxLength: 30 }), { minLength: 0, maxLength: 3 }),
+              fc.array(safeFilePatternArb, { minLength: 0, maxLength: 3 }),
               { nil: undefined }
             ),
             write: fc.option(
-              fc.array(fc.string({ minLength: 1, maxLength: 30 }), { minLength: 0, maxLength: 3 }),
+              fc.array(safeFilePatternArb, { minLength: 0, maxLength: 3 }),
               { nil: undefined }
             )
             // execute НЕ включен

@@ -187,6 +187,67 @@ await securityManager.initialize();
 }
 ```
 
+### 6. Разрешения на уровне шага (StepPermissions)
+
+Система разрешений позволяет контролировать действия AI-моделей на уровне каждого шага workflow. Это предотвращает ситуации, когда модель выполняет действия за пределами намерений пользователя.
+
+#### Структура StepPermissions
+
+```typescript
+interface StepPermissions {
+  read?: string[];      // Паттерны файлов для чтения
+  write?: string[];     // Паттерны файлов для записи
+  execute?: boolean;    // Разрешено ли выполнять shell-команды
+  fullAccess?: boolean; // Режим полного доступа (ОПАСНО)
+}
+```
+
+#### Принципы безопасности
+
+1. **Безопасность по умолчанию**: Без указания permissions используется режим только чтения
+2. **Минимальные привилегии**: Запрашивайте только необходимые разрешения
+3. **Явное указание опасных режимов**: `fullAccess` требует явного указания
+4. **Валидация паттернов**: Path traversal (`..`) запрещён в паттернах
+
+#### Маппинг на CLI-утилиты
+
+Разрешения автоматически преобразуются в безопасные флаги CLI:
+
+| Permissions | Codex CLI | Claude CLI | Gemini CLI |
+|-------------|-----------|------------|------------|
+| Без permissions | `--sandbox read-only` | Базовые tools | Без `--yolo` |
+| `write: [...]` | `--sandbox workspace-write` | `--tools "...,Write"` | `--allowed-tools write_file --yolo` |
+| `execute: true` | `--full-auto` | `--tools "...,Bash"` | `--allowed-tools shell --yolo` |
+| `fullAccess: true` | Без sandbox | `--dangerously-skip-permissions` | `--yolo` |
+
+#### Важные гарантии
+
+- `--yolo` (Codex) и `--dangerously-skip-permissions` (Claude) **НИКОГДА** не используются без явного `fullAccess: true`
+- `Bash` инструмент (Claude) **НЕДОСТУПЕН** без `execute: true`
+- `shell` инструмент (Gemini) **НЕДОСТУПЕН** без `execute: true`
+
+#### Пример в workflow
+
+```yaml
+steps:
+  - id: "analyze"
+    type: "model"
+    role: "architect"
+    permissions:
+      read: ["src/**/*.ts", "*.md"]
+    # Модель может только читать файлы, не может писать или выполнять команды
+
+  - id: "generate"
+    type: "model"
+    role: "architect"
+    permissions:
+      read: ["src/**/*.ts"]
+      write: ["docs/*.md"]
+    outputs:
+      documentation: "docs/API.md"
+    # Модель может читать и писать в указанные паттерны
+```
+
 ## Интеграция с другими компонентами
 
 ### StateManager
