@@ -8,22 +8,9 @@
 
 ## Установка
 
-### Вариант 1: Установка из npm (рекомендуется)
+> **Примечание:** Пакет пока не опубликован на npm. Используйте установку из исходников.
 
-```bash
-npm install -g workflow-orchestrator
-```
-
-После установки команда `workflow-orchestrator` будет доступна глобально.
-
-Проверка установки:
-
-```bash
-workflow-orchestrator --version
-workflow-orchestrator --help
-```
-
-### Вариант 2: Установка из исходников
+### Вариант 1: Установка из исходников (рекомендуется)
 
 #### 1. Клонирование репозитория
 
@@ -52,16 +39,21 @@ npm link
 
 После этого команда `workflow-orchestrator` будет доступна глобально.
 
-### Вариант 3: Локальная установка в проект
+### Вариант 2: Запуск без глобальной установки
+
+Если не хотите делать `npm link`, можно запускать напрямую:
 
 ```bash
-npm install workflow-orchestrator
+node dist/cli/cli.js run config.yaml
 ```
 
-Использование через npx:
+### Вариант 3: Установка из npm (после публикации)
+
+> Этот вариант будет доступен после публикации пакета на npm.
 
 ```bash
-npx workflow-orchestrator run config.yaml
+npm install -g workflow-orchestrator
+workflow-orchestrator run config.yaml
 ```
 
 ## Настройка CLI-адаптеров

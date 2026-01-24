@@ -79,8 +79,19 @@ workflow-orchestrator run examples/dual-design-workflow.yaml
 
 ### 1. Установите Workflow Orchestrator
 
+> **Примечание:** Пакет пока не опубликован на npm. Используйте установку из исходников.
+
 ```bash
-npm install -g workflow-orchestrator
+git clone https://github.com/anthropics/workflow-orchestrator.git
+cd workflow-orchestrator
+npm install
+npm run build
+npm link  # Опционально: для глобальной команды workflow-orchestrator
+```
+
+Без `npm link` можно запускать напрямую:
+```bash
+node dist/cli/cli.js run examples/file-input-quickstart.yaml
 ```
 
 ### 2. Настройте API ключи
