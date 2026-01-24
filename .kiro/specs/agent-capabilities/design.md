@@ -78,11 +78,18 @@
 export interface StepCapabilities {
   /**
    * Разрешить веб-поиск
+   * - Claude: --tools "...,WebSearch" --allowedTools WebSearch
    * - Codex: --search
    * - Gemini: --allowed-tools google_web_search
-   * - Claude: не поддерживается
    */
   web_search?: boolean;
+
+  /**
+   * Разрешить получение веб-страниц по URL
+   * - Claude: --tools "...,WebFetch" --allowedTools WebFetch
+   * - Codex/Gemini: не поддерживается
+   */
+  web_fetch?: boolean;
 
   /**
    * Разрешить MCP-инструменты
@@ -186,17 +193,24 @@ export interface CapabilityAwareAdapter {
 ### Claude CLI
 
 **Поддерживаемые capabilities:**
+- `web_search` ✓ (инструмент `WebSearch`)
+- `web_fetch` ✓ (инструмент `WebFetch`)
 - `mcp_tools` ✓
 - `browser` ✓
-- `web_search` ✗
 
 ```typescript
 class ClaudeCLIAdapter {
   getCapabilitySupport(): Record<keyof StepCapabilities, CapabilitySupport> {
     return {
       web_search: {
-        supported: false,
-        note: 'Claude CLI не поддерживает встроенный веб-поиск'
+        supported: true,
+        flags: ['--tools', '...,WebSearch', '--allowedTools', 'WebSearch'],
+        note: 'Инструмент WebSearch для поиска в интернете'
+      },
+      web_fetch: {
+        supported: true,
+        flags: ['--tools', '...,WebFetch', '--allowedTools', 'WebFetch'],
+        note: 'Инструмент WebFetch для получения содержимого URL'
       },
       mcp_tools: {
         supported: true,
@@ -211,6 +225,18 @@ class ClaudeCLIAdapter {
 
   mapCapabilitiesToArgs(capabilities: StepCapabilities): string[] {
     const args: string[] = [];
+    const additionalTools: string[] = [];
+    const allowedTools: string[] = [];
+
+    if (capabilities.web_search) {
+      additionalTools.push('WebSearch');
+      allowedTools.push('WebSearch');
+    }
+
+    if (capabilities.web_fetch) {
+      additionalTools.push('WebFetch');
+      allowedTools.push('WebFetch');
+    }
 
     if (capabilities.browser) {
       args.push('--chrome');
@@ -218,11 +244,14 @@ class ClaudeCLIAdapter {
 
     if (capabilities.mcp_tools) {
       if (Array.isArray(capabilities.mcp_tools)) {
-        // Конкретные инструменты добавляем в allowedTools
-        // (они автоматически разрешаются без подтверждения)
-        args.push('--allowedTools', capabilities.mcp_tools.join(','));
+        allowedTools.push(...capabilities.mcp_tools);
       }
-      // true = не ограничиваем MCP-инструменты через --tools
+    }
+
+    // additionalTools будут добавлены к базовому --tools в prepareArguments
+    // allowedTools добавляем здесь
+    if (allowedTools.length > 0) {
+      args.push('--allowedTools', allowedTools.join(','));
     }
 
     return args;
@@ -236,10 +265,15 @@ class ClaudeCLIAdapter {
 - `--tools <list>` - ограничить доступные инструменты
 - `--allowedTools <list>` - инструменты без подтверждения
 
+**Встроенные инструменты Claude CLI:**
+- `WebSearch` - поиск в интернете, возвращает релевантные ссылки
+- `WebFetch` - получение содержимого страницы по URL
+
 ### Codex CLI
 
 **Поддерживаемые capabilities:**
 - `web_search` ✓
+- `web_fetch` ✗
 - `mcp_tools` ✗ (настраивается через `codex mcp`)
 - `browser` ✗
 
@@ -250,6 +284,10 @@ class CodexCLIAdapter {
       web_search: {
         supported: true,
         flags: ['--search']
+      },
+      web_fetch: {
+        supported: false,
+        note: 'Codex CLI не поддерживает WebFetch'
       },
       mcp_tools: {
         supported: false,
@@ -269,14 +307,7 @@ class CodexCLIAdapter {
       args.push('--search');
     }
 
-    if (capabilities.mcp_tools) {
-      console.warn('[CodexAdapter] mcp_tools capability игнорируется. ' +
-        'Настройте MCP через "codex mcp add <server>"');
-    }
-
-    if (capabilities.browser) {
-      console.warn('[CodexAdapter] browser capability не поддерживается');
-    }
+    // web_fetch, mcp_tools, browser - не поддерживаются, логируем warnings
 
     return args;
   }
@@ -291,6 +322,7 @@ class CodexCLIAdapter {
 
 **Поддерживаемые capabilities:**
 - `web_search` ✓
+- `web_fetch` ✗
 - `mcp_tools` ✗
 - `browser` ✗
 
@@ -302,6 +334,10 @@ class GeminiCLIAdapter {
         supported: true,
         flags: ['--allowed-tools', 'google_web_search'],
         note: 'Требует --yolo для автоподтверждения'
+      },
+      web_fetch: {
+        supported: false,
+        note: 'Gemini CLI не поддерживает WebFetch'
       },
       mcp_tools: {
         supported: false,
@@ -319,9 +355,8 @@ class GeminiCLIAdapter {
 
     if (capabilities.web_search) {
       // Добавляем google_web_search к списку разрешенных инструментов
-      // Интеграция с существующим mapPermissionsToArgs
       args.push('--allowed-tools', 'google_web_search');
-      // Примечание: --yolo добавляется в mapPermissionsToArgs если есть write/execute
+      // --yolo добавляется автоматически при наличии инструментов
     }
 
     return args;

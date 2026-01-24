@@ -13,7 +13,7 @@
 
 ### Задача 1.1: Добавить StepCapabilities в types.ts
 - [ ] Создать интерфейс `StepCapabilities`
-- [ ] Добавить поля: `web_search`, `mcp_tools`, `browser`
+- [ ] Добавить поля: `web_search`, `web_fetch`, `mcp_tools`, `browser`
 - [ ] Добавить JSDoc документацию с описанием маппинга на CLI
 
 **Файл:** `src/core/types.ts`
@@ -21,7 +21,8 @@
 **Код:**
 ```typescript
 export interface StepCapabilities {
-  web_search?: boolean;
+  web_search?: boolean;  // Claude: WebSearch, Codex: --search, Gemini: google_web_search
+  web_fetch?: boolean;   // Claude: WebFetch (только Claude)
   mcp_tools?: boolean | string[];
   browser?: boolean;
 }
@@ -87,17 +88,19 @@ export interface CapabilityAwareAdapter extends CLIAdapter {
 ## Фаза 3: Claude CLI адаптер
 
 ### Задача 3.1: Реализовать getCapabilitySupport для Claude
-- [ ] `web_search`: supported: false
+- [ ] `web_search`: supported: true (инструмент WebSearch)
+- [ ] `web_fetch`: supported: true (инструмент WebFetch)
 - [ ] `mcp_tools`: supported: true
 - [ ] `browser`: supported: true, flags: ['--chrome']
 
 **Файл:** `src/adapters/claude-cli-adapter.ts`
 
 ### Задача 3.2: Реализовать mapCapabilitiesToArgs для Claude
+- [ ] `web_search: true` → добавить WebSearch в --tools и --allowedTools
+- [ ] `web_fetch: true` → добавить WebFetch в --tools и --allowedTools
 - [ ] `browser: true` → `--chrome`
 - [ ] `mcp_tools: true` → не ограничивать --tools по MCP
 - [ ] `mcp_tools: ["tool1"]` → добавить в `--allowedTools`
-- [ ] Логировать warning для web_search
 
 **Файл:** `src/adapters/claude-cli-adapter.ts`
 
@@ -113,6 +116,7 @@ export interface CapabilityAwareAdapter extends CLIAdapter {
 
 ### Задача 4.1: Реализовать getCapabilitySupport для Codex
 - [ ] `web_search`: supported: true, flags: ['--search']
+- [ ] `web_fetch`: supported: false
 - [ ] `mcp_tools`: supported: false, note: 'Use codex mcp add'
 - [ ] `browser`: supported: false
 
@@ -120,7 +124,7 @@ export interface CapabilityAwareAdapter extends CLIAdapter {
 
 ### Задача 4.2: Реализовать mapCapabilitiesToArgs для Codex
 - [ ] `web_search: true` → `--search`
-- [ ] Логировать warning для mcp_tools и browser
+- [ ] Логировать warning для неподдерживаемых capabilities
 
 **Файл:** `src/adapters/codex-cli-adapter.ts`
 
@@ -130,6 +134,7 @@ export interface CapabilityAwareAdapter extends CLIAdapter {
 
 ### Задача 5.1: Реализовать getCapabilitySupport для Gemini
 - [ ] `web_search`: supported: true, flags: ['--allowed-tools', 'google_web_search']
+- [ ] `web_fetch`: supported: false
 - [ ] `mcp_tools`: supported: false
 - [ ] `browser`: supported: false
 
