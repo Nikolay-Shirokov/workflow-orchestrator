@@ -44,3 +44,23 @@ test-*.js
 test-*.txt
 test-*.json
 test-output*.txt
+test_output.md
+test_output.md.meta.json
+failed-tests-list.txt
+failed-tests.txt
+test-list.json
+
+# Временная папка тестов
+tmp/
+
+# Артефакты тестов в корне (не должны там быть, но на всякий случай)
+step*.md
+step*.md.meta.json
+custom_value
+custom_value.meta.json
+*_input.md
+*_input.md.backup
+*_input.md.meta.json
+
+# Claude Code
+.claude/

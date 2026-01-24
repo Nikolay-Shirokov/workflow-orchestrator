@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Движок рабочих процессов
  * 
  * Отвечает за:
@@ -26,6 +26,7 @@ import { WorkflowConfigParser, DependencyGraph } from './workflow-config-parser.
 import { StateManager } from './state-manager.js';
 import { RoleManager } from './role-manager.js';
 import { MCPManager, MCPContext } from './mcp-manager.js';
+import { IProgressDisplay } from '../cli/display-types.js';
 
 /**
  * Интерфейс движка рабочих процессов
@@ -42,20 +43,29 @@ export interface WorkflowEngine {
    * Запуск выполнения рабочего процесса
    * @param config - Конфигурация процесса
    * @param initialContext - Начальный контекст (опционально)
+   * @param progress - Индикатор прогресса (опционально)
    * @returns Promise<WorkflowState> - Финальное состояние
    */
   execute(
     config: WorkflowConfig,
-    initialContext?: Record<string, unknown>
+    initialContext?: Record<string, unknown>,
+    progress?: IProgressDisplay
   ): Promise<WorkflowState>;
 
   /**
    * Возобновление выполнения процесса с сохраненного состояния
    * @param sessionId - ID сессии для возобновления
    * @param config - Конфигурация процесса
+   * @param progress - Индикатор прогресса (опционально)
+   * @param fromStep - Номер шага для возобновления (1-based, опционально)
    * @returns Promise<WorkflowState> - Финальное состояние
    */
-  resume(sessionId: string, config: WorkflowConfig): Promise<WorkflowState>;
+  resume(
+    sessionId: string,
+    config: WorkflowConfig,
+    progress?: IProgressDisplay,
+    fromStep?: number
+  ): Promise<WorkflowState>;
 
   /**
    * Определение порядка выполнения шагов
@@ -199,7 +209,8 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
    */
   async execute(
     config: WorkflowConfig,
-    initialContext: Record<string, unknown> = {}
+    initialContext: Record<string, unknown> = {},
+    progress?: IProgressDisplay
   ): Promise<WorkflowState> {
     this.logger.info(`Начало выполнения процесса: ${config.name} v${config.version}`);
 
@@ -265,6 +276,7 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
     state.context = {
       ...initialContext,
       default_adapter: config.settings.default_adapter,
+      default_editor: config.settings.default_editor,
       artifacts_dir: artifactsDir,
       workflow_name: config.name,
       workflow_version: config.version,
@@ -277,14 +289,24 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
     // Сохранение начального состояния
     await this.stateManager.saveState(state);
 
+    // Установка директории артефактов в progress display
+    if (progress && 'setArtifactsDir' in progress) {
+      (progress as any).setArtifactsDir(artifactsDir);
+    }
+
     // Выполнение процесса
-    return this.executeWorkflow(config, state, executionOrder);
+    return this.executeWorkflow(config, state, executionOrder, progress);
   }
 
   /**
    * Возобновление выполнения процесса с сохраненного состояния
    */
-  async resume(sessionId: string, config: WorkflowConfig): Promise<WorkflowState> {
+  async resume(
+    sessionId: string,
+    config: WorkflowConfig,
+    progress?: IProgressDisplay,
+    fromStep?: number
+  ): Promise<WorkflowState> {
     this.logger.info(`Возобновление процесса для сессии ${sessionId}`);
 
     // Регистрация адаптеров из конфигурации, если они определены
@@ -351,26 +373,162 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       );
     }
 
-    // Валидация целостности артефактов
-    const artifactValidation = await this.stateManager.validateArtifacts(state);
-    if (!artifactValidation.valid) {
-      throw new WorkflowErrorClass({
-        code: 'ARTIFACTS_VALIDATION_FAILED',
-        category: 'state',
-        severity: 'error',
-        message: 'Артефакты повреждены или отсутствуют',
-        context: {
-          sessionId,
-          missingArtifacts: artifactValidation.missingArtifacts,
-          corruptedArtifacts: artifactValidation.corruptedArtifacts
-        },
-        recoverable: true,
-        suggestions: [
-          'Восстановите отсутствующие артефакты',
-          'Откатитесь к более раннему шагу',
-          'Начните процесс заново'
-        ]
-      });
+    // Обработка возобновления с конкретного шага
+    // Requirements 14.5, 14.6, 14.7
+    if (fromStep !== undefined) {
+      // Проверка валидности номера шага
+      if (fromStep < 1 || fromStep > config.steps.length) {
+        throw new WorkflowErrorClass({
+          code: 'INVALID_STEP_NUMBER',
+          category: 'execution',
+          severity: 'error',
+          message: `Некорректный номер шага: ${fromStep}. Допустимый диапазон: 1-${config.steps.length}`,
+          context: { fromStep, totalSteps: config.steps.length },
+          recoverable: false,
+          suggestions: [
+            `Укажите номер шага от 1 до ${config.steps.length}`,
+            'Проверьте конфигурацию процесса'
+          ]
+        });
+      }
+
+      // Получаем ID шага по номеру (1-based)
+      const selectedStepId = config.steps[fromStep - 1].id;
+      
+      this.logger.info(
+        `Возобновление с шага ${fromStep} (${selectedStepId}). ` +
+        `Инициализация артефактов предыдущих шагов...`
+      );
+
+      // Requirements 14.5: Инициализация артефактами всех предыдущих шагов
+      // Очищаем completedSteps и оставляем только шаги до выбранного
+      const stepsBeforeSelected = config.steps.slice(0, fromStep - 1).map(s => s.id);
+      state.completedSteps = state.completedSteps.filter(stepId =>
+        stepsBeforeSelected.includes(stepId)
+      );
+      // Requirements 14.6: Игнорирование артефактов выбранного и последующих шагов
+      const stepsToKeep = new Set(stepsBeforeSelected);
+
+      // КРИТИЧНО: Перед очисткой собираем пути к файлам, которые нужно удалить
+      // Это важно для user_input шагов - их файлы должны быть пересозданы
+      const artifactsToDelete: string[] = [];
+      for (const historyEntry of state.history) {
+        if (!stepsToKeep.has(historyEntry.stepId)) {
+          artifactsToDelete.push(...historyEntry.artifacts);
+        }
+      }
+
+      // Оставляем историю только для шагов до выбранного
+      state.history = state.history.filter(h => stepsToKeep.has(h.stepId));
+
+      // Пересобираем артефакты по оставшейся истории
+      const allowedArtifacts = new Set(
+        state.history.flatMap(history => history.artifacts)
+      );
+
+      // Также собираем пути из state.artifacts для удаления
+      for (const [, artifactPath] of Object.entries(state.artifacts)) {
+        if (!allowedArtifacts.has(artifactPath)) {
+          artifactsToDelete.push(artifactPath);
+        }
+      }
+
+      state.artifacts = Object.fromEntries(
+        Object.entries(state.artifacts).filter(([, artifactPath]) =>
+          allowedArtifacts.has(artifactPath)
+        )
+      );
+
+      // Валидация целостности артефактов ПОСЛЕ очистки
+      // Проверяем только те артефакты, которые должны остаться
+      const artifactValidation = await this.stateManager.validateArtifacts(state);
+      if (!artifactValidation.valid) {
+        throw new WorkflowErrorClass({
+          code: 'ARTIFACTS_VALIDATION_FAILED',
+          category: 'state',
+          severity: 'error',
+          message: 'Артефакты повреждены или отсутствуют',
+          context: {
+            sessionId,
+            missingArtifacts: artifactValidation.missingArtifacts,
+            corruptedArtifacts: artifactValidation.corruptedArtifacts
+          },
+          recoverable: true,
+          suggestions: [
+            'Восстановите отсутствующие артефакты',
+            'Откатитесь к более раннему шагу',
+            'Начните процесс заново'
+          ]
+        });
+      }
+
+      // Удаляем физические файлы артефактов
+      if (artifactsToDelete.length > 0) {
+        this.logger.info(`Удаление ${artifactsToDelete.length} артефактов переВыполняемых шагов...`);
+        const fs = await import('fs/promises');
+
+        let deletedCount = 0;
+        let skippedCount = 0;
+
+        for (const artifactPath of artifactsToDelete) {
+          try {
+            this.logger.debug(`Попытка удалить: ${artifactPath}`);
+            await fs.unlink(artifactPath);
+            deletedCount++;
+            this.logger.info(`✓ Удален файл: ${artifactPath}`);
+          } catch (error) {
+            skippedCount++;
+            // Игнорируем ошибки удаления (файл может не существовать)
+            this.logger.debug(`✗ Не удалось удалить файл ${artifactPath}: ${(error as Error).message}`);
+          }
+        }
+
+        this.logger.info(`Удалено файлов: ${deletedCount}, пропущено: ${skippedCount}`);
+      } else {
+        this.logger.debug(`Нет артефактов для удаления`);
+      }
+
+      // КРИТИЧНО: Очищаем контекст от данных шагов, которые будут переВыполнены
+      // Собираем все output ключи из шагов начиная с выбранного
+      const stepsToReset = config.steps.slice(fromStep - 1); // Шаги от выбранного и далее
+      const outputKeysToRemove = new Set<string>();
+
+      for (const step of stepsToReset) {
+        if (step.outputs) {
+          for (const outputKey of Object.keys(step.outputs)) {
+            outputKeysToRemove.add(outputKey);
+          }
+        }
+      }
+
+      // Удаляем эти ключи из контекста
+      for (const key of outputKeysToRemove) {
+        if (key in state.context) {
+          delete state.context[key];
+          this.logger.debug(`Удален ключ из контекста при resume: ${key}`);
+        }
+      }
+
+      // Также удаляем служебные ключи от user_input шагов
+      if ('awaiting_user_input' in state.context) {
+        delete state.context['awaiting_user_input'];
+      }
+
+      this.logger.info(
+        `Очищено ${outputKeysToRemove.size} ключей из контекста для переВыполнения шагов`
+      );
+
+      // Устанавливаем текущий шаг
+      state.currentStep = selectedStepId;
+      
+      // Сохраняем обновленное состояние
+      await this.stateManager.saveState(state);
+      
+      this.logger.info(
+        `Состояние обновлено: ` +
+        `завершено шагов: ${state.completedSteps.length}, ` +
+        `артефактов: ${Object.keys(state.artifacts).length}`
+      );
     }
 
     // Определение оставшихся шагов для выполнения
@@ -394,14 +552,37 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       step => remainingStepIds.includes(step.id)
     );
 
+    // ВАЖНО: Очищаем зависимости на уже выполненные шаги
+    // Это предотвращает ошибки при построении графа зависимостей
+    const cleanedSteps = remainingSteps.map(step => {
+      if (!step.depends_on || step.depends_on.length === 0) {
+        return step;
+      }
+      
+      // Фильтруем зависимости, оставляя только те, которые еще не выполнены
+      const validDependencies = step.depends_on.filter(
+        depId => remainingStepIds.includes(depId)
+      );
+      
+      // Если все зависимости уже выполнены, убираем depends_on
+      if (validDependencies.length === 0) {
+        const { depends_on, ...stepWithoutDeps } = step;
+        return stepWithoutDeps as WorkflowStep;
+      }
+      
+      // Иначе обновляем список зависимостей
+      return {
+        ...step,
+        depends_on: validDependencies
+      };
+    });
+
     // Определяем порядок выполнения только для оставшихся шагов
-    // Это предотвращает проблемы с циклическими зависимостями,
-    // которые могут возникнуть при попытке построить граф для подмножества шагов
     let executionOrder: string[];
     try {
-      executionOrder = this.determineExecutionOrder(remainingSteps);
+      executionOrder = this.determineExecutionOrder(cleanedSteps);
     } catch (error) {
-      // Если не удается построить граф зависимостей (например, из-за отсутствующих зависимостей),
+      // Если не удается построить граф зависимостей (например, из-за циклических зависимостей),
       // используем простой порядок - ID шагов в том порядке, в котором они определены
       this.logger.warn(
         `Не удалось построить граф зависимостей для оставшихся шагов: ${(error as Error).message}. ` +
@@ -412,8 +593,13 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
 
     this.logger.info(`Возобновление с шага ${executionOrder[0]}, осталось ${executionOrder.length} шагов`);
 
+    // Установка директории артефактов в progress display
+    if (progress && 'setArtifactsDir' in progress && state.context.artifacts_dir) {
+      (progress as any).setArtifactsDir(state.context.artifacts_dir as string);
+    }
+
     // Продолжение выполнения
-    return this.executeWorkflow(config, state, executionOrder);
+    return this.executeWorkflow(config, state, executionOrder, progress);
   }
 
   /**
@@ -504,7 +690,8 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
   private async executeWorkflow(
     config: WorkflowConfig,
     state: WorkflowState,
-    executionOrder: string[]
+    executionOrder: string[],
+    progress?: IProgressDisplay
   ): Promise<WorkflowState> {
     // Создаем Map шагов для быстрого поиска
     // Используем только те шаги, которые есть в executionOrder
@@ -533,6 +720,10 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
         });
       }
 
+      // ВАЖНО: Вычисляем глобальный номер шага из config.steps (1-based)
+      // Это необходимо для корректного отображения в InteractiveDisplay
+      const stepNumber = config.steps.findIndex(s => s.id === stepId) + 1;
+
       // Проверка условия выполнения шага
       if (!this.shouldExecuteStep(step, state)) {
         // Пропускаем шаг, добавляем его в историю как пропущенный
@@ -547,11 +738,11 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
           artifacts: [],
           error: `Условие не выполнено: ${step.condition}`
         };
-        
+
         state.history.push(skippedHistory);
         // НЕ добавляем в completedSteps - пропущенные шаги не считаются завершенными
         await this.stateManager.saveState(state);
-        
+
         continue;
       }
 
@@ -559,24 +750,66 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       state.currentStep = stepId;
       await this.stateManager.saveState(state);
 
+      // Вызов обработчика начала шага
+      if (progress && progress.onStepStart) {
+        progress.onStepStart(step, stepNumber);
+      }
+
       // Создание контекста выполнения
       const context: ExecutionContext = {
         state,
         adapters: this.adapterRegistry,
         templateEngine: this.templateEngine,
         artifactManager: this.artifactManager,
-        logger: this.logger
+        logger: this.logger,
+        progress
       };
 
       try {
         // Выполнение шага
         const result = await this.executeStepWithRetries(step, context, config);
 
+        // Детальное логирование для отладки
+        this.logger.debug(`После выполнения шага ${stepId}:`);
+        this.logger.debug(`  result.status = ${result.status}`);
+        this.logger.debug(`  state.status = ${state.status}`);
+        this.logger.debug(`  context.state.status = ${context.state.status}`);
+
+        // КРИТИЧЕСКАЯ ПРОВЕРКА: если процесс приостановлен после выполнения шага,
+        // прерываем выполнение ДО обновления состояния
+        // Это важно для шагов user_input, которые устанавливают статус 'paused'
+        const wasPausedByStep = state.status === 'paused';
+
+        // Если шаг приостановил процесс, выходим из цикла БЕЗ обновления истории
+        // Шаг останется в pending и будет выполнен при возобновлении
+        if (wasPausedByStep) {
+          this.logger.info(`Процесс приостановлен на шаге ${stepId}. Шаг НЕ добавлен в историю выполнения.`);
+          this.logger.info(`  Текущий статус: ${state.status}`);
+          this.logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+          this.logger.info(`  История содержит ${state.history.length} записей`);
+          await this.stateManager.saveState(state);
+          return state;
+        }
+
         // Обновление состояния после успешного выполнения
         await this.updateStateAfterStep(state, step, result);
 
+        // Вызов обработчика завершения шага
+        if (progress && progress.onStepComplete) {
+          // Находим историю для этого шага
+          const history = state.history.find(h => h.stepId === step.id);
+          if (history) {
+            progress.onStepComplete(step, history);
+          }
+        }
+
       } catch (error) {
         this.logger.error(`Ошибка выполнения шага ${stepId}:`, error);
+
+        // Вызов обработчика ошибки шага
+        if (progress && progress.onStepError) {
+          progress.onStepError(step, error as Error);
+        }
 
         // Обновление состояния с ошибкой
         state.status = 'failed';
@@ -658,3 +891,7 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
 export function createWorkflowEngine(config: WorkflowEngineConfig): WorkflowEngine {
   return new DefaultWorkflowEngine(config);
 }
+
+
+
+

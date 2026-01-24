@@ -1,0 +1,471 @@
+# Пример конфигурации workflow с файловым вводом пользователя
+# Демонстрирует различные способы использования файлового ввода
+
+workflow:
+  name: "file-input-example"
+  version: "1.0"
+  description: "Примеры использования файлового ввода для сбора данных от пользователя"
+  author: "Workflow Orchestrator Team"
+  
+  settings:
+    artifacts_dir: "artifacts/file-input-${timestamp}"
+    default_adapter: "claude-cli"
+    default_input_mode: "file"  # Использовать файловый ввод по умолчанию
+    default_file_format: "markdown"  # Формат файла по умолчанию
+    log_level: "info"
+    
+    # Конфигурация редактора по умолчанию
+    default_editor:
+      command: "code"  # VS Code
+      args: ["--wait"]  # Ждать закрытия файла
+      wait: true
+  
+  # Определение ролей
+  roles:
+    assistant:
+      adapter: "claude-cli"
+      model: "claude-sonnet-3.5"
+      role_definition: |
+        Вы - дружелюбный помощник, который помогает пользователям
+        с анализом их требований и созданием планов реализации.
+      temperature: 0.7
+      max_tokens: 4000
+    
+    analyst:
+      adapter: "claude-cli"
+      model: "claude-sonnet-3.5"
+      role_definition: |
+        Вы - аналитик, который проводит детальный анализ
+        требований и предлагает оптимальные решения.
+      temperature: 0.5
+      max_tokens: 4000
+  
+  # Шаги процесса
+  steps:
+    # ============================================================
+    # ПРИМЕР 1: Простой опрос с Markdown форматом
+    # ============================================================
+    - id: "simple_survey"
+      name: "Простой опрос"
+      type: "user_input"
+      description: "Сбор базовой информации о проекте"
+      input_mode: "file"
+      file_format: "markdown"
+      prompt_message: |
+        # Информация о проекте
+        
+        Пожалуйста, ответьте на следующие вопросы о вашем проекте:
+        
+        ## 1. Название проекта
+        
+        [Введите название проекта]
+        
+        ## 2. Описание проекта
+        
+        [Опишите, что делает ваш проект]
+        
+        ## 3. Целевая аудитория
+        
+        [Кто будет использовать ваш проект?]
+        
+        ## 4. Основные функции
+        
+        [Перечислите основные функции]
+      outputs:
+        project_info: "${artifacts_dir}/project_info.md"
+    
+    # Обработка ответов из простого опроса
+    - id: "analyze_survey"
+      name: "Анализ опроса"
+      type: "model"
+      role: "assistant"
+      depends_on: ["simple_survey"]
+      description: "Анализ информации о проекте"
+      prompt_template: |
+        Проанализируйте следующую информацию о проекте и создайте краткое резюме:
+        
+        ${project_info}
+        
+        Предоставьте:
+        1. Краткое резюме проекта
+        2. Ключевые особенности
+        3. Потенциальные вызовы
+      inputs:
+        project_info: "${project_info}"
+      outputs:
+        project_summary: "${artifacts_dir}/project_summary.md"
+    
+    # ============================================================
+    # ПРИМЕР 2: Структурированные данные с YAML форматом
+    # ============================================================
+    - id: "structured_config"
+      name: "Конфигурация проекта"
+      type: "user_input"
+      description: "Сбор структурированной конфигурации"
+      depends_on: ["analyze_survey"]
+      input_mode: "file"
+      file_format: "yaml"
+      include_questions: false  # Не включать вопросы в контекст
+      prompt_message: |
+        # Конфигурация проекта
+        # Заполните параметры ниже
+        
+        project:
+          name: ""
+          version: "1.0.0"
+          description: ""
+        
+        technical:
+          language: ""  # python, javascript, typescript, etc.
+          framework: ""  # django, express, react, etc.
+          database: ""  # postgresql, mongodb, mysql, etc.
+        
+        deployment:
+          platform: ""  # aws, azure, gcp, heroku, etc.
+          environment: "production"  # development, staging, production
+          auto_scaling: false
+        
+        features:
+          authentication: false
+          api: false
+          admin_panel: false
+          notifications: false
+        
+        team:
+          size: 1
+          roles:
+            - role: ""
+              count: 1
+      outputs:
+        project_config: "${artifacts_dir}/project_config.yaml"
+    
+    # Обработка структурированной конфигурации
+    - id: "validate_config"
+      name: "Валидация конфигурации"
+      type: "model"
+      role: "analyst"
+      depends_on: ["structured_config"]
+      description: "Проверка и анализ конфигурации"
+      prompt_template: |
+        Проанализируйте следующую конфигурацию проекта:
+        
+        ${project_config}
+        
+        Предоставьте:
+        1. Оценку полноты конфигурации
+        2. Рекомендации по улучшению
+        3. Потенциальные проблемы совместимости
+        4. Оценку сложности реализации
+      inputs:
+        project_config: "${project_config}"
+      outputs:
+        config_analysis: "${artifacts_dir}/config_analysis.md"
+    
+    # ============================================================
+    # ПРИМЕР 3: Большой промпт с кастомным редактором
+    # ============================================================
+    - id: "detailed_requirements"
+      name: "Детальные требования"
+      type: "user_input"
+      description: "Сбор подробных требований к проекту"
+      depends_on: ["validate_config"]
+      input_mode: "file"
+      file_format: "markdown"
+      editor:
+        command: "code"  # Использовать VS Code
+        args: ["--wait", "--new-window"]
+        wait: true
+      prompt_message: |
+        # Детальные требования к проекту
+        
+        Опишите подробно требования к вашему проекту.
+        Используйте разделы ниже для структурирования информации.
+        
+        ## Функциональные требования
+        
+        ### Основные функции
+        
+        [Опишите основные функции системы]
+        
+        ### Дополнительные функции
+        
+        [Опишите дополнительные функции]
+        
+        ## Нефункциональные требования
+        
+        ### Производительность
+        
+        [Требования к производительности]
+        
+        ### Безопасность
+        
+        [Требования к безопасности]
+        
+        ### Масштабируемость
+        
+        [Требования к масштабируемости]
+        
+        ## Ограничения
+        
+        ### Технические ограничения
+        
+        [Технические ограничения]
+        
+        ### Бюджетные ограничения
+        
+        [Бюджетные ограничения]
+        
+        ### Временные ограничения
+        
+        [Временные ограничения]
+        
+        ## Зависимости
+        
+        ### Внешние системы
+        
+        [Интеграции с внешними системами]
+        
+        ### Сторонние сервисы
+        
+        [Используемые сторонние сервисы]
+      outputs:
+        detailed_requirements: "${artifacts_dir}/detailed_requirements.md"
+    
+    # Обработка детальных требований
+    - id: "create_implementation_plan"
+      name: "План реализации"
+      type: "model"
+      role: "analyst"
+      depends_on: ["detailed_requirements"]
+      description: "Создание плана реализации на основе требований"
+      prompt_template: |
+        На основе следующих требований создайте детальный план реализации:
+        
+        ${detailed_requirements}
+        
+        План должен включать:
+        1. Архитектуру системы
+        2. Этапы разработки с оценкой времени
+        3. Необходимые технологии и инструменты
+        4. Риски и способы их минимизации
+        5. Критерии успеха
+      inputs:
+        detailed_requirements: "${detailed_requirements}"
+      outputs:
+        implementation_plan: "${artifacts_dir}/implementation_plan.md"
+    
+    # ============================================================
+    # ПРИМЕР 4: Множественный выбор с чекбоксами
+    # ============================================================
+    - id: "feature_selection"
+      name: "Выбор функций"
+      type: "user_input"
+      description: "Выбор функций для включения в проект"
+      depends_on: ["create_implementation_plan"]
+      input_mode: "file"
+      file_format: "markdown"
+      prompt_message: |
+        # Выбор функций для проекта
+        
+        Отметьте функции, которые вы хотите включить в проект.
+        Используйте [x] для выбора функции.
+        
+        ## Аутентификация и авторизация
+        
+        - [ ] Регистрация пользователей
+        - [ ] Вход через email/пароль
+        - [ ] Вход через социальные сети (OAuth)
+        - [ ] Двухфакторная аутентификация (2FA)
+        - [ ] Восстановление пароля
+        - [ ] Управление ролями и правами
+        
+        ## API и интеграции
+        
+        - [ ] REST API
+        - [ ] GraphQL API
+        - [ ] WebSocket для real-time обновлений
+        - [ ] Webhook для событий
+        - [ ] Интеграция с платежными системами
+        - [ ] Интеграция с email-сервисами
+        
+        ## Административная панель
+        
+        - [ ] Управление пользователями
+        - [ ] Просмотр статистики
+        - [ ] Управление контентом
+        - [ ] Логирование и мониторинг
+        - [ ] Настройки системы
+        
+        ## Уведомления
+        
+        - [ ] Email уведомления
+        - [ ] Push уведомления
+        - [ ] SMS уведомления
+        - [ ] In-app уведомления
+        
+        ## Дополнительные функции
+        
+        - [ ] Поиск и фильтрация
+        - [ ] Экспорт данных (CSV, PDF)
+        - [ ] Импорт данных
+        - [ ] Многоязычность (i18n)
+        - [ ] Темная тема
+        - [ ] Мобильная версия
+      outputs:
+        selected_features: "${artifacts_dir}/selected_features.md"
+    
+    # Обработка выбранных функций
+    - id: "estimate_features"
+      name: "Оценка функций"
+      type: "model"
+      role: "analyst"
+      depends_on: ["feature_selection"]
+      description: "Оценка сложности и времени реализации выбранных функций"
+      prompt_template: |
+        Проанализируйте выбранные функции и предоставьте оценку:
+        
+        ${selected_features}
+        
+        Для каждой выбранной функции укажите:
+        1. Сложность реализации (низкая/средняя/высокая)
+        2. Примерное время разработки
+        3. Необходимые технологии
+        4. Зависимости от других функций
+        5. Приоритет реализации
+        
+        В конце предоставьте общую оценку проекта.
+      inputs:
+        selected_features: "${selected_features}"
+      outputs:
+        features_estimate: "${artifacts_dir}/features_estimate.md"
+    
+    # ============================================================
+    # ПРИМЕР 5: JSON формат для программной обработки
+    # ============================================================
+    - id: "api_specification"
+      name: "Спецификация API"
+      type: "user_input"
+      description: "Определение API endpoints"
+      depends_on: ["estimate_features"]
+      input_mode: "file"
+      file_format: "json"
+      prompt_message: |
+        {
+          "api_version": "1.0",
+          "base_url": "https://api.example.com",
+          "endpoints": [
+            {
+              "path": "/users",
+              "method": "GET",
+              "description": "Получить список пользователей",
+              "parameters": [],
+              "response": {
+                "type": "array",
+                "items": "User"
+              }
+            },
+            {
+              "path": "/users",
+              "method": "POST",
+              "description": "Создать нового пользователя",
+              "parameters": [
+                {
+                  "name": "email",
+                  "type": "string",
+                  "required": true
+                },
+                {
+                  "name": "password",
+                  "type": "string",
+                  "required": true
+                }
+              ],
+              "response": {
+                "type": "object",
+                "schema": "User"
+              }
+            }
+          ],
+          "models": {
+            "User": {
+              "id": "integer",
+              "email": "string",
+              "created_at": "datetime"
+            }
+          }
+        }
+      outputs:
+        api_spec: "${artifacts_dir}/api_spec.json"
+    
+    # Генерация документации API
+    - id: "generate_api_docs"
+      name: "Документация API"
+      type: "model"
+      role: "assistant"
+      depends_on: ["api_specification"]
+      description: "Генерация документации на основе спецификации API"
+      prompt_template: |
+        На основе следующей спецификации API создайте подробную документацию:
+        
+        ${api_spec}
+        
+        Документация должна включать:
+        1. Описание каждого endpoint
+        2. Примеры запросов и ответов
+        3. Коды ошибок
+        4. Примеры использования
+        5. Аутентификацию и авторизацию
+      inputs:
+        api_spec: "${api_spec}"
+      outputs:
+        api_documentation: "${artifacts_dir}/api_documentation.md"
+    
+    # ============================================================
+    # ФИНАЛЬНЫЙ ШАГ: Создание итогового отчета
+    # ============================================================
+    - id: "final_report"
+      name: "Итоговый отчет"
+      type: "model"
+      role: "analyst"
+      depends_on:
+        - "analyze_survey"
+        - "validate_config"
+        - "create_implementation_plan"
+        - "estimate_features"
+        - "generate_api_docs"
+      description: "Создание итогового отчета по проекту"
+      prompt_template: |
+        Создайте итоговый отчет по проекту, объединив всю собранную информацию:
+        
+        ## Резюме проекта
+        ${project_summary}
+        
+        ## Анализ конфигурации
+        ${config_analysis}
+        
+        ## План реализации
+        ${implementation_plan}
+        
+        ## Оценка функций
+        ${features_estimate}
+        
+        ## Документация API
+        ${api_documentation}
+        
+        Итоговый отчет должен включать:
+        1. Исполнительное резюме
+        2. Обзор проекта
+        3. Техническую архитектуру
+        4. План разработки с временными рамками
+        5. Оценку ресурсов и бюджета
+        6. Риски и способы их минимизации
+        7. Критерии успеха и метрики
+        8. Рекомендации по дальнейшим шагам
+      inputs:
+        project_summary: "${project_summary}"
+        config_analysis: "${config_analysis}"
+        implementation_plan: "${implementation_plan}"
+        features_estimate: "${features_estimate}"
+        api_documentation: "${api_documentation}"
+      outputs:
+        final_report: "${artifacts_dir}/final_report.md"

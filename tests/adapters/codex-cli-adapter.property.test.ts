@@ -1186,6 +1186,11 @@ describe('Codex CLI Adapter Property Tests', () => {
             const result = adapter.testParseResponse(rawOutput);
             
             // Результат должен содержать оригинальный текст (очищенный)
+            if (message.trim().length === 0) {
+              expect(result.trim()).toBe('');
+              return;
+            }
+
             expect(result.trim()).toBeTruthy();
             
             // Если в оригинале нет служебной информации, результат должен быть близок к оригиналу

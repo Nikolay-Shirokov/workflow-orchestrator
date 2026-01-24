@@ -73,12 +73,13 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
       // Определение таймаута
       const timeout = request.timeout || this.config.timeout || 300000; // 5 минут по умолчанию
       
-      // Выполнение команды
+      // Выполнение команды (с stdin если useStdin=true)
       const result = await this.executeCommand(
         this.config.command,
         args,
         env,
-        timeout
+        timeout,
+        this.config.useStdin ? request.prompt : undefined
       );
       
       // Проверка на ошибки
@@ -196,13 +197,15 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
    * @param args - Аргументы команды
    * @param env - Переменные окружения
    * @param timeout - Таймаут в миллисекундах
+   * @param stdinData - Данные для передачи через stdin (опционально)
    * @returns Promise<CommandResult> - Результат выполнения
    */
   protected executeCommand(
     command: string,
     args: string[],
     env: Record<string, string>,
-    timeout: number
+    timeout: number,
+    stdinData?: string
   ): Promise<CommandResult> {
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
@@ -216,6 +219,20 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
         shell: true,
         windowsHide: true
       });
+
+      // Устанавливаем кодировку для потоков
+      if (child.stdout) {
+        child.stdout.setEncoding('utf8');
+      }
+      if (child.stderr) {
+        child.stderr.setEncoding('utf8');
+      }
+
+      // Если нужно передать данные через stdin
+      if (stdinData && child.stdin) {
+        child.stdin.write(stdinData, 'utf8');
+        child.stdin.end();
+      }
 
       // Таймер для таймаута
       const timeoutId = setTimeout(() => {
@@ -231,13 +248,13 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
       }, timeout);
 
       // Захват stdout
-      child.stdout?.on('data', (data: Buffer) => {
-        stdout += data.toString();
+      child.stdout?.on('data', (data: string) => {
+        stdout += data;
       });
 
       // Захват stderr
-      child.stderr?.on('data', (data: Buffer) => {
-        stderr += data.toString();
+      child.stderr?.on('data', (data: string) => {
+        stderr += data;
       });
 
       // Обработка завершения процесса
@@ -252,6 +269,14 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
             `stderr: ${stderr.substring(0, 500)}`
           ));
           return;
+        }
+
+        // Логируем размер полученного вывода для отладки
+        if (stdout.length > 0) {
+          console.log(`[DEBUG] Получено ${stdout.length} байт из stdout`);
+        }
+        if (stderr.length > 0) {
+          console.log(`[DEBUG] Получено ${stderr.length} байт из stderr`);
         }
 
         resolve({

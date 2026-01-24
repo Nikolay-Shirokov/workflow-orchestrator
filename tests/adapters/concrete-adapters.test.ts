@@ -351,25 +351,36 @@ describe('GeminiCLIAdapter', () => {
 
   it('должен добавлять флаг --model если модель указана', () => {
     const adapter = new GeminiCLIAdapter();
-    
+
     // Используем приватный метод через any для тестирования
     const argsWithModel = (adapter as any).prepareArguments({
       prompt: 'test prompt',
       model: 'gemini-pro'
     });
-    
-    expect(argsWithModel).toEqual(['--prompt', '--model', 'gemini-pro', 'test prompt']);
+
+    // Новая реализация: --allowed-tools write_file --yolo --model <model>
+    // Промпт передается через временный файл, не в аргументах
+    expect(argsWithModel).toContain('--allowed-tools');
+    expect(argsWithModel).toContain('write_file');
+    expect(argsWithModel).toContain('--yolo');
+    expect(argsWithModel).toContain('--model');
+    expect(argsWithModel).toContain('gemini-pro');
   });
 
   it('не должен добавлять флаг --model если модель не указана', () => {
     const adapter = new GeminiCLIAdapter();
-    
+
     // Используем приватный метод через any для тестирования
     const argsWithoutModel = (adapter as any).prepareArguments({
       prompt: 'test prompt'
     });
-    
-    expect(argsWithoutModel).toEqual(['--prompt', 'test prompt']);
+
+    // Новая реализация: --allowed-tools write_file --yolo
+    // Промпт передается через временный файл, не в аргументах
+    expect(argsWithoutModel).toContain('--allowed-tools');
+    expect(argsWithoutModel).toContain('write_file');
+    expect(argsWithoutModel).toContain('--yolo');
+    expect(argsWithoutModel).not.toContain('--model');
   });
 });
 
@@ -672,34 +683,35 @@ Line 3
       const adapter = new CodexCLIAdapter();
       const sessionId = '12345-abcde-67890';
       const prompt = 'Continue the conversation';
-      
+
       const args = (adapter as any).prepareArguments({
         prompt,
         resumeSession: sessionId
       });
-      
-      // Структура: ['exec', 'resume', sessionId, prompt]
+
+      // Структура: ['exec', 'resume', sessionId, ..., '-']
+      // Промпт передается через stdin, последний аргумент - "-"
       expect(args[0]).toBe('exec');
       expect(args[1]).toBe('resume');
       expect(args[2]).toBe(sessionId);
-      expect(args[args.length - 1]).toBe(prompt); // Промпт теперь последний аргумент
+      expect(args[args.length - 1]).toBe('-'); // Промпт передается через stdin
     });
 
     it('должен формировать команду resume с флагом --last', () => {
       // Требования: 5.1, 5.3
       const adapter = new CodexCLIAdapter();
       const prompt = 'Continue the last conversation';
-      
+
       const args = (adapter as any).prepareArguments({
         prompt,
         resumeLast: true
       });
-      
-      // Структура: ['exec', 'resume', '--last', prompt]
+
+      // Структура: ['exec', 'resume', '--last', ..., '-']
       expect(args[0]).toBe('exec');
       expect(args[1]).toBe('resume');
       expect(args).toContain('--last');
-      expect(args[args.length - 1]).toBe(prompt); // Промпт теперь последний аргумент
+      expect(args[args.length - 1]).toBe('-'); // Промпт передается через stdin
     });
 
     it('должен комбинировать resume с ID и флагом --last', () => {
@@ -707,18 +719,18 @@ Line 3
       const adapter = new CodexCLIAdapter();
       const sessionId = 'test-session-id';
       const prompt = 'Continue';
-      
+
       const args = (adapter as any).prepareArguments({
         prompt,
         resumeSession: sessionId,
         resumeLast: true
       });
-      
+
       // Должны присутствовать и ID, и флаг --last
       expect(args[1]).toBe('resume');
       expect(args[2]).toBe(sessionId);
       expect(args).toContain('--last');
-      expect(args[args.length - 1]).toBe(prompt); // Промпт теперь последний аргумент
+      expect(args[args.length - 1]).toBe('-'); // Промпт передается через stdin
     });
 
     it('должен комбинировать resume с другими флагами', () => {
@@ -726,7 +738,7 @@ Line 3
       const adapter = new CodexCLIAdapter();
       const sessionId = 'session-123';
       const prompt = 'Continue with model';
-      
+
       const args = (adapter as any).prepareArguments({
         prompt,
         resumeSession: sessionId,
@@ -734,19 +746,19 @@ Line 3
         fullAuto: true,
         jsonOutput: true
       });
-      
+
       // Проверяем наличие команды resume
       expect(args[1]).toBe('resume');
       expect(args[2]).toBe(sessionId);
-      
+
       // Проверяем наличие других флагов
       expect(args).toContain('-m');
       expect(args).toContain('gpt-4');
       expect(args).toContain('--full-auto');
       expect(args).toContain('--json');
-      
-      // Промпт всегда последний
-      expect(args[args.length - 1]).toBe(prompt);
+
+      // Последний аргумент - "-" для чтения промпта из stdin
+      expect(args[args.length - 1]).toBe('-');
     });
 
     it('должен поддерживать передачу промпта при возобновлении', () => {
@@ -754,18 +766,18 @@ Line 3
       const adapter = new CodexCLIAdapter();
       const sessionId = 'session-456';
       const prompt = 'Additional message for resumed session';
-      
+
       const args = (adapter as any).prepareArguments({
         prompt,
         resumeSession: sessionId
       });
-      
+
       // Команда resume должна быть на месте
       expect(args[1]).toBe('resume');
       expect(args[2]).toBe(sessionId);
-      
-      // Промпт передается как последний аргумент
-      expect(args[args.length - 1]).toBe(prompt);
+
+      // Промпт передается через stdin, последний аргумент - "-"
+      expect(args[args.length - 1]).toBe('-');
     });
 
     it('не должен добавлять resume если не указаны resumeSession и resumeLast', () => {
@@ -818,7 +830,7 @@ Line 3
       const adapter = new CodexCLIAdapter();
       const sessionId = 'pos-test-session';
       const prompt = 'test';
-      
+
       const args = (adapter as any).prepareArguments({
         prompt,
         resumeSession: sessionId,
@@ -826,24 +838,24 @@ Line 3
         workingDirectory: '/tmp',
         profile: 'dev'
       });
-      
-      // Порядок: ['exec', 'resume', sessionId, '-m', 'gpt-4', '--cd', '/tmp', '-p', 'dev', prompt]
+
+      // Порядок: ['exec', 'resume', sessionId, '-m', 'gpt-4', '--cd', '/tmp', '-p', 'dev', '-']
       expect(args[0]).toBe('exec');
       expect(args[1]).toBe('resume');
       expect(args[2]).toBe(sessionId);
-      
+
       // Флаги модели, директории и профиля должны идти после resume
       const resumeIndex = args.indexOf('resume');
       const modelIndex = args.indexOf('-m');
       const cdIndex = args.indexOf('--cd');
       const profileIndex = args.indexOf('-p');
-      
+
       expect(modelIndex).toBeGreaterThan(resumeIndex);
       expect(cdIndex).toBeGreaterThan(resumeIndex);
       expect(profileIndex).toBeGreaterThan(resumeIndex);
-      
-      // Промпт всегда последний
-      expect(args[args.length - 1]).toBe(prompt);
+
+      // Последний аргумент - "-" для чтения промпта из stdin
+      expect(args[args.length - 1]).toBe('-');
     });
   });
 

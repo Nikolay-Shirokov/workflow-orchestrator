@@ -1,0 +1,133 @@
+# Упрощенная версия workflow для бизнес-требований
+# Быстрый вариант без детального анализа
+
+workflow:
+  name: "business-requirements-simple"
+  version: "1.0"
+  description: "Упрощенное создание бизнес-требований с файловым вводом"
+  
+  settings:
+    artifacts_dir: "artifacts/requirements-simple-${timestamp}"
+    default_input_mode: "file"
+    # Конфигурация редактора
+    default_editor:
+      command: "kiro"
+      args: []
+      wait: false  
+  roles:
+    analyst:
+      adapter: "codex-cli"
+      model: "gpt-5.2"
+      role_definition: "Вы - бизнес-аналитик, помогающий формировать требования"
+      permissions:
+        - read
+        - edit: "*.md"  # Разрешение на редактирование markdown файлов
+  
+  steps:
+    # Шаг 1: Описание потребности
+    - id: "user_need"
+      name: "Описание потребности"
+      type: "user_input"
+      input_mode: "file"
+      file_format: "markdown"
+      prompt_message: |
+        # Опишите вашу потребность
+        
+        **Что вы хотите создать?**
+        
+        [Ваше описание]
+        
+        **Для кого это?**
+        
+        [Целевая аудитория]
+        
+        **Какие ограничения?**
+        
+        [Бюджет, сроки, технологии]
+      outputs:
+        user_need: "${artifacts_dir}/user_need.md"
+    
+    # Шаг 2: Формирование вопросов
+    - id: "questions"
+      name: "Вопросы для уточнения"
+      type: "model"
+      role: "analyst"
+      depends_on: ["user_need"]
+      prompt_template: |
+        Ты - бизнес-аналитик. Пользователь описал свою потребность:
+        
+        ---
+        ${user_need}
+        ---
+        
+        Твоя задача: задать 3-5 ключевых вопросов для уточнения деталей и формирования MVP требований.
+        Сфокусируйся на самом важном: функциональности, пользователях, ограничениях.
+        
+        Формат ответа - простой список вопросов без нумерации.
+        
+        CRITICAL: Use write_file tool to save your response to file path: ${artifacts_dir}/questions.md
+        The file path is relative to current working directory.
+      inputs:
+        user_need: "${user_need}"
+      outputs:
+        questions: "${artifacts_dir}/questions.md"
+    
+    # Шаг 3: Ответы пользователя
+    - id: "answers"
+      name: "Ответы на вопросы"
+      type: "user_input"
+      depends_on: ["questions"]
+      input_mode: "file"
+      file_format: "markdown"
+      prompt_message: |
+        # Ответы на вопросы
+        
+        ${questions}
+        
+        ---
+        
+        <!-- Напишите ваши ответы ниже (по одному ответу на строку) -->
+        
+        [Ваши ответы]
+      inputs:
+        questions: "${questions}"
+      outputs:
+        answers: "${artifacts_dir}/answers.md"
+    
+    # Шаг 4: Формирование требований
+    - id: "requirements"
+      name: "Бизнес-требования"
+      type: "model"
+      role: "analyst"
+      depends_on: ["answers", "user_need"]
+      prompt_template: |
+        На основе ответов пользователя создай бизнес-требования.
+        
+        ## Исходная потребность
+        ${user_need}
+        
+        ## Заданные вопросы
+        ${questions}
+        
+        ## Ответы пользователя
+        ${answers}
+        
+        ---
+        
+        Создай документ бизнес-требований, включающий:
+        1. Краткое описание решения
+        2. Функциональные требования
+        3. Сценарии использования
+        4. Критерии приемки
+        5. Диаграммы (Mermaid, если уместно)
+        
+        Пиши конкретно и структурированно, без воды.
+        
+        CRITICAL: Use write_file tool to save your response to file path: ${artifacts_dir}/requirements.md
+        The file path is relative to current working directory.
+      inputs:
+        user_need: "${user_need}"
+        questions: "${questions}"
+        answers: "${answers}"
+      outputs:
+        requirements: "${artifacts_dir}/requirements.md"

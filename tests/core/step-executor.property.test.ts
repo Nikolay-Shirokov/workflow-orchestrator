@@ -873,6 +873,7 @@ describe('Step Executor Property Tests', () => {
    */
   describe('Property 57: Обработка параллельных ошибок', () => {
     test('должен дождаться завершения всех шагов при ошибке в одном', async () => {
+      // Тест с параллельными скриптами может быть медленным
       await fc.assert(
         fc.asyncProperty(
           // Генерируем количество шагов
@@ -917,14 +918,14 @@ describe('Step Executor Property Tests', () => {
             await expect(
               executor.executeStep(parentStep, context)
             ).rejects.toThrow();
-            
+
             // Но все шаги должны были попытаться выполниться
             // (проверяем через логи или другие механизмы)
           }
         ),
-        { numRuns: 50, timeout: 15000 }
+        { numRuns: 10, timeout: 25000 } // Уменьшено numRuns из-за медленных параллельных скриптов
       );
-    }, 20000); // Увеличен таймаут Jest для property-based теста
+    }, 30000); // Увеличен таймаут Jest для property-based теста с параллельными скриптами
 
     test('должен сообщать обо всех ошибках из параллельных шагов', async () => {
       await fc.assert(

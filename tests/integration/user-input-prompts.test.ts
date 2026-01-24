@@ -1,0 +1,317 @@
+/**
+ * Интеграционные тесты для отображения промптов пользовательского ввода
+ * 
+ * Проверяет корректное отображение промптов с описанием и форматирование вопросов
+ * 
+ * Requirements: 4.1
+ */
+
+import { UserInputHandler, UserQuestion } from '../../src/core/user-input-handler.js';
+
+describe('User Input Prompts Display', () => {
+  let handler: UserInputHandler;
+  
+  beforeEach(() => {
+    handler = new UserInputHandler();
+  });
+  
+  describe('Отображение промптов с описанием', () => {
+    it('должен извлекать вопросы с полным описанием из JSON', () => {
+      const jsonResponse = JSON.stringify({
+        questions: [
+          {
+            id: 'name',
+            question: 'Как вас зовут?',
+            required: true,
+            type: 'string'
+          },
+          {
+            id: 'age',
+            question: 'Сколько вам лет?',
+            required: false,
+            type: 'number'
+          }
+        ]
+      });
+      
+      const questions = handler.extractQuestions(jsonResponse, 'json');
+      
+      expect(questions).toHaveLength(2);
+      expect(questions[0]).toMatchObject({
+        id: 'name',
+        question: 'Как вас зовут?',
+        required: true,
+        type: 'string'
+      });
+      expect(questions[1]).toMatchObject({
+        id: 'age',
+        question: 'Сколько вам лет?',
+        required: false,
+        type: 'number'
+      });
+    });
+    
+    it('должен извлекать вопросы с описанием из YAML', () => {
+      const yamlResponse = `questions:
+  - id: email
+    question: Введите ваш email
+    required: true
+    type: string
+  - id: subscribe
+    question: Подписаться на рассылку?
+    required: false
+    type: boolean`;
+      
+      const questions = handler.extractQuestions(yamlResponse, 'yaml');
+      
+      expect(questions).toHaveLength(2);
+      expect(questions[0]).toMatchObject({
+        id: 'email',
+        question: 'Введите ваш email',
+        required: true,
+        type: 'string'
+      });
+      expect(questions[1]).toMatchObject({
+        id: 'subscribe',
+        question: 'Подписаться на рассылку?',
+        required: false,
+        type: 'boolean'
+      });
+    });
+    
+    it('должен извлекать вопросы из Markdown формата', () => {
+      const markdownResponse = `1. Как вас зовут?
+
+2. Какой ваш любимый цвет?
+
+3. Где вы живете?`;
+      
+      const questions = handler.extractQuestions(markdownResponse, 'markdown');
+      
+      expect(questions.length).toBeGreaterThan(0);
+      expect(questions[0].id).toBe('question_1');
+      expect(questions[0].question).toContain('Как вас зовут?');
+      expect(questions[1].id).toBe('question_2');
+      expect(questions[1].question).toContain('Какой ваш любимый цвет?');
+    });
+    
+    it('должен извлекать вопросы из формата questions', () => {
+      const questionsResponse = `1. Введите название проекта
+
+2. Выберите язык программирования
+
+3. Укажите версию`;
+      
+      const questions = handler.extractQuestions(questionsResponse, 'questions');
+      
+      expect(questions.length).toBeGreaterThan(0);
+      expect(questions[0].question).toContain('Введите название проекта');
+      expect(questions[1].question).toContain('Выберите язык программирования');
+      expect(questions[2].question).toContain('Укажите версию');
+    });
+    
+    it('должен обрабатывать вопросы со значениями по умолчанию', () => {
+      const jsonResponse = JSON.stringify({
+        questions: [
+          {
+            id: 'port',
+            question: 'Укажите порт сервера',
+            required: false,
+            type: 'number',
+            default: 3000
+          },
+          {
+            id: 'host',
+            question: 'Укажите хост',
+            required: false,
+            type: 'string',
+            default: 'localhost'
+          }
+        ]
+      });
+      
+      const questions = handler.extractQuestions(jsonResponse, 'json');
+      
+      expect(questions).toHaveLength(2);
+      expect(questions[0].default).toBe(3000);
+      expect(questions[1].default).toBe('localhost');
+    });
+  });
+  
+  describe('Форматирование вопросов', () => {
+    it('должен корректно форматировать простые вопросы', () => {
+      const questions: UserQuestion[] = [
+        {
+          id: 'q1',
+          question: 'Простой вопрос?',
+          required: true,
+          type: 'string'
+        }
+      ];
+      
+      // Проверяем, что вопрос содержит необходимую информацию
+      expect(questions[0].question).toBe('Простой вопрос?');
+      expect(questions[0].required).toBe(true);
+      expect(questions[0].type).toBe('string');
+    });
+    
+    it('должен форматировать вопросы с множественными строками', () => {
+      const markdownResponse = `1. Опишите ваш проект.
+   Укажите основные функции и цели.
+
+2. Какие технологии вы планируете использовать?`;
+      
+      const questions = handler.extractQuestions(markdownResponse, 'markdown');
+      
+      expect(questions.length).toBeGreaterThan(0);
+      // Проверяем, что вопросы извлечены
+      const firstQuestion = questions[0]!;
+      expect(firstQuestion.question).toBeDefined();
+      expect(firstQuestion.question!.length).toBeGreaterThan(0);
+    });
+    
+    it('должен обрабатывать вопросы с специальными символами', () => {
+      const jsonResponse = JSON.stringify({
+        questions: [
+          {
+            id: 'special',
+            question: 'Введите email (например: user@example.com)',
+            required: true,
+            type: 'string'
+          }
+        ]
+      });
+      
+      const questions = handler.extractQuestions(jsonResponse, 'json');
+      
+      expect(questions).toHaveLength(1);
+      expect(questions[0].question).toContain('@');
+      expect(questions[0].question).toContain('(');
+      expect(questions[0].question).toContain(')');
+    });
+    
+    it('должен обрабатывать вопросы с числами в тексте', () => {
+      const jsonResponse = JSON.stringify({
+        questions: [
+          {
+            id: 'version',
+            question: 'Выберите версию Node.js (14, 16, 18)',
+            required: true,
+            type: 'string'
+          }
+        ]
+      });
+      
+      const questions = handler.extractQuestions(jsonResponse, 'json');
+      
+      expect(questions).toHaveLength(1);
+      expect(questions[0].question).toContain('14');
+      expect(questions[0].question).toContain('16');
+      expect(questions[0].question).toContain('18');
+    });
+  });
+  
+  describe('Понятность промптов', () => {
+    it('должен извлекать вопросы с понятными формулировками', () => {
+      const jsonResponse = JSON.stringify({
+        questions: [
+          {
+            id: 'project_name',
+            question: 'Введите название вашего проекта',
+            required: true,
+            type: 'string'
+          },
+          {
+            id: 'description',
+            question: 'Опишите, что делает ваш проект',
+            required: false,
+            type: 'string'
+          }
+        ]
+      });
+      
+      const questions = handler.extractQuestions(jsonResponse, 'json');
+      
+      expect(questions).toHaveLength(2);
+      // Проверяем, что вопросы содержат глаголы действия
+      expect(questions[0].question).toMatch(/Введите|Укажите|Выберите/i);
+      expect(questions[1].question).toMatch(/Опишите|Введите|Укажите/i);
+    });
+    
+    it('должен обрабатывать вопросы с подсказками', () => {
+      const jsonResponse = JSON.stringify({
+        questions: [
+          {
+            id: 'password',
+            question: 'Введите пароль (минимум 8 символов)',
+            required: true,
+            type: 'string'
+          }
+        ]
+      });
+      
+      const questions = handler.extractQuestions(jsonResponse, 'json');
+      
+      expect(questions).toHaveLength(1);
+      expect(questions[0].question).toContain('минимум');
+      expect(questions[0].question).toContain('8');
+    });
+    
+    it('должен обрабатывать вопросы с примерами', () => {
+      const jsonResponse = JSON.stringify({
+        questions: [
+          {
+            id: 'url',
+            question: 'Введите URL (например: https://example.com)',
+            required: true,
+            type: 'string'
+          }
+        ]
+      });
+      
+      const questions = handler.extractQuestions(jsonResponse, 'json');
+      
+      expect(questions).toHaveLength(1);
+      expect(questions[0].question).toContain('например');
+      expect(questions[0].question).toContain('https://');
+    });
+  });
+  
+  describe('Обработка пустых и некорректных промптов', () => {
+    it('должен обрабатывать пустой список вопросов', () => {
+      const jsonResponse = JSON.stringify({
+        questions: []
+      });
+      
+      const questions = handler.extractQuestions(jsonResponse, 'json');
+      
+      expect(questions).toHaveLength(0);
+    });
+    
+    it('должен обрабатывать отсутствие поля questions в JSON', () => {
+      const jsonResponse = JSON.stringify({
+        data: 'some data'
+      });
+      
+      const questions = handler.extractQuestions(jsonResponse, 'json');
+      
+      expect(questions).toHaveLength(0);
+    });
+    
+    it('должен обрабатывать пустой текст в Markdown', () => {
+      const markdownResponse = '';
+      
+      const questions = handler.extractQuestions(markdownResponse, 'markdown');
+      
+      expect(questions).toHaveLength(0);
+    });
+    
+    it('должен обрабатывать текст без вопросов в Markdown', () => {
+      const markdownResponse = 'Это просто текст без вопросов';
+      
+      const questions = handler.extractQuestions(markdownResponse, 'markdown');
+      
+      expect(questions).toHaveLength(0);
+    });
+  });
+});

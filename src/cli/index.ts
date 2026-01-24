@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CLI интерфейс для Workflow Orchestrator
  * 
  * Предоставляет команды для:
@@ -12,6 +12,19 @@ import { Command } from 'commander';
 import { WorkflowOrchestrator } from './orchestrator.js';
 import { ProgressDisplay } from './progress-display.js';
 import { Logger, LogLevel } from '../core/logger.js';
+import { EditorManager } from '../core/editor-manager.js';
+import { findMainOutputPath } from './auto-open-utils.js';
+import type { WorkflowState } from '../core/types.js';
+import type { EditorConfig } from '../core/file-input-types.js';
+import { createRequire } from 'module';
+import * as readline from 'readline';
+
+const require = createRequire(import.meta.url);
+
+// Экспорт компонентов Terminal Layer
+export { TerminalRenderer, TerminalColor, TerminalCapabilities, TerminalSize } from './terminal-renderer.js';
+export { IProgressDisplay } from './display-types.js';
+export { ResumeSelector, ResumeStepInfo } from './resume-selector.js';
 
 /**
  * Создание простого логгера для CLI
@@ -22,6 +35,59 @@ function createSimpleLogger(verbose: boolean = false): Logger {
     enableConsole: true,
     enableFile: false
   });
+}
+
+/**
+ * Создание индикатора прогресса на основе режима
+ * Property 1: Выбор режима на основе флага
+ * Requirements 8.3: Fallback на логовый режим при отсутствии поддержки
+ *
+ * @param logMode - Флаг логового режима
+ * @param logger - Логгер
+ * @returns ProgressDisplay или InteractiveDisplay
+ */
+function createProgressDisplay(logMode: boolean, logger: Logger): ProgressDisplay | any {
+  if (logMode) {
+    // Логовый режим - используем ProgressDisplay
+    return new ProgressDisplay(logger);
+  }
+
+  // Интерактивный режим - проверяем возможности терминала
+  try {
+    // Динамический импорт для проверки capabilities
+    const { TerminalRenderer } = require('./terminal-renderer.js');
+    const { InteractiveDisplay } = require('./interactive-display.js');
+
+    // Создаем временный renderer для проверки capabilities
+    const testRenderer = new TerminalRenderer(process.stdout);
+    const capabilities = testRenderer.getCapabilities();
+
+    // Проверяем поддержку интерактивного режима (Requirements 8.3)
+    if (!capabilities.supportsAnsi) {
+      logger.warn('Терминал не поддерживает ANSI коды, используется логовый режим');
+      return new ProgressDisplay(logger);
+    }
+
+    if (!capabilities.isInteractive) {
+      logger.warn('Терминал не интерактивный (не TTY), используется логовый режим');
+      return new ProgressDisplay(logger);
+    }
+
+    const minWidth = 60;
+    if (capabilities.width < minWidth) {
+      logger.warn(`Терминал слишком узкий (${capabilities.width} < ${minWidth}), используется логовый режим`);
+      return new ProgressDisplay(logger);
+    }
+
+    // Все проверки пройдены - используем InteractiveDisplay
+    return new InteractiveDisplay(testRenderer);
+  } catch (error) {
+    // Fallback на логовый режим при любой ошибке
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.warn(`Не удалось инициализировать интерактивный режим: ${errorMessage}`);
+    logger.warn('Используется логовый режим');
+    return new ProgressDisplay(logger);
+  }
 }
 
 /**
@@ -41,19 +107,39 @@ export function createCLI(): Command {
     .description('Запустить новый рабочий процесс')
     .argument('<config>', 'Путь к файлу конфигурации процесса (YAML/JSON)')
     .option('-c, --context <json>', 'Начальный контекст в формате JSON')
+    .option('-f, --context-file <file>', 'Путь к файлу с начальным контекстом (JSON)')
     .option('-v, --verbose', 'Подробный вывод логов')
     .option('--log-level <level>', 'Уровень логирования (debug, info, warning, error)', 'info')
+    .option('--log-mode', 'Использовать логовый режим вместо интерактивного')
+    .option('--no-open', 'Не предлагать открывать основной документ')
     .option('--state-dir <dir>', 'Директория для файлов состояния', './state')
     .option('--artifacts-dir <dir>', 'Директория для артефактов')
     .action(async (configPath: string, options) => {
       const logger = createSimpleLogger(options.verbose);
+
+      const interactivePreferred = !options.logMode && process.stdout.isTTY && process.stdin.isTTY;
+      if (interactivePreferred) {
+        logger.setLevel(LogLevel.ERROR);
+      }
 
       try {
         logger.info(`Запуск процесса из конфигурации: ${configPath}`);
 
         // Парсинг начального контекста
         let initialContext: Record<string, unknown> = {};
-        if (options.context) {
+        
+        // Приоритет: файл контекста > JSON строка
+        if (options.contextFile) {
+          try {
+            const { readFile } = await import('fs/promises');
+            const contextContent = await readFile(options.contextFile, 'utf-8');
+            initialContext = JSON.parse(contextContent);
+            logger.info(`Контекст загружен из файла: ${options.contextFile}`);
+          } catch (error) {
+            logger.error('Ошибка чтения файла контекста:', error as Error);
+            process.exit(1);
+          }
+        } else if (options.context) {
           try {
             initialContext = JSON.parse(options.context);
           } catch (error) {
@@ -69,17 +155,84 @@ export function createCLI(): Command {
           logger
         });
 
-        // Создание индикатора прогресса
-        const progress = new ProgressDisplay(logger);
+        // Создание индикатора прогресса на основе режима
+        // Property 1: Выбор режима на основе флага (Requirements 1.2, 1.3)
+        const progress = createProgressDisplay(options.logMode || false, logger);
 
         // Запуск процесса
         const state = await orchestrator.run(configPath, initialContext, progress);
 
         // Вывод результата
         if (state.status === 'completed') {
-          logger.info(`✓ Процесс завершен успешно (сессия: ${state.sessionId})`);
-          logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
-          logger.info(`  Создано артефактов: ${Object.keys(state.artifacts).length}`);
+          await handleAutoOpen(state, options, logger);
+
+          // Финализируем интерактивный режим после всех действий
+          if (progress && typeof progress.finalize === 'function') {
+            progress.finalize();
+          }
+
+          // В интерактивном режиме выводим напрямую в stdout после выхода из alt buffer
+          if (interactivePreferred) {
+            // Находим основной документ
+            const mainOutput = await findMainOutputPath(state);
+
+            process.stdout.write('\n');
+            process.stdout.write('═'.repeat(60) + '\n');
+            process.stdout.write('✓ Процесс завершен успешно\n');
+            process.stdout.write('═'.repeat(60) + '\n');
+            process.stdout.write('  Workflow: ' + state.workflowName + ' v' + state.workflowVersion + '\n');
+            process.stdout.write('  Сессия: ' + state.sessionId + '\n');
+            process.stdout.write('  Выполнено шагов: ' + state.completedSteps.length + '\n');
+            process.stdout.write('  Создано артефактов: ' + Object.keys(state.artifacts).length + '\n');
+
+            // Выводим путь к основному документу
+            if (mainOutput) {
+              process.stdout.write('  Основной документ: ' + mainOutput + '\n');
+            }
+
+            process.stdout.write('═'.repeat(60) + '\n');
+            process.stdout.write('\n');
+
+            // Даем время на flush буфера перед exit
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } else {
+            logger.info(`✓ Процесс завершен успешно (сессия: ${state.sessionId})`);
+            logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+            logger.info(`  Создано артефактов: ${Object.keys(state.artifacts).length}`);
+          }
+
+          process.exit(0);
+        } else if (state.status === 'paused') {
+          // Финализируем интерактивный режим
+          if (progress && typeof progress.finalize === 'function') {
+            progress.finalize();
+          }
+
+          // В интерактивном режиме выводим напрямую в stdout после выхода из alt buffer
+          // т.к. logger может не работать из-за уровня ERROR
+          if (interactivePreferred) {
+            process.stdout.write('\n');
+            process.stdout.write('⏸ Процесс приостановлен (сессия: ' + state.sessionId + ')\n');
+            process.stdout.write('  Выполнено шагов: ' + state.completedSteps.length + '\n');
+            process.stdout.write('  Текущий шаг: ' + state.currentStep + '\n');
+            process.stdout.write('\n');
+            process.stdout.write('→ Для продолжения выполните:\n');
+            process.stdout.write('  resume ' + state.sessionId + ' ' + configPath + '\n');
+            process.stdout.write('\n');
+
+            // Даем время на flush буфера перед exit
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } else {
+            // В логовом режиме используем logger
+            logger.info('');
+            logger.info(`⏸ Процесс приостановлен (сессия: ${state.sessionId})`);
+            logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+            logger.info(`  Текущий шаг: ${state.currentStep}`);
+            logger.info('');
+            logger.info(`→ Для продолжения выполните:`);
+            logger.info(`  resume ${state.sessionId} ${configPath}`);
+            logger.info('');
+          }
           process.exit(0);
         } else {
           logger.error(`✗ Процесс завершился с ошибкой (статус: ${state.status})`);
@@ -103,10 +256,18 @@ export function createCLI(): Command {
     .argument('<config>', 'Путь к файлу конфигурации процесса')
     .option('-v, --verbose', 'Подробный вывод логов')
     .option('--log-level <level>', 'Уровень логирования (debug, info, warning, error)', 'info')
+    .option('--log-mode', 'Использовать логовый режим вместо интерактивного')
+    .option('--no-open', 'Не предлагать открывать основной документ')
     .option('--state-dir <dir>', 'Директория для файлов состояния', './state')
     .option('--skip-validation', 'Пропустить валидацию артефактов')
+    .option('--step <number>', 'Номер шага для возобновления (пропускает интерактивный выбор)')
     .action(async (sessionId: string, configPath: string, options) => {
       const logger = createSimpleLogger(options.verbose);
+
+      const interactivePreferred = !options.logMode && process.stdout.isTTY && process.stdin.isTTY;
+      if (interactivePreferred) {
+        logger.setLevel(LogLevel.ERROR);
+      }
 
       try {
         logger.info(`Возобновление процесса (сессия: ${sessionId})`);
@@ -117,21 +278,149 @@ export function createCLI(): Command {
           logger
         });
 
-        // Создание индикатора прогресса
-        const progress = new ProgressDisplay(logger);
+        // Загрузка конфигурации и состояния для интерактивного выбора шага
+        let selectedStepNumber: number | undefined;
+        
+        if (!options.step && !options.logMode) {
+          // Интерактивный режим - показываем ResumeSelector
+          // Requirements 14.1, 14.2, 14.3, 14.4
+          try {
+            const { ResumeSelector } = await import('./resume-selector.js');
+            const { WorkflowConfigParser } = await import('../core/workflow-config-parser.js');
+            const { createStateManager } = await import('../core/state-manager.js');
+            
+            // Загружаем конфигурацию и состояние
+            const parser = new WorkflowConfigParser();
+            const config = await parser.loadFromFile(configPath);
+            
+            const stateManager = createStateManager({
+              stateDir: options.stateDir,
+              logger
+            });
+            const state = await stateManager.loadState(sessionId);
+            
+            // Создаем список шагов для ResumeSelector
+            const artifactsByStepId = new Map(
+              state.history.map(history => [history.stepId, history.artifacts])
+            );
 
-        // Возобновление процесса
+            const resumeSteps = config.steps.map((step, index) => {
+              const historyArtifacts = artifactsByStepId.get(step.id) ?? [];
+
+              return {
+                number: index + 1,
+                id: step.id,
+                name: step.name,
+                completed: state.completedSteps.includes(step.id),
+                hasArtifacts: historyArtifacts.length > 0,
+                artifacts: historyArtifacts
+              };
+            });
+            
+            // Показываем интерактивный селектор
+            const selector = new ResumeSelector();
+            selectedStepNumber = await selector.selectStep(resumeSteps);
+            
+            logger.info(`Выбран шаг ${selectedStepNumber} для возобновления`);
+          } catch (error) {
+            logger.warn(`Не удалось показать интерактивный селектор: ${(error as Error).message}`);
+            logger.info('Продолжение с текущего шага из состояния');
+          }
+        } else if (options.step) {
+          // Явно указан номер шага
+          selectedStepNumber = parseInt(options.step, 10);
+          if (isNaN(selectedStepNumber) || selectedStepNumber < 1) {
+            logger.error('Некорректный номер шага');
+            process.exit(1);
+          }
+          logger.info(`Возобновление с шага ${selectedStepNumber}`);
+        }
+
+        // Создание индикатора прогресса на основе режима
+        // Property 1: Выбор режима на основе флага (Requirements 1.2, 1.3)
+        const progress = createProgressDisplay(options.logMode || false, logger);
+
+        // Возобновление процесса с выбранного шага
+        // Requirements 14.5, 14.6, 14.7
         const state = await orchestrator.resume(
           sessionId,
           configPath,
           progress,
-          { skipValidation: options.skipValidation }
+          { 
+            skipValidation: options.skipValidation,
+            fromStep: selectedStepNumber
+          }
         );
 
         // Вывод результата
         if (state.status === 'completed') {
-          logger.info(`✓ Процесс завершен успешно`);
-          logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+          await handleAutoOpen(state, options, logger);
+
+          // Финализируем интерактивный режим после всех действий
+          if (progress && typeof progress.finalize === 'function') {
+            progress.finalize();
+          }
+
+          // В интерактивном режиме выводим напрямую в stdout после выхода из alt buffer
+          if (interactivePreferred) {
+            // Находим основной документ
+            const mainOutput = await findMainOutputPath(state);
+
+            process.stdout.write('\n');
+            process.stdout.write('═'.repeat(60) + '\n');
+            process.stdout.write('✓ Процесс завершен успешно\n');
+            process.stdout.write('═'.repeat(60) + '\n');
+            process.stdout.write('  Workflow: ' + state.workflowName + ' v' + state.workflowVersion + '\n');
+            process.stdout.write('  Сессия: ' + state.sessionId + '\n');
+            process.stdout.write('  Выполнено шагов: ' + state.completedSteps.length + '\n');
+            process.stdout.write('  Создано артефактов: ' + Object.keys(state.artifacts).length + '\n');
+
+            // Выводим путь к основному документу
+            if (mainOutput) {
+              process.stdout.write('  Основной документ: ' + mainOutput + '\n');
+            }
+
+            process.stdout.write('═'.repeat(60) + '\n');
+            process.stdout.write('\n');
+
+            // Даем время на flush буфера перед exit
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } else {
+            logger.info(`✓ Процесс завершен успешно`);
+            logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+          }
+
+          process.exit(0);
+        } else if (state.status === 'paused') {
+          // Финализируем интерактивный режим
+          if (progress && typeof progress.finalize === 'function') {
+            progress.finalize();
+          }
+
+          // В интерактивном режиме выводим напрямую в stdout после выхода из alt buffer
+          if (interactivePreferred) {
+            process.stdout.write('\n');
+            process.stdout.write('⏸ Процесс снова приостановлен (сессия: ' + state.sessionId + ')\n');
+            process.stdout.write('  Выполнено шагов: ' + state.completedSteps.length + '\n');
+            process.stdout.write('  Текущий шаг: ' + state.currentStep + '\n');
+            process.stdout.write('\n');
+            process.stdout.write('→ Для продолжения выполните:\n');
+            process.stdout.write('  resume ' + state.sessionId + ' ' + configPath + '\n');
+            process.stdout.write('\n');
+
+            // Даем время на flush буфера перед exit
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } else {
+            // В логовом режиме используем logger
+            logger.info('');
+            logger.info(`⏸ Процесс снова приостановлен (сессия: ${state.sessionId})`);
+            logger.info(`  Выполнено шагов: ${state.completedSteps.length}`);
+            logger.info(`  Текущий шаг: ${state.currentStep}`);
+            logger.info('');
+            logger.info(`→ Для продолжения выполните:`);
+            logger.info(`  resume ${state.sessionId} ${configPath}`);
+            logger.info('');
+          }
           process.exit(0);
         } else {
           logger.error(`✗ Процесс завершился с ошибкой (статус: ${state.status})`);
@@ -283,7 +572,7 @@ export function createCLI(): Command {
         await manager.saveExport(result, outputPath);
 
         // Вывод информации
-        logger.info(`✓ Экспорт завершен успешно`);
+        logger.info(`OK Экспорт завершен успешно`);
         logger.info(`  Процесс: ${config.name} v${config.version}`);
         logger.info(`  Шагов: ${config.steps.length}`);
         if (result.embeddedFiles) {
@@ -347,7 +636,7 @@ export function createCLI(): Command {
             resolvedConflicts: result.resolvedConflicts
           }, null, 2));
         } else {
-          logger.info(`✓ Импорт завершен успешно`);
+          logger.info(`OK Импорт завершен успешно`);
           logger.info(`  Процесс: ${result.config.name} v${result.config.version}`);
           logger.info(`  Шагов: ${result.config.steps.length}`);
           logger.info(`  Экспортирован: ${new Date(result.metadata.exportedAt).toLocaleString()}`);
@@ -391,6 +680,123 @@ export function createCLI(): Command {
 /**
  * Отображение статуса процесса
  */
+
+
+function getDefaultEditorConfig(context: Record<string, unknown>): EditorConfig | undefined {
+  const candidate = context?.default_editor;
+  if (!candidate || typeof candidate !== 'object') {
+    return undefined;
+  }
+
+  return candidate as EditorConfig;
+}
+
+async function askOpenConfirmation(filePath: string): Promise<boolean> {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return false;
+  }
+
+  try {
+    const { InteractiveMenu } = await import('./interactive-menu.js');
+    const { TerminalRenderer } = await import('./terminal-renderer.js');
+    const renderer = new TerminalRenderer();
+
+    renderer.writeLine();
+    renderer.writeLine(`Файл: ${filePath}`);
+    renderer.writeLine();
+
+    const menu = new InteractiveMenu(renderer);
+    const choice = await menu.show(
+      [
+        { label: 'Открыть', value: 'open' },
+        { label: 'Не открывать', value: 'skip' }
+      ],
+      { title: 'Открыть основной результат?', defaultIndex: 0 }
+    );
+
+    return choice === 'open';
+  } catch {
+    // Переходим к текстовому подтверждению
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  const answer = await new Promise<string>((resolve) => {
+    rl.question(`Открыть основной результат? [Y/n]
+${filePath}
+> `, resolve);
+  });
+
+  rl.close();
+
+  const normalized = answer.trim().toLowerCase();
+  return normalized === '' || normalized === 'y' || normalized === 'yes' || normalized === 'д' || normalized === 'да';
+}
+
+async function openInEditor(
+  filePath: string,
+  editorConfig: EditorConfig | undefined,
+  logger: Logger
+): Promise<void> {
+  const editorManager = new EditorManager(logger);
+
+  try {
+    if (editorConfig?.command) {
+      await editorManager.launchEditor(filePath, editorConfig);
+      logger.info('Файл открыт в указанном редакторе');
+      return;
+    }
+
+    await editorManager.launchEditor(filePath);
+    logger.info('Файл открыт в системном редакторе');
+  } catch (error) {
+    logger.warn(`Не удалось открыть файл в редакторе: ${(error as Error).message}`);
+    logger.info(`Откройте файл вручную: ${filePath}`);
+  }
+}
+
+
+interface AutoOpenOptions {
+  noOpen?: boolean;
+  logMode?: boolean;
+}
+
+async function handleAutoOpen(
+  state: WorkflowState,
+  options: AutoOpenOptions,
+  logger: Logger
+): Promise<void> {
+  if (options.noOpen) {
+    return;
+  }
+
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
+
+  const mainOutput = await findMainOutputPath(state);
+  if (!mainOutput) {
+    logger.info('Основной выходной документ не найден');
+    return;
+  }
+
+  if (options.logMode || !process.stdout.isTTY) {
+    logger.info(`Основной результат: ${mainOutput}`);
+    return;
+  }
+
+  const shouldOpen = await askOpenConfirmation(mainOutput);
+  if (!shouldOpen) {
+    logger.info(`Открытие пропущено. Файл: ${mainOutput}`);
+    return;
+  }
+
+  const editorConfig = getDefaultEditorConfig(state.context);
+  await openInEditor(mainOutput, editorConfig, logger);
+}
 function displayStatus(
   status: CLIWorkflowStatus,
   detailed: boolean,
@@ -468,7 +874,7 @@ function displayDryRunResult(result: DryRunResult, logger: Logger): void {
   logger.info(`\n=== Результат валидации ===`);
   
   if (result.valid) {
-    logger.info(`✓ Конфигурация валидна`);
+    logger.info(`OK Конфигурация валидна`);
   } else {
     logger.error(`✗ Конфигурация содержит ошибки`);
   }
@@ -550,12 +956,12 @@ function displayDryRunResult(result: DryRunResult, logger: Logger): void {
       result.resourceCheck.missingVariables.length === 0 &&
       result.resourceCheck.unavailableAdapters.length === 0
     ) {
-      logger.info(`✓ Все ресурсы доступны`);
+      logger.info(`OK Все ресурсы доступны`);
     }
   }
 
   if (result.valid) {
-    logger.info(`\n✓ Процесс готов к выполнению`);
+    logger.info(`\nOK Процесс готов к выполнению`);
   } else {
     logger.error(`\n✗ Исправьте ошибки перед запуском процесса`);
   }

@@ -1,0 +1,61 @@
+# Быстрый старт с файловым вводом
+# Простой пример для начала работы
+
+workflow:
+  name: "file-input-quickstart"
+  version: "1.0"
+  description: "Простой пример использования файлового ввода"
+  
+  settings:
+    artifacts_dir: "artifacts/quickstart"
+    default_input_mode: "file"
+  
+  roles:
+    assistant:
+      adapter: "claude-cli"
+      model: "claude-sonnet-3.5"
+  
+  steps:
+    # Шаг 1: Сбор информации от пользователя
+    - id: "collect_info"
+      name: "Сбор информации"
+      type: "user_input"
+      input_mode: "file"
+      file_format: "markdown"
+      prompt_message: |
+        # Расскажите о вашей задаче
+        
+        ## Что вы хотите автоматизировать?
+        
+        [Опишите задачу]
+        
+        ## Какие данные у вас есть?
+        
+        [Опишите доступные данные]
+        
+        ## Какой результат вы ожидаете?
+        
+        [Опишите ожидаемый результат]
+      outputs:
+        user_info: "${artifacts_dir}/user_info.md"
+    
+    # Шаг 2: Создание плана
+    - id: "create_plan"
+      name: "Создание плана"
+      type: "model"
+      role: "assistant"
+      depends_on: ["collect_info"]
+      prompt_template: |
+        На основе следующей информации создайте план автоматизации:
+        
+        ${user_info}
+        
+        План должен включать:
+        1. Анализ задачи
+        2. Предлагаемое решение
+        3. Шаги реализации
+        4. Необходимые инструменты
+      inputs:
+        user_info: "${user_info}"
+      outputs:
+        plan: "${artifacts_dir}/plan.md"

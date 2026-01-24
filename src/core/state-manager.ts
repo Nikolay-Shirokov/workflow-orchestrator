@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Менеджер состояния рабочего процесса
  * 
  * Отвечает за:
@@ -308,7 +308,11 @@ export class DefaultStateManager implements StateManager {
     stepHistory: StepHistory
   ): Promise<WorkflowState> {
     // Добавление шага в список завершенных
-    if (!state.completedSteps.includes(stepHistory.stepId)) {
+    // НЕ добавляем шаги со статусом 'skipped', если процесс приостановлен
+    // (это означает, что шаг требует ввода пользователя и должен быть выполнен при возобновлении)
+    const shouldAddToCompleted = stepHistory.status !== 'skipped' || state.status !== 'paused';
+    
+    if (shouldAddToCompleted && !state.completedSteps.includes(stepHistory.stepId)) {
       state.completedSteps.push(stepHistory.stepId);
     }
 
@@ -584,12 +588,17 @@ export class DefaultStateManager implements StateManager {
 
     try {
       // Выполнение операции с таймаутом
-      const result = await Promise.race([
-        operation(),
-        this.createTimeout(this.config.lockTimeout),
-      ]);
+      const timeout = this.createTimeout(this.config.lockTimeout);
+      try {
+        const result = await Promise.race([
+          operation(),
+          timeout.promise,
+        ]);
 
-      return result as T;
+        return result as T;
+      } finally {
+        timeout.cancel();
+      }
     } finally {
       // Освобождение блокировки
       releaseLock!();
@@ -600,9 +609,11 @@ export class DefaultStateManager implements StateManager {
   /**
    * Создание таймаута
    */
-  private createTimeout(ms: number): Promise<never> {
-    return new Promise((_, reject) => {
-      setTimeout(() => {
+  private createTimeout(ms: number): { promise: Promise<never>; cancel: () => void } {
+    let timeoutId: NodeJS.Timeout | undefined;
+
+    const promise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
         reject(
           new WorkflowErrorClass({
             code: 'LOCK_TIMEOUT',
@@ -620,6 +631,15 @@ export class DefaultStateManager implements StateManager {
         );
       }, ms);
     });
+
+    return {
+      promise,
+      cancel: () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+      }
+    };
   }
 
   /**
@@ -714,3 +734,8 @@ export function createStateManager(config: Partial<StateManagerConfig> = {}): St
 
   return new DefaultStateManager(defaultConfig);
 }
+
+
+
+
+

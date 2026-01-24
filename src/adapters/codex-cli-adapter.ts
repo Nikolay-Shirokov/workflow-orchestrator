@@ -5,6 +5,7 @@
 
 import { BaseCLIAdapter } from './base-cli-adapter.js';
 import { AdapterConfig, AdapterRequest } from '../core/types.js';
+import { spawn } from 'child_process';
 
 /**
  * Расширенный запрос для Codex CLI с дополнительными опциями
@@ -35,7 +36,7 @@ interface JSONLEvent {
   role?: 'user' | 'assistant';
   content?: string;
   tool?: string;
-  input?: any;
+  input?: unknown;
   timestamp?: string;
 }
 
@@ -77,6 +78,7 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
   /**
    * Подготовка аргументов команды для Codex CLI
    * Формирует массив аргументов с учетом всех опций запроса
+   * ВАЖНО: Промпт НЕ добавляется в аргументы, он будет передан через stdin
    * @param request - Запрос к адаптеру
    * @returns string[] - Массив аргументов для команды codex
    */
@@ -153,11 +155,155 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
       }
     }
     
-    // Добавляем промпт как последний аргумент
-    // Промпт передается в кавычках для корректной обработки пробелов и спецсимволов
-    args.push(codexRequest.prompt);
+    // Добавляем "-" для чтения промпта из stdin
+    // Это решает проблему с кириллицей в аргументах командной строки
+    args.push('-');
     
     return args;
+  }
+
+  /**
+   * Выполнение запроса к Codex CLI
+   * Переопределяет базовый метод для передачи промпта через stdin
+   * Это решает проблему с кириллицей в аргументах командной строки Windows
+   * @param request - Запрос к адаптеру
+   * @returns Promise<AdapterResponse> - Ответ от модели
+   */
+  async execute(request: AdapterRequest): Promise<import('../core/types.js').AdapterResponse> {
+    const codexRequest = request as CodexAdapterRequest;
+    const startTime = Date.now();
+
+    try {
+      // Подготавливаем аргументы (включая "-" для stdin)
+      const args = this.prepareArguments(request);
+      
+      // Подготавливаем переменные окружения
+      const env = this.prepareEnvironment(request);
+      
+      // Определяем таймаут
+      const timeout = request.timeout || this.config.timeout || 300000;
+      
+      // Выполняем команду с передачей промпта через stdin
+      const result = await this.executeCommandWithStdin(
+        this.config.command,
+        args,
+        env,
+        timeout,
+        codexRequest.prompt
+      );
+      
+      // Проверяем код выхода
+      if (result.exitCode !== 0) {
+        throw new Error(`Команда завершилась с кодом ${result.exitCode}. stderr: ${result.stderr}`);
+      }
+      
+      // Парсим ответ
+      const content = this.parseResponse(result.stdout);
+      
+      const executionTime = Date.now() - startTime;
+      
+      return {
+        content,
+        model: request.model || 'unknown',
+        executionTime,
+        metadata: {
+          exitCode: result.exitCode,
+          stderr: result.stderr
+        }
+      };
+      
+    } catch (error) {
+      // Обрабатываем ошибку через handleError
+      throw this.handleError(error as Error);
+    }
+  }
+
+  /**
+   * Выполнение команды с передачей данных через stdin
+   * @param command - Команда для выполнения
+   * @param args - Аргументы команды
+   * @param env - Переменные окружения
+   * @param timeout - Таймаут в миллисекундах
+   * @param stdinData - Данные для передачи через stdin
+   * @returns Promise<CommandResult> - Результат выполнения
+   */
+  private executeCommandWithStdin(
+    command: string,
+    args: string[],
+    env: Record<string, string>,
+    timeout: number,
+    stdinData: string
+  ): Promise<{ stdout: string; stderr: string; exitCode: number; executionTime: number }> {
+    return new Promise((resolve, reject) => {
+      const startTime = Date.now();
+      let stdout = '';
+      let stderr = '';
+      let timedOut = false;
+
+      // Запуск процесса
+      const child = spawn(command, args, {
+        env,
+        shell: true,
+        windowsHide: true
+      });
+
+      // Таймер для таймаута
+      const timeoutId = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGTERM');
+        
+        // Если процесс не завершился через 5 секунд, убиваем принудительно
+        setTimeout(() => {
+          if (!child.killed) {
+            child.kill('SIGKILL');
+          }
+        }, 5000);
+      }, timeout);
+
+      // Передаем данные через stdin
+      child.stdin.write(stdinData, 'utf8');
+      child.stdin.end();
+
+      // Захват stdout
+      child.stdout?.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+
+      // Захват stderr
+      child.stderr?.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      // Обработка завершения процесса
+      child.on('close', (exitCode: number | null) => {
+        clearTimeout(timeoutId);
+        const executionTime = Date.now() - startTime;
+
+        if (timedOut) {
+          reject(new Error(
+            `Команда превысила таймаут ${timeout}мс. ` +
+            `stdout: ${stdout.substring(0, 500)}, ` +
+            `stderr: ${stderr.substring(0, 500)}`
+          ));
+          return;
+        }
+
+        resolve({
+          stdout,
+          stderr,
+          exitCode: exitCode ?? -1,
+          executionTime
+        });
+      });
+
+      // Обработка ошибок запуска процесса
+      child.on('error', (error: Error) => {
+        clearTimeout(timeoutId);
+        reject(new Error(
+          `Не удалось запустить команду "${command}": ${error.message}`
+        ));
+      });
+    });
   }
 
   /**
@@ -321,14 +467,12 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
     
     // Извлекаем stderr из сообщения об ошибке, если он там есть
     // Базовый класс уже включает stderr в сообщение при ошибке выполнения
-    let errorMessage = error.message;
-    
     // Если в сообщении есть stderr, он уже включен базовым классом
     // Мы просто возвращаем полное сообщение
     
     return {
       code,
-      message: errorMessage,
+      message: error.message,
       retryable,
       originalError: error
     };

@@ -4,7 +4,10 @@
  */
 
 import { BaseCLIAdapter } from './base-cli-adapter.js';
-import { AdapterConfig, AdapterRequest } from '../core/types.js';
+import { AdapterConfig, AdapterRequest, AdapterResponse } from '../core/types.js';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as os from 'os';
 
 /**
  * Адаптер для Gemini CLI
@@ -16,18 +19,17 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
 
   constructor(config?: Partial<AdapterConfig>) {
     // Конфигурация по умолчанию для Gemini CLI
-    // Используем позиционный аргумент для промпта (новый синтаксис)
+    // НЕ используем stdin из-за проблем с обрезанием вывода в Windows
     const defaultConfig: AdapterConfig = {
       name: 'gemini-cli',
       command: 'gemini',
-      args: [
-        '${prompt}'
-      ],
+      args: [],
       env: {
         GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || ''
       },
       parser: 'text',
-      timeout: 300000 // 5 минут
+      timeout: 300000, // 5 минут
+      useStdin: false // НЕ используем stdin - будем передавать через временный файл
     };
 
     // Объединяем конфигурацию по умолчанию с переданной
@@ -46,31 +48,192 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
   /**
    * Подготовка аргументов команды с подстановкой параметров
    * Переопределяем для добавления флага --model если модель указана
+   * Промпт НЕ добавляется в аргументы - он передается через временный файл
    * @param request - Запрос к адаптеру
    * @returns string[] - Массив аргументов
    */
   protected prepareArguments(request: AdapterRequest): string[] {
-    const args: string[] = [];
+    // Разрешаем только инструмент write_file и автоподтверждаем его использование
+    // Это позволяет Gemini создавать полные документы, но ограничивает другие действия
+    const args: string[] = ['--allowed-tools', 'write_file', '--yolo'];
     
     // Добавляем флаг --model если модель указана
     if (request.model) {
       args.push('--model', request.model);
     }
     
-    // Добавляем промпт как позиционный аргумент (должен быть последним)
-    args.push(request.prompt);
+    // Промпт НЕ добавляем в аргументы - он передается через временный файл
     
     return args;
   }
 
   /**
+   * Выполнение запроса к модели через временный файл для ввода
+   * Переопределяем базовый метод для использования временного файла для ввода
+   * Если Gemini создает файл через write_file, читаем результат из него
+   * @param request - Запрос к адаптеру
+   * @returns Promise<AdapterResponse> - Ответ от модели
+   */
+  async execute(request: AdapterRequest): Promise<AdapterResponse> {
+    const startTime = Date.now();
+    let tempInputPath: string | undefined;
+    let outputFilePath: string | undefined;
+    
+    try {
+      // Создаем временный файл для ввода
+      const tmpDir = os.tmpdir();
+      const timestamp = Date.now();
+      tempInputPath = path.join(tmpDir, `gemini-prompt-${timestamp}.txt`);
+      
+      // Пытаемся извлечь путь к выходному файлу из промпта
+      // Ищем паттерн: "file path: <путь>" или "to file path: <путь>"
+      const outputFileMatch = request.prompt.match(/(?:to )?file path:\s*([^\s\n]+\.md)/i);
+      if (outputFileMatch) {
+        outputFilePath = outputFileMatch[1];
+        // Убираем возможные кавычки
+        outputFilePath = outputFilePath.replace(/['"]/g, '');
+        console.log(`[DEBUG] Обнаружен путь к выходному файлу: ${outputFilePath}`);
+      }
+      
+      // Записываем промпт во входной файл
+      await fs.writeFile(tempInputPath, request.prompt, { encoding: 'utf-8' });
+      
+      // Подготовка аргументов команды
+      const args = this.prepareArguments(request);
+      
+      // Подготовка переменных окружения
+      const env = this.prepareEnvironment(request);
+      
+      // Определение таймаута
+      const timeout = request.timeout || this.config.timeout || 300000;
+      
+      // Используем cmd.exe для перенаправления ввода, но читаем stdout напрямую
+      // cmd /c "type input.txt | gemini --allowed-tools write_file --approval-mode yolo"
+      const command = process.platform === 'win32'
+        ? `cmd /c "type "${tempInputPath}" | ${this.config.command} ${args.join(' ')}"`
+        : `cat "${tempInputPath}" | ${this.config.command} ${args.join(' ')}`;
+      
+      const result = await this.executeCommand(
+        command,
+        [],
+        env,
+        timeout
+      );
+      
+      // Удаляем временный файл
+      try {
+        await fs.unlink(tempInputPath);
+      } catch (cleanupError) {
+        // Игнорируем ошибки удаления
+      }
+      
+      // Проверка на ошибки
+      if (result.exitCode !== 0) {
+        throw new Error(
+          `Команда завершилась с кодом ${result.exitCode}. ` +
+          `stderr: ${result.stderr}`
+        );
+      }
+      
+      let content: string;
+      
+      // Если указан путь к выходному файлу, пытаемся прочитать из него
+      if (outputFilePath) {
+        try {
+          // Ждем немного, чтобы файл был записан
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          content = await fs.readFile(outputFilePath, { encoding: 'utf-8' });
+          console.log(`[DEBUG] Прочитано ${content.length} байт из файла ${outputFilePath}`);
+        } catch (fileError) {
+          console.log(`[DEBUG] Не удалось прочитать файл ${outputFilePath}, используем stdout`);
+          content = this.parseResponse(result.stdout);
+        }
+      } else {
+        // Парсинг ответа из stdout
+        content = this.parseResponse(result.stdout);
+      }
+      
+      const executionTime = Date.now() - startTime;
+      
+      return {
+        content,
+        model: request.model || 'unknown',
+        executionTime,
+        metadata: {
+          exitCode: result.exitCode,
+          stderr: result.stderr,
+          outputFile: outputFilePath
+        }
+      };
+    } catch (error) {
+      // Удаляем временный файл в случае ошибки
+      if (tempInputPath) {
+        try {
+          await fs.unlink(tempInputPath);
+        } catch (cleanupError) {
+          // Игнорируем ошибки удаления
+        }
+      }
+      throw this.handleError(error as Error);
+    }
+  }
+
+  /**
    * Парсинг ответа от Gemini CLI
-   * Gemini CLI возвращает ответ в текстовом формате
+   * Gemini CLI возвращает ответ в текстовом, JSON или stream-json формате
    * @param rawOutput - Сырой вывод от CLI
    * @returns string - Распарсенный контент
    */
   parseResponse(rawOutput: string): string {
-    // Gemini CLI обычно возвращает чистый текст ответа
+    // Обработка stream-json формата (несколько JSON объектов построчно)
+    if (rawOutput.includes('\n{') || rawOutput.trim().startsWith('{') || rawOutput.trim().startsWith('[')) {
+      try {
+        // Разбиваем на строки и парсим каждую как JSON
+        const lines = rawOutput.trim().split('\n');
+        let fullContent = '';
+        
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          
+          try {
+            const parsed = JSON.parse(line);
+            
+            // Формат stream-json: { "type": "content", "content": "..." }
+            if (parsed.type === 'content' && parsed.content) {
+              fullContent += parsed.content;
+            }
+            // Формат JSON: { "content": "...", "model": "...", ... }
+            else if (parsed.content) {
+              fullContent += parsed.content;
+            }
+            // Формат JSON: { "text": "..." }
+            else if (parsed.text) {
+              fullContent += parsed.text;
+            }
+            // Массив кандидатов: [{ "text": "..." }, ...]
+            else if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].text) {
+              fullContent += parsed[0].text;
+            }
+            // Массив кандидатов: [{ "content": "..." }, ...]
+            else if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].content) {
+              fullContent += parsed[0].content;
+            }
+          } catch (lineError) {
+            // Пропускаем строки, которые не являются JSON
+            continue;
+          }
+        }
+        
+        if (fullContent) {
+          return fullContent.trim();
+        }
+      } catch (error) {
+        // Если не удалось распарсить, обрабатываем как текст
+      }
+    }
+    
+    // Обработка текстового формата
     let content = rawOutput.trim();
 
     // Удаляем возможные служебные префиксы
@@ -85,39 +248,6 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
       if (content.startsWith(prefix)) {
         content = content.substring(prefix.length).trim();
         break;
-      }
-    }
-
-    // Gemini CLI может возвращать JSON в некоторых случаях
-    // Пытаемся распарсить, если это JSON
-    if (content.startsWith('{') || content.startsWith('[')) {
-      try {
-        const parsed = JSON.parse(content);
-        
-        // Если это объект с полем text или content, извлекаем его
-        if (parsed.text) {
-          return parsed.text.trim();
-        }
-        if (parsed.content) {
-          return parsed.content.trim();
-        }
-        
-        // Если это массив кандидатов (candidates), берем первый
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const first = parsed[0];
-          if (first.text) {
-            return first.text.trim();
-          }
-          if (first.content) {
-            return first.content.trim();
-          }
-        }
-        
-        // Если структура не распознана, возвращаем как есть
-        return content;
-      } catch (error) {
-        // Если не удалось распарсить, возвращаем как текст
-        return content;
       }
     }
 

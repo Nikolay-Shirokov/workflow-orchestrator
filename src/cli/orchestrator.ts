@@ -16,7 +16,13 @@ import { WorkflowConfigParser } from '../core/workflow-config-parser.js';
 import { MCPManager } from '../core/mcp-manager.js';
 import { RoleManager } from '../core/role-manager.js';
 import { CLIWorkflowStatus, DryRunResult } from './index.js';
-import { ProgressDisplay } from './progress-display.js';
+import { IProgressDisplay } from './display-types.js';
+
+// Импортируем все доступные адаптеры
+import { ClaudeCLIAdapter } from '../adapters/claude-cli-adapter.js';
+import { OpenAICLIAdapter } from '../adapters/openai-cli-adapter.js';
+import { GeminiCLIAdapter } from '../adapters/gemini-cli-adapter.js';
+import { CodexCLIAdapter } from '../adapters/codex-cli-adapter.js';
 
 /**
  * Конфигурация оркестратора
@@ -38,6 +44,9 @@ export interface OrchestratorConfig {
 export interface ResumeOptions {
   /** Пропустить валидацию артефактов */
   skipValidation?: boolean;
+  
+  /** Номер шага для возобновления (1-based) */
+  fromStep?: number;
 }
 
 /**
@@ -59,7 +68,6 @@ export interface DryRunOptions {
  */
 export class WorkflowOrchestrator {
   private stateDir: string;
-  private artifactsDir: string;
   private logger: Logger;
   private stateManager: StateManager;
   private workflowEngine: WorkflowEngine;
@@ -67,7 +75,6 @@ export class WorkflowOrchestrator {
 
   constructor(config: OrchestratorConfig) {
     this.stateDir = config.stateDir || './state';
-    this.artifactsDir = config.artifactsDir || './artifacts';
     this.logger = config.logger;
 
     // Инициализация компонентов
@@ -78,10 +85,16 @@ export class WorkflowOrchestrator {
 
     const configParser = new WorkflowConfigParser();
     this.adapterRegistry = new AdapterRegistry();
+    
+    // Автоматическая регистрация всех доступных адаптеров
+    this.registerDefaultAdapters();
+    
     const templateEngine = new DefaultTemplateEngine();
+    // Используем текущую директорию как baseDir, чтобы artifacts_dir из конфигурации
+    // использовался как абсолютный путь от корня проекта
     const artifactManager = createArtifactManager({
-      baseDir: this.artifactsDir,
-      sessionDirTemplate: '',  // Не добавляем поддиректорию, используем baseDir напрямую
+      baseDir: '.',
+      sessionDirTemplate: '',
       logger: this.logger
     });
     
@@ -108,6 +121,24 @@ export class WorkflowOrchestrator {
   }
 
   /**
+   * Регистрация адаптеров по умолчанию
+   * Автоматически регистрирует все доступные CLI-адаптеры
+   */
+  private registerDefaultAdapters(): void {
+    try {
+      // Регистрируем все доступные адаптеры
+      this.adapterRegistry.register(new ClaudeCLIAdapter());
+      this.adapterRegistry.register(new OpenAICLIAdapter());
+      this.adapterRegistry.register(new GeminiCLIAdapter());
+      this.adapterRegistry.register(new CodexCLIAdapter());
+      
+      this.logger.debug(`Зарегистрировано адаптеров: ${this.adapterRegistry.getAll().length}`);
+    } catch (error) {
+      this.logger.warn(`Ошибка при регистрации адаптеров по умолчанию: ${(error as Error).message}`);
+    }
+  }
+
+  /**
    * Регистрация адаптера
    * @param adapter - Адаптер для регистрации
    */
@@ -129,7 +160,7 @@ export class WorkflowOrchestrator {
   async run(
     configPath: string,
     initialContext: Record<string, unknown> = {},
-    progress?: ProgressDisplay
+    progress?: IProgressDisplay
   ): Promise<WorkflowState> {
     this.logger.info(`Запуск процесса из ${configPath}`);
 
@@ -142,7 +173,7 @@ export class WorkflowOrchestrator {
     }
 
     // Выполнение процесса
-    const state = await this.workflowEngine.execute(config, initialContext);
+    const state = await this.workflowEngine.execute(config, initialContext, progress);
 
     // Отображение завершения
     if (progress) {
@@ -158,8 +189,8 @@ export class WorkflowOrchestrator {
   async resume(
     sessionId: string,
     configPath: string,
-    progress?: ProgressDisplay,
-    _options: ResumeOptions = {}
+    progress?: IProgressDisplay,
+    options: ResumeOptions = {}
   ): Promise<WorkflowState> {
     this.logger.info(`Возобновление процесса ${sessionId}`);
 
@@ -171,8 +202,24 @@ export class WorkflowOrchestrator {
       progress.onWorkflowStart(config);
     }
 
-    // Возобновление выполнения
-    const state = await this.workflowEngine.resume(sessionId, config);
+    // Загружаем состояние для синхронизации с progress display
+    // Это важно для resume - чтобы показать уже выполненные шаги
+    const loadedState = await this.stateManager.loadState(sessionId);
+
+    // Синхронизируем progress display с загруженным состоянием
+    // Это обновит статусы шагов в InteractiveDisplay
+    if (progress && typeof progress.syncWithState === 'function') {
+      progress.syncWithState(loadedState);
+    }
+
+    // Возобновление выполнения с учетом выбранного шага
+    // Requirements 14.5, 14.6, 14.7
+    const state = await this.workflowEngine.resume(
+      sessionId,
+      config,
+      progress,
+      options.fromStep
+    );
 
     // Отображение завершения
     if (progress) {

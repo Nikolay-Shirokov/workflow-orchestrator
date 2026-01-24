@@ -2,6 +2,9 @@
  * Базовые типы и интерфейсы для Workflow Orchestrator
  */
 
+// Экспорт типов файлового ввода
+export * from './file-input-types.js';
+
 /**
  * Конфигурация рабочего процесса
  */
@@ -28,6 +31,19 @@ export interface WorkflowSettings {
   timeout?: number;
   log_level?: string;
   mcp_tools?: MCPToolConfig[];
+  
+  /** Режим ввода по умолчанию */
+  default_input_mode?: 'file' | 'console';
+  
+  /** Формат файла по умолчанию */
+  default_file_format?: 'markdown' | 'yaml' | 'json' | 'text';
+  
+  /** Конфигурация редактора по умолчанию */
+  default_editor?: {
+    command?: string;
+    args?: string[];
+    wait?: boolean;
+  };
 }
 
 /**
@@ -60,6 +76,8 @@ export interface AdapterConfig {
   env?: Record<string, string>;
   parser?: string;
   timeout?: number;
+  /** Использовать stdin для передачи промпта вместо аргументов командной строки */
+  useStdin?: boolean;
 }
 
 /**
@@ -114,6 +132,22 @@ export interface WorkflowStep {
   input_format?: string;
   prompt_message?: string;
   validation?: ValidationRule[];
+  
+  /** Режим ввода: file или console */
+  input_mode?: 'file' | 'console';
+  
+  /** Формат файла для file mode */
+  file_format?: 'markdown' | 'yaml' | 'json' | 'text';
+  
+  /** Конфигурация редактора */
+  editor?: {
+    command?: string;
+    args?: string[];
+    wait?: boolean;
+  };
+  
+  /** Включать ли вопросы в контекст */
+  include_questions?: boolean;
   
   // Входы и выходы
   inputs?: Record<string, string>;
@@ -607,6 +641,8 @@ export interface ExecutionContext {
   
   /** Логгер */
   logger: Logger;
+  /** Индикатор прогресса (для интерактивного режима, опционально) */
+  progress?: unknown;
 }
 
 /**

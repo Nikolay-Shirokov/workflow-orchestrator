@@ -5,11 +5,13 @@
  */
 
 import { WorkflowConfig, WorkflowState, WorkflowStep, StepHistory, Logger } from '../core/types.js';
+import { IProgressDisplay } from './display-types.js';
 
 /**
  * Класс для отображения прогресса
+ * Реализует интерфейс IProgressDisplay для совместимости с оркестратором
  */
-export class ProgressDisplay {
+export class ProgressDisplay implements IProgressDisplay {
   private logger: Logger;
   private startTime: number = 0;
   private currentStepStartTime: number = 0;
@@ -35,6 +37,14 @@ export class ProgressDisplay {
     }
     this.logger.info(`Всего шагов: ${this.totalSteps}`);
     this.logger.info(`${'='.repeat(60)}\n`);
+  }
+
+  /**
+   * Синхронизация с загруженным состоянием (для resume)
+   * В логовом режиме не требуется - логи не сохраняются
+   */
+  syncWithState(_state: WorkflowState): void {
+    // Ничего не делаем - логи линейные и не требуют синхронизации
   }
 
   /**
@@ -169,11 +179,23 @@ export class ProgressDisplay {
   }
 
   /**
+   * Финализация отображения - пустая реализация для логового режима
+   */
+  finalize(): void {
+    // Не требуется для логового режима
+  }
+
+  /**
    * Создание индикатора прогресса
    */
   private createProgressBar(progress: number, width: number): string {
-    const filled = Math.round((progress / 100) * width);
-    const empty = width - filled;
+    // Защита от невалидных значений
+    if (width <= 0) {
+      return '[]';
+    }
+
+    const filled = Math.max(0, Math.min(width, Math.round((progress / 100) * width)));
+    const empty = Math.max(0, width - filled);
     return '[' + '█'.repeat(filled) + '░'.repeat(empty) + ']';
   }
 }

@@ -91,6 +91,18 @@ class MockAdapterRegistry implements AdapterRegistry {
   getAll(): CLIAdapter[] {
     return Array.from(this.adapters.values());
   }
+
+  createFromConfig(_config: any): CLIAdapter {
+    // Для тестов возвращаем MockAdapter
+    return new MockAdapter();
+  }
+
+  registerFromConfigs(configs: any[]): void {
+    for (const config of configs) {
+      const adapter = this.createFromConfig(config);
+      this.register(adapter);
+    }
+  }
 }
 
 /**
