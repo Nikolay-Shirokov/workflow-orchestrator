@@ -170,7 +170,9 @@ roles:
     adapter: "claude-cli"
     model: "claude-sonnet-3.5"
     role_definition: "Вы - архитектор..."
-    permissions: [read, edit]
+    default_permissions:
+      read: ["*.md", "src/**/*"]
+      write: ["artifacts/**/*.md"]
 ```
 
 Роли позволяют использовать разные модели для разных задач.
@@ -414,10 +416,14 @@ steps:
 ```yaml
 roles:
   restricted:
-    permissions:
-      - read
-      - edit: "*.md"  # только markdown файлы
+    default_permissions:
+      read: ["*.md"]           # только чтение markdown файлов
+      write: ["docs/*.md"]     # запись только в docs/
+      # execute: true          # shell-команды (по умолчанию отключено)
+      # fullAccess: true       # полный доступ (ОПАСНО!)
 ```
+
+Подробнее см. [SECURITY.md](SECURITY.md#6-разрешения-на-уровне-шага-steppermissions)
 
 ### Можно ли запускать процессы в изолированной среде?
 
