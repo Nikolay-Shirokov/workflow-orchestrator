@@ -17,7 +17,7 @@ workflow:
   roles:
     researcher:
       adapter: "claude-cli"
-      model: "claude-sonnet-4.5"
+      model: "sonnet"
       role_definition: |
         Вы - ИССЛЕДОВАТЕЛЬ, который собирает информацию из интернета.
         Ваша роль - найти релевантные данные, примеры, best practices
@@ -37,7 +37,7 @@ workflow:
 
     architect:
       adapter: "claude-cli"
-      model: "claude-sonnet-4.5"
+      model: "sonnet"
       role_definition: |
         Вы - ГЛАВНЫЙ АРХИТЕКТОР в процессе разработки требований.
         Ваша роль - задавать глубокие вопросы, анализировать потребности
