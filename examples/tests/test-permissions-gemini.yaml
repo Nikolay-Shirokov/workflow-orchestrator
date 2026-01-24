@@ -27,13 +27,12 @@ workflow:
   steps:
     # Тест: Write permission
     - id: test_write
-      name: "Тест: Write (shell command)"
+      name: "Тест: write_file tool"
       type: model
       role: writer
       prompt_template: |
-        Создай файл test-file.txt с содержимым:
-        "File written by Gemini"
+        Напиши текст: "File written by Gemini using write_file tool"
 
-        Используй shell команду для записи файла.
+        Сохрани этот текст в файл используя инструмент write_file.
       outputs:
         result: "${artifacts_dir}/written_result.txt"

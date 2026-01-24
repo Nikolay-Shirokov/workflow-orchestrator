@@ -25,15 +25,14 @@ workflow:
         execute: true
 
   steps:
-    # Тест: Write permission (через shell)
+    # Тест: Codex output (через --output-last-message)
     - id: test_write
-      name: "Тест: Write (shell)"
+      name: "Тест: Codex output"
       type: model
       role: writer
       prompt_template: |
-        Создай файл test-codex.txt с содержимым:
-        "File written by Codex"
+        Напиши только текст: "File written by Codex"
 
-        Используй shell команду echo для записи.
+        Не используй никаких команд, просто выведи этот текст.
       outputs:
         result: "${artifacts_dir}/written_result.txt"
