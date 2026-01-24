@@ -172,8 +172,10 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
     }
     
     // Добавляем флаг --output-last-message для сохранения финального сообщения
-    if (codexRequest.outputFile) {
-      args.push('--output-last-message', codexRequest.outputFile);
+    // Проверяем как явный outputFile из CodexAdapterRequest, так и из базового AdapterRequest
+    const outputFile = codexRequest.outputFile || request.outputFile;
+    if (outputFile) {
+      args.push('--output-last-message', outputFile);
     }
     
     // Добавляем конфигурационные переопределения через флаг -c
