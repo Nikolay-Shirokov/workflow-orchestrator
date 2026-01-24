@@ -9,12 +9,12 @@
 
 ---
 
-## Фаза 1: Типы и интерфейсы
+## Фаза 1: Типы и интерфейсы ✅
 
-### Задача 1.1: Добавить StepCapabilities в types.ts
-- [ ] Создать интерфейс `StepCapabilities`
-- [ ] Добавить поля: `web_search`, `web_fetch`, `mcp_tools`, `browser`
-- [ ] Добавить JSDoc документацию с описанием маппинга на CLI
+### Задача 1.1: Добавить StepCapabilities в types.ts ✅
+- [x] Создать интерфейс `StepCapabilities`
+- [x] Добавить поля: `web_search`, `web_fetch`, `mcp_tools`, `browser`
+- [x] Добавить JSDoc документацию с описанием маппинга на CLI
 
 **Файл:** `src/core/types.ts`
 
@@ -28,21 +28,21 @@ export interface StepCapabilities {
 }
 ```
 
-### Задача 1.2: Расширить StepPermissions
-- [ ] Добавить поле `capabilities?: StepCapabilities` в `StepPermissions`
-- [ ] Обновить JSDoc
+### Задача 1.2: Расширить StepPermissions ✅
+- [x] Добавить поле `capabilities?: StepCapabilities` в `StepPermissions`
+- [x] Обновить JSDoc
 
 **Файл:** `src/core/types.ts`
 
-### Задача 1.3: Расширить RoleConfig
-- [ ] Добавить поле `default_capabilities?: StepCapabilities`
-- [ ] Обновить JSDoc
+### Задача 1.3: Расширить RoleConfig ✅
+- [x] Добавить поле `default_capabilities?: StepCapabilities`
+- [x] Обновить JSDoc
 
 **Файл:** `src/core/types.ts`
 
-### Задача 1.4: Добавить CapabilitySupport интерфейс
-- [ ] Создать интерфейс `CapabilitySupport`
-- [ ] Создать интерфейс `CapabilityAwareAdapter`
+### Задача 1.4: Добавить CapabilitySupport интерфейс ✅
+- [x] Создать интерфейс `CapabilitySupport`
+- [x] Создать интерфейс `CapabilityAwareAdapter`
 
 **Файл:** `src/core/types.ts`
 
@@ -62,97 +62,97 @@ export interface CapabilityAwareAdapter extends CLIAdapter {
 
 ---
 
-## Фаза 2: Базовый адаптер
+## Фаза 2: Базовый адаптер ✅
 
-### Задача 2.1: Добавить метод mapCapabilitiesToArgs в BaseCLIAdapter
-- [ ] Добавить protected метод `mapCapabilitiesToArgs`
-- [ ] Базовая реализация возвращает пустой массив
-- [ ] Логирование предупреждений для неподдерживаемых capabilities
-
-**Файл:** `src/adapters/base-cli-adapter.ts`
-
-### Задача 2.2: Интегрировать capabilities в prepareArguments
-- [ ] Вызывать `mapCapabilitiesToArgs` если capabilities указаны
-- [ ] Объединять с результатом `mapPermissionsToArgs`
+### Задача 2.1: Добавить метод mapCapabilitiesToArgs в BaseCLIAdapter ✅
+- [x] Добавить protected метод `mapCapabilitiesToArgs`
+- [x] Базовая реализация возвращает пустой массив
+- [x] Логирование предупреждений для неподдерживаемых capabilities
 
 **Файл:** `src/adapters/base-cli-adapter.ts`
 
-### Задача 2.3: Добавить метод getCapabilitySupport
-- [ ] Добавить метод с базовой реализацией (все не поддерживаются)
-- [ ] Переопределять в конкретных адаптерах
+### Задача 2.2: Интегрировать capabilities в prepareArguments ✅
+- [x] Вызывать `mapCapabilitiesToArgs` если capabilities указаны
+- [x] Объединять с результатом `mapPermissionsToArgs`
+
+**Файл:** `src/adapters/base-cli-adapter.ts`
+
+### Задача 2.3: Добавить метод getCapabilitySupport ✅
+- [x] Добавить метод с базовой реализацией (все не поддерживаются)
+- [x] Переопределять в конкретных адаптерах
 
 **Файл:** `src/adapters/base-cli-adapter.ts`
 
 ---
 
-## Фаза 3: Claude CLI адаптер
+## Фаза 3: Claude CLI адаптер ✅
 
-### Задача 3.1: Реализовать getCapabilitySupport для Claude
-- [ ] `web_search`: supported: true (инструмент WebSearch)
-- [ ] `web_fetch`: supported: true (инструмент WebFetch)
-- [ ] `mcp_tools`: supported: true
-- [ ] `browser`: supported: true, flags: ['--chrome']
-
-**Файл:** `src/adapters/claude-cli-adapter.ts`
-
-### Задача 3.2: Реализовать mapCapabilitiesToArgs для Claude
-- [ ] `web_search: true` → добавить WebSearch в --tools и --allowedTools
-- [ ] `web_fetch: true` → добавить WebFetch в --tools и --allowedTools
-- [ ] `browser: true` → `--chrome`
-- [ ] `mcp_tools: true` → не ограничивать --tools по MCP
-- [ ] `mcp_tools: ["tool1"]` → добавить в `--allowedTools`
+### Задача 3.1: Реализовать getCapabilitySupport для Claude ✅
+- [x] `web_search`: supported: true (инструмент WebSearch)
+- [x] `web_fetch`: supported: true (инструмент WebFetch)
+- [x] `mcp_tools`: supported: true
+- [x] `browser`: supported: true, flags: ['--chrome']
 
 **Файл:** `src/adapters/claude-cli-adapter.ts`
 
-### Задача 3.3: Интегрировать с существующим mapPermissionsToArgs
-- [ ] Убедиться что capabilities и permissions не конфликтуют
-- [ ] `--allowedTools` должен объединять из обоих источников
+### Задача 3.2: Реализовать mapCapabilitiesToArgs для Claude ✅
+- [x] `web_search: true` → добавить WebSearch в --tools и --allowedTools
+- [x] `web_fetch: true` → добавить WebFetch в --tools и --allowedTools
+- [x] `browser: true` → `--chrome`
+- [x] `mcp_tools: true` → не ограничивать --tools по MCP
+- [x] `mcp_tools: ["tool1"]` → добавить в `--allowedTools`
+
+**Файл:** `src/adapters/claude-cli-adapter.ts`
+
+### Задача 3.3: Интегрировать с существующим mapPermissionsToArgs ✅
+- [x] Убедиться что capabilities и permissions не конфликтуют
+- [x] `--allowedTools` должен объединять из обоих источников
 
 **Файл:** `src/adapters/claude-cli-adapter.ts`
 
 ---
 
-## Фаза 4: Codex CLI адаптер
+## Фаза 4: Codex CLI адаптер ✅
 
-### Задача 4.1: Реализовать getCapabilitySupport для Codex
-- [ ] `web_search`: supported: true, flags: ['--search']
-- [ ] `web_fetch`: supported: false
-- [ ] `mcp_tools`: supported: true, note: 'MCP доступен если настроен через codex mcp add'
-- [ ] `browser`: supported: false
+### Задача 4.1: Реализовать getCapabilitySupport для Codex ✅
+- [x] `web_search`: supported: true, flags: ['--search']
+- [x] `web_fetch`: supported: false
+- [x] `mcp_tools`: supported: true, note: 'MCP доступен если настроен через codex mcp add'
+- [x] `browser`: supported: false
 
 **Файл:** `src/adapters/codex-cli-adapter.ts`
 
-### Задача 4.2: Реализовать mapCapabilitiesToArgs для Codex
-- [ ] `web_search: true` → `--search`
-- [ ] `mcp_tools: true` → логировать что MCP доступен автоматически
-- [ ] Логировать warning для неподдерживаемых capabilities
+### Задача 4.2: Реализовать mapCapabilitiesToArgs для Codex ✅
+- [x] `web_search: true` → `--search`
+- [x] `mcp_tools: true` → логировать что MCP доступен автоматически
+- [x] Логировать warning для неподдерживаемых capabilities
 
 **Файл:** `src/adapters/codex-cli-adapter.ts`
 
 ---
 
-## Фаза 5: Gemini CLI адаптер
+## Фаза 5: Gemini CLI адаптер ✅
 
-### Задача 5.1: Реализовать getCapabilitySupport для Gemini
-- [ ] `web_search`: supported: true (инструмент `google_web_search`)
-- [ ] `web_fetch`: supported: true (инструмент `web_fetch`)
-- [ ] `mcp_tools`: supported: true (через `settings.json`, `includeTools`/`excludeTools`)
-- [ ] `browser`: supported: false
-
-**Файл:** `src/adapters/gemini-cli-adapter.ts`
-
-### Задача 5.2: Рефакторинг mapPermissionsToArgs для объединения tools
-- [ ] Собирать все --allowed-tools в один список
-- [ ] Источники: permissions.write → write_file, permissions.execute → shell
-- [ ] Capabilities: web_search → google_web_search, web_fetch → web_fetch
-- [ ] `--yolo` добавлять только если список непустой
+### Задача 5.1: Реализовать getCapabilitySupport для Gemini ✅
+- [x] `web_search`: supported: true (инструмент `google_web_search`)
+- [x] `web_fetch`: supported: true (инструмент `web_fetch`)
+- [x] `mcp_tools`: supported: true (через `settings.json`, `includeTools`/`excludeTools`)
+- [x] `browser`: supported: false
 
 **Файл:** `src/adapters/gemini-cli-adapter.ts`
 
-### Задача 5.3: Реализовать mapCapabilitiesToArgs для Gemini
-- [ ] `web_search: true` → добавить google_web_search в список tools
-- [ ] `web_fetch: true` → добавить web_fetch в список tools
-- [ ] Логировать warning для mcp_tools и browser
+### Задача 5.2: Рефакторинг mapPermissionsToArgs для объединения tools ✅
+- [x] Собирать все --allowed-tools в один список
+- [x] Источники: permissions.write → write_file, permissions.execute → shell
+- [x] Capabilities: web_search → google_web_search, web_fetch → web_fetch
+- [x] `--yolo` добавлять только если список непустой
+
+**Файл:** `src/adapters/gemini-cli-adapter.ts`
+
+### Задача 5.3: Реализовать mapCapabilitiesToArgs для Gemini ✅
+- [x] `web_search: true` → добавить google_web_search в список tools
+- [x] `web_fetch: true` → добавить web_fetch в список tools
+- [x] Логировать warning для mcp_tools и browser
 
 **Файл:** `src/adapters/gemini-cli-adapter.ts`
 
@@ -252,17 +252,17 @@ export interface CapabilityAwareAdapter extends CLIAdapter {
 
 ## Фаза 9: Документация
 
-### Задача 9.1: Обновить README адаптеров
-- [ ] Добавить таблицу поддерживаемых capabilities
-- [ ] Добавить примеры использования
-- [ ] Документировать маппинг на флаги CLI
+### Задача 9.1: Обновить README адаптеров ✅
+- [x] Добавить таблицу поддерживаемых capabilities
+- [x] Добавить примеры использования
+- [x] Документировать маппинг на флаги CLI
 
 **Файл:** `src/adapters/README.md`
 
-### Задача 9.2: Обновить FAQ
-- [ ] Добавить вопрос о capabilities
-- [ ] Добавить вопрос о MCP
-- [ ] Обновить примеры конфигурации
+### Задача 9.2: Обновить FAQ ✅
+- [x] Добавить вопрос о capabilities
+- [x] Добавить вопрос о MCP
+- [x] Обновить примеры конфигурации
 
 **Файл:** `docs/FAQ.md`
 
