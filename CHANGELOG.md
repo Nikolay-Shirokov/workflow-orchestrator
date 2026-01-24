@@ -8,6 +8,15 @@
 ## [Unreleased]
 
 ### Added
+- ✨ **Система Capabilities** для управления возможностями CLI-адаптеров:
+  - `web_search` - веб-поиск (Claude: WebSearch, Codex: --search, Gemini: google_web_search)
+  - `web_fetch` - получение веб-страниц (Claude: WebFetch, Gemini: web_fetch)
+  - `mcp_tools` - MCP-инструменты (boolean или массив конкретных инструментов)
+  - `browser` - интеграция с браузером (Claude: --chrome)
+- 🔧 Поле `default_capabilities` в конфигурации ролей для настройки capabilities по умолчанию
+- 🔧 Поле `capabilities` в `StepPermissions` для настройки на уровне шага
+- 📊 Интерфейс `CapabilitySupport` для описания поддержки capabilities адаптерами
+- 🧪 63 новых теста для системы capabilities (unit, property-based, integration)
 - 📚 Расширена документация по передаче контекста между шагами:
   - Добавлено руководство по вложенным подстановкам (`docs/NESTED_SUBSTITUTIONS.md`)
   - Добавлен быстрый гид по выбору способа передачи данных (`docs/DATA_PASSING_GUIDE.md`)
@@ -15,6 +24,13 @@
   - Обновлена документация по DSL синтаксису (`docs/DSL_SYNTAX.md`)
   - Обновлены примеры промптов для использования рекомендуемого синтаксиса
   - Добавлены ссылки на новую документацию в README.md
+
+### Deprecated
+- ⚠️ **MCPManager удалён** - используйте `StepCapabilities.mcp_tools` вместо этого:
+  - Интерфейсы `MCPToolInfo`, `MCPContext` помечены как deprecated в `types.ts`
+  - Поле `mcp_tools` в `WorkflowSettings` помечено как deprecated
+  - Условия `mcp_tools.*_available` больше не поддерживаются
+  - Миграция: перенесите MCP-настройки в `default_capabilities` роли или `permissions.capabilities` шага
 
 ### Fixed
 - 🐛 Исправлена проблема с кодировкой UTF-8 при сохранении артефактов на Windows
