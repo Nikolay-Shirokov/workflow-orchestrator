@@ -275,8 +275,10 @@ class ClaudeCLIAdapter {
 **Поддерживаемые capabilities:**
 - `web_search` ✓
 - `web_fetch` ✗
-- `mcp_tools` ✗ (настраивается через `codex mcp`)
+- `mcp_tools` ✓ (автоматически, если настроено через `codex mcp add`)
 - `browser` ✗
+
+**Особенность MCP в Codex:** MCP-серверы настраиваются через `codex mcp add` и автоматически доступны при выполнении. Нет флага для ограничения конкретных MCP-инструментов при выполнении `codex exec`.
 
 ```typescript
 class CodexCLIAdapter {
@@ -291,8 +293,8 @@ class CodexCLIAdapter {
         note: 'Codex CLI не поддерживает WebFetch'
       },
       mcp_tools: {
-        supported: false,
-        note: 'MCP-серверы настраиваются через "codex mcp add/remove"'
+        supported: true,
+        note: 'MCP доступен автоматически если настроен через "codex mcp add". Нет программного контроля при exec'
       },
       browser: {
         supported: false,
@@ -308,7 +310,10 @@ class CodexCLIAdapter {
       args.push('--search');
     }
 
-    // web_fetch, mcp_tools, browser - не поддерживаются, логируем warnings
+    if (capabilities.mcp_tools) {
+      // MCP доступен автоматически если настроен - просто логируем
+      console.log('[CodexAdapter] MCP-инструменты доступны если настроены через "codex mcp add"');
+    }
 
     return args;
   }

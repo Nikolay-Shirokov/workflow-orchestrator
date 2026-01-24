@@ -28,9 +28,15 @@
 |------------|------------|-----------|------------|
 | **Web Search** | `WebSearch` (инструмент) | `--search` | `google_web_search` (инструмент) |
 | **Web Fetch** | `WebFetch` (инструмент) | - | `web_fetch` (инструмент) |
-| **MCP Tools** | `--mcp-config`, `--tools`, `--allowedTools` | `codex mcp` (настройка) | - |
+| **MCP Tools** | ✓ контроль через `--tools`, `--allowedTools` | ✓ настройка `codex mcp`, без контроля в exec | ? нет данных |
 | **Browser** | `--chrome` | - | - |
 | **Codebase Read** | `Read`, `Glob`, `Grep` (по умолчанию) | По умолчанию | По умолчанию |
+
+### Примечания по MCP
+
+- **Claude**: MCP настраивается через `--mcp-config` или глобально. Workflow может контролировать какие MCP-инструменты разрешены через `--tools` и `--allowedTools`
+- **Codex**: MCP настраивается через `codex mcp add`. При выполнении `codex exec` настроенные MCP-серверы доступны автоматически. Нет флага для ограничения конкретных инструментов
+- **Gemini**: В документации нет информации о поддержке MCP
 
 ### Ключевые наблюдения
 
@@ -76,8 +82,9 @@
 1. WHEN MCP-серверы настроены на уровне CLI-утилиты, THE System SHALL НЕ требовать их конфигурации в workflow
 2. WHEN `capabilities.mcp_tools: true` в Claude, THE Adapter SHALL НЕ ограничивать доступ к MCP-инструментам через `--tools`
 3. WHEN `capabilities.mcp_tools: ["tool1"]` в Claude, THE Adapter SHALL добавить инструменты в `--allowedTools`
-4. WHEN MCP-инструменты разрешены, THE Adapter SHALL логировать какие инструменты были использованы (из response)
-5. IF CLI-утилита не поддерживает MCP, THEN THE Adapter SHALL игнорировать эту capability
+4. WHEN `capabilities.mcp_tools: true` в Codex, THE Adapter SHALL логировать что MCP доступен (настроенные через `codex mcp` серверы используются автоматически)
+5. WHEN MCP-инструменты разрешены, THE Adapter SHALL логировать какие инструменты были использованы (из response)
+6. IF CLI-утилита не поддерживает контроль MCP, THE Adapter SHALL логировать предупреждение
 
 ### Requirement 4: Поддержка интеграции с браузером
 
@@ -111,7 +118,7 @@
    | Capability | Флаги |
    |------------|-------|
    | `web_search` | `--search` |
-   | `mcp_tools` | MCP настраивается через `codex mcp`, capability игнорируется |
+   | `mcp_tools` | MCP доступен автоматически если настроен через `codex mcp add` |
    | `browser` | Не поддерживается |
 
    **Gemini CLI:**
@@ -119,7 +126,7 @@
    |------------|-------|
    | `web_search` | `--allowed-tools google_web_search` |
    | `web_fetch` | `--allowed-tools web_fetch` |
-   | `mcp_tools` | Не поддерживается |
+   | `mcp_tools` | Нет данных о поддержке MCP |
    | `browser` | Не поддерживается |
 
 2. WHEN capability не поддерживается CLI, THE Adapter SHALL логировать предупреждение и продолжить

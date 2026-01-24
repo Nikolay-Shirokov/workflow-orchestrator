@@ -117,13 +117,14 @@ export interface CapabilityAwareAdapter extends CLIAdapter {
 ### Задача 4.1: Реализовать getCapabilitySupport для Codex
 - [ ] `web_search`: supported: true, flags: ['--search']
 - [ ] `web_fetch`: supported: false
-- [ ] `mcp_tools`: supported: false, note: 'Use codex mcp add'
+- [ ] `mcp_tools`: supported: true, note: 'MCP доступен если настроен через codex mcp add'
 - [ ] `browser`: supported: false
 
 **Файл:** `src/adapters/codex-cli-adapter.ts`
 
 ### Задача 4.2: Реализовать mapCapabilitiesToArgs для Codex
 - [ ] `web_search: true` → `--search`
+- [ ] `mcp_tools: true` → логировать что MCP доступен автоматически
 - [ ] Логировать warning для неподдерживаемых capabilities
 
 **Файл:** `src/adapters/codex-cli-adapter.ts`
