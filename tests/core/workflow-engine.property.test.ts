@@ -1,0 +1,427 @@
+/**
+ * Property-based тесты для движка рабочих процессов
+ * 
+ * Тестирует свойства корректности движка рабочих процессов
+ */
+
+import * as fc from 'fast-check';
+import {
+  WorkflowStep,
+  WorkflowConfig,
+  StepResult,
+  ExecutionContext,
+  AdapterRegistry,
+  CLIAdapter,
+  AdapterRequest,
+  AdapterResponse
+} from '../../src/core/types.js';
+import { DefaultWorkflowEngine, WorkflowEngineConfig } from '../../src/core/workflow-engine.js';
+import { WorkflowConfigParser } from '../../src/core/workflow-config-parser.js';
+import { DefaultStateManager } from '../../src/core/state-manager.js';
+import { DefaultStepExecutor } from '../../src/core/step-executor.js';
+import { DefaultTemplateEngine } from '../../src/core/template-engine.js';
+import { DefaultArtifactManager } from '../../src/core/artifact-manager.js';
+import { getLogger } from '../../src/core/logger.js';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as os from 'os';
+
+/**
+ * Mock адаптер для тестирования
+ */
+class MockAdapter implements CLIAdapter {
+  name = 'mock-adapter';
+  version = '1.0.0';
+  private executionCount = 0;
+
+  async isAvailable(): Promise<boolean> {
+    return true;
+  }
+
+  async execute(_request: AdapterRequest): Promise<AdapterResponse> {
+    this.executionCount++;
+    return {
+      content: `Mock response ${this.executionCount}`,
+      model: 'mock-model',
+      executionTime: 10,
+      tokensUsed: 100
+    };
+  }
+
+  parseResponse(rawOutput: string): string {
+    return rawOutput;
+  }
+
+  handleError(error: Error): any {
+    return {
+      code: 'MOCK_ERROR',
+      message: error.message,
+      retryable: false,
+      originalError: error
+    };
+  }
+
+  getExecutionCount(): number {
+    return this.executionCount;
+  }
+
+  resetExecutionCount(): void {
+    this.executionCount = 0;
+  }
+}
+
+/**
+ * Mock реестр адаптеров
+ */
+class MockAdapterRegistry implements AdapterRegistry {
+  private adapters = new Map<string, CLIAdapter>();
+
+  register(adapter: CLIAdapter): void {
+    this.adapters.set(adapter.name, adapter);
+  }
+
+  get(name: string): CLIAdapter | undefined {
+    return this.adapters.get(name);
+  }
+
+  has(name: string): boolean {
+    return this.adapters.has(name);
+  }
+
+  getAll(): CLIAdapter[] {
+    return Array.from(this.adapters.values());
+  }
+
+  createFromConfig(_config: any): CLIAdapter {
+    // Для тестов возвращаем MockAdapter
+    return new MockAdapter();
+  }
+
+  registerFromConfigs(configs: any[]): void {
+    for (const config of configs) {
+      const adapter = this.createFromConfig(config);
+      this.register(adapter);
+    }
+  }
+}
+
+/**
+ * Создание тестового окружения
+ */
+async function createTestEnvironment() {
+  // Создание временной директории
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'workflow-test-'));
+  const stateDir = path.join(tempDir, 'state');
+  const artifactsDir = path.join(tempDir, 'artifacts');
+
+  await fs.mkdir(stateDir, { recursive: true });
+  await fs.mkdir(artifactsDir, { recursive: true });
+
+  // Создание компонентов
+  const logger = getLogger();
+  const configParser = new WorkflowConfigParser();
+  const stateManager = new DefaultStateManager({
+    stateDir,
+    logger
+  });
+
+  const mockAdapter = new MockAdapter();
+  const adapterRegistry = new MockAdapterRegistry();
+  adapterRegistry.register(mockAdapter);
+
+  const templateEngine = new DefaultTemplateEngine();
+  const artifactManager = new DefaultArtifactManager({
+    baseDir: artifactsDir,
+    logger
+  });
+
+  const stepExecutor = new DefaultStepExecutor({
+    defaultTimeout: 5000
+  });
+
+  const engineConfig: WorkflowEngineConfig = {
+    configParser,
+    stateManager,
+    stepExecutor,
+    adapterRegistry,
+    templateEngine,
+    artifactManager,
+    logger
+  };
+
+  const engine = new DefaultWorkflowEngine(engineConfig);
+
+  return {
+    engine,
+    mockAdapter,
+    tempDir,
+    stateDir,
+    artifactsDir,
+    cleanup: async () => {
+      try {
+        await fs.rm(tempDir, { recursive: true, force: true });
+      } catch (error) {
+        // Игнорируем ошибки очистки
+      }
+    }
+  };
+}
+
+/**
+ * Генератор положительных целых чисел для итераций цикла
+ */
+const arbLoopIterations = fc.integer({ min: 0, max: 10 });
+
+describe('WorkflowEngine Property Tests', () => {
+  describe('Feature: workflow-orchestrator, Property 10: Количество выполнений цикла', () => {
+    /**
+     * Свойство 10: Количество выполнений цикла
+     * 
+     * Для любого рабочего процесса с конструкцией цикла, указывающей N итераций,
+     * выполнение процесса должно приводить к ровно N выполнениям тела цикла.
+     * 
+     * Validates: Requirements 2.5
+     */
+    it('должен выполнить ровно N итераций для цикла с loop_iterations = N', async () => {
+      await fc.assert(
+        fc.asyncProperty(arbLoopIterations, async (iterations) => {
+          const env = await createTestEnvironment();
+          
+          try {
+            // Счетчик выполнений
+            let executionCount = 0;
+
+            // Создаем специальный StepExecutor, который считает выполнения
+            class CountingStepExecutor extends DefaultStepExecutor {
+              async executeStep(step: WorkflowStep, context: ExecutionContext): Promise<StepResult> {
+                // Считаем только выполнения тела цикла
+                if (step.id === 'loop-body') {
+                  executionCount++;
+                }
+                return super.executeStep(step, context);
+              }
+            }
+
+            const countingExecutor = new CountingStepExecutor({
+              defaultTimeout: 5000
+            });
+
+            // Создаем движок с counting executor
+            const engine = new DefaultWorkflowEngine({
+              configParser: env.engine['configParser'],
+              stateManager: env.engine['stateManager'],
+              stepExecutor: countingExecutor,
+              adapterRegistry: env.engine['adapterRegistry'],
+              templateEngine: env.engine['templateEngine'],
+              artifactManager: env.engine['artifactManager'],
+              logger: env.engine['logger']
+            });
+
+            // Создаем конфигурацию с циклом
+            const config: WorkflowConfig = {
+              name: 'test-loop-workflow',
+              version: '1.0.0',
+              settings: {
+                artifacts_dir: env.artifactsDir,
+                default_adapter: 'mock-adapter'
+              },
+              steps: [
+                {
+                  id: 'test-loop',
+                  name: 'Test Loop',
+                  type: 'loop',
+                  loop_iterations: iterations,
+                  loop_body: {
+                    id: 'loop-body',
+                    name: 'Loop Body Step',
+                    type: 'script',
+                    script: 'echo "iteration"'
+                  }
+                }
+              ]
+            };
+
+            // Выполняем процесс
+            const state = await engine.execute(config);
+
+            // Проверяем, что выполнено ровно N итераций
+            expect(executionCount).toBe(iterations);
+            
+            // Проверяем, что процесс завершен успешно
+            expect(state.status).toBe('completed');
+            
+            // Проверяем, что шаг цикла в списке завершенных
+            expect(state.completedSteps).toContain('test-loop');
+
+          } finally {
+            await env.cleanup();
+          }
+        }),
+        {
+          numRuns: 100, // Минимум 100 итераций согласно требованиям
+          verbose: true
+        }
+      );
+    }, 60000); // Увеличенный таймаут для property-теста
+
+    it('должен выполнить ровно length(items) итераций для цикла с loop_items', async () => {
+      await fc.assert(
+        fc.asyncProperty(
+          fc.array(fc.string(), { minLength: 0, maxLength: 10 }),
+          async (items) => {
+            const env = await createTestEnvironment();
+            
+            try {
+              // Счетчик выполнений
+              let executionCount = 0;
+              const processedItems: unknown[] = [];
+
+              // Создаем специальный StepExecutor, который считает выполнения
+              class CountingStepExecutor extends DefaultStepExecutor {
+                async executeStep(step: WorkflowStep, context: ExecutionContext): Promise<StepResult> {
+                  // Считаем только выполнения тела цикла
+                  if (step.id === 'loop-body') {
+                    executionCount++;
+                    // Сохраняем текущий элемент
+                    processedItems.push(context.state.context['loop_item']);
+                  }
+                  return super.executeStep(step, context);
+                }
+              }
+
+              const countingExecutor = new CountingStepExecutor({
+                defaultTimeout: 5000
+              });
+
+              // Создаем движок с counting executor
+              const engine = new DefaultWorkflowEngine({
+                configParser: env.engine['configParser'],
+                stateManager: env.engine['stateManager'],
+                stepExecutor: countingExecutor,
+                adapterRegistry: env.engine['adapterRegistry'],
+                templateEngine: env.engine['templateEngine'],
+                artifactManager: env.engine['artifactManager'],
+                logger: env.engine['logger']
+              });
+
+              // Создаем конфигурацию с циклом по элементам
+              const config: WorkflowConfig = {
+                name: 'test-loop-items-workflow',
+                version: '1.0.0',
+                settings: {
+                  artifacts_dir: env.artifactsDir,
+                  default_adapter: 'mock-adapter'
+                },
+                steps: [
+                  {
+                    id: 'test-loop',
+                    name: 'Test Loop Items',
+                    type: 'loop',
+                    loop_items: items,
+                    loop_variable: 'loop_item',
+                    loop_body: {
+                      id: 'loop-body',
+                      name: 'Loop Body Step',
+                      type: 'script',
+                      script: 'echo "processing item"'
+                    }
+                  }
+                ]
+              };
+
+              // Выполняем процесс
+              const state = await engine.execute(config);
+
+              // Проверяем, что выполнено ровно length(items) итераций
+              expect(executionCount).toBe(items.length);
+              
+              // Проверяем, что процесс завершен успешно
+              expect(state.status).toBe('completed');
+              
+              // Проверяем, что все элементы были обработаны
+              expect(processedItems).toEqual(items);
+
+            } finally {
+              await env.cleanup();
+            }
+          }
+        ),
+        {
+          numRuns: 100,
+          verbose: true
+        }
+      );
+    }, 60000);
+
+    it('должен выполнить 0 итераций для цикла с loop_iterations = 0', async () => {
+      const env = await createTestEnvironment();
+      
+      try {
+        // Счетчик выполнений
+        let executionCount = 0;
+
+        // Создаем специальный StepExecutor, который считает выполнения
+        class CountingStepExecutor extends DefaultStepExecutor {
+          async executeStep(step: WorkflowStep, context: ExecutionContext): Promise<StepResult> {
+            // Считаем только выполнения тела цикла
+            if (step.id === 'loop-body') {
+              executionCount++;
+            }
+            return super.executeStep(step, context);
+          }
+        }
+
+        const countingExecutor = new CountingStepExecutor({
+          defaultTimeout: 5000
+        });
+
+        // Создаем движок с counting executor
+        const engine = new DefaultWorkflowEngine({
+          configParser: env.engine['configParser'],
+          stateManager: env.engine['stateManager'],
+          stepExecutor: countingExecutor,
+          adapterRegistry: env.engine['adapterRegistry'],
+          templateEngine: env.engine['templateEngine'],
+          artifactManager: env.engine['artifactManager'],
+          logger: env.engine['logger']
+        });
+
+        // Создаем конфигурацию с циклом на 0 итераций
+        const config: WorkflowConfig = {
+          name: 'test-zero-loop-workflow',
+          version: '1.0.0',
+          settings: {
+            artifacts_dir: env.artifactsDir,
+            default_adapter: 'mock-adapter'
+          },
+          steps: [
+            {
+              id: 'test-loop',
+              name: 'Test Zero Loop',
+              type: 'loop',
+              loop_iterations: 0,
+              loop_body: {
+                id: 'loop-body',
+                name: 'Loop Body Step',
+                type: 'script',
+                script: 'echo "iteration"'
+              }
+            }
+          ]
+        };
+
+        // Выполняем процесс
+        const state = await engine.execute(config);
+
+        // Проверяем, что не было выполнено ни одной итерации
+        expect(executionCount).toBe(0);
+        
+        // Проверяем, что процесс завершен успешно
+        expect(state.status).toBe('completed');
+
+      } finally {
+        await env.cleanup();
+      }
+    });
+  });
+});
