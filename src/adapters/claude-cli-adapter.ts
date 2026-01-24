@@ -3,6 +3,7 @@
  * Адаптер для взаимодействия с Anthropic Claude через claude-cli
  */
 
+import { spawn } from 'child_process';
 import { BaseCLIAdapter } from './base-cli-adapter.js';
 import {
   AdapterConfig,
@@ -233,9 +234,6 @@ export class ClaudeCLIAdapter extends BaseCLIAdapter {
       let stdout = '';
       let stderr = '';
       let timedOut = false;
-
-      // Импортируем spawn
-      const { spawn } = require('child_process');
 
       // Запуск процесса
       const child = spawn(command, args, {
