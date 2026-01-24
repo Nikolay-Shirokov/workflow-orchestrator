@@ -567,6 +567,19 @@ export class DefaultStepExecutor implements StepExecutor {
       this.validateCapabilitiesSupport(adapter, mergedCapabilities, context, step.id);
     }
 
+    // Определяем outputFile из step.outputs (первый output)
+    // Это позволит адаптеру добавить инструкцию записи в промпт
+    let outputFile: string | undefined;
+    if (step.outputs) {
+      const firstOutputPath = Object.values(step.outputs)[0];
+      if (firstOutputPath) {
+        outputFile = context.templateEngine.render(
+          firstOutputPath,
+          this.createTemplateContext(context)
+        );
+      }
+    }
+
     // Подготовка базового запроса
     let request: AdapterRequest = {
       prompt,
@@ -574,7 +587,8 @@ export class DefaultStepExecutor implements StepExecutor {
       systemPrompt: step.system_prompt,
       timeout: step.timeout || this.config.defaultTimeout,
       permissions: step.permissions,
-      capabilities: mergedCapabilities
+      capabilities: mergedCapabilities,
+      outputFile
     };
 
     // Если указана роль, обогащаем запрос инструкциями роли
