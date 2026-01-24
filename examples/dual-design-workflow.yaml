@@ -36,13 +36,13 @@ workflow:
         - Выполните задачу в одном ответе
         - Не задавайте дополнительных вопросов пользователю
         - Будьте конкретны и структурированы
-      permissions:
-        - read
-        - edit: "*.md"
-        - mcp
+      # Разрешения для архитектора: чтение и запись в artifacts
+      default_permissions:
+        read: ["*.md", "artifacts/**/*"]
+        write: ["artifacts/**/*.md"]
       temperature: 0.7
       max_tokens: 4000
-    
+
     copilot:
       adapter: "codex-cli"
       model: "gpt-5.2-codex"
@@ -54,10 +54,10 @@ workflow:
         - Выполните задачу в одном ответе
         - Не задавайте дополнительных вопросов пользователю
         - Предоставьте критический, но конструктивный анализ
-      permissions:
-        - read
-        - edit: "*.md"
-        - mcp
+      # Разрешения для второго пилота: чтение и запись в artifacts
+      default_permissions:
+        read: ["*.md", "artifacts/**/*"]
+        write: ["artifacts/**/*.md"]
       temperature: 0.7
       max_tokens: 4000
   

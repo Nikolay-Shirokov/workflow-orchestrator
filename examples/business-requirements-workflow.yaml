@@ -22,9 +22,25 @@ workflow:
   
   # Определение ролей
   roles:
+    researcher:
+      adapter: "codex-cli"
+      model: "gpt-5.1-codex-mini"
+      role_definition: |
+        Вы - ИССЛЕДОВАТЕЛЬ, который собирает информацию из интернета.
+        Ваша роль - найти релевантные данные, примеры, best practices
+        и конкурентов по теме пользователя.
+      temperature: 0.5
+      max_tokens: 4000
+      default_permissions:
+        read: ["*.md", "artifacts/**/*"]
+        write: ["artifacts/**/*.md"]
+      # Capabilities для веб-поиска (Codex использует --search)
+      default_capabilities:
+        web_search: true
+
     architect:
       adapter: "claude-cli"
-      model: "claude-sonnet-3.5"
+      model: "claude-sonnet-4.5"
       role_definition: |
         Вы - ГЛАВНЫЙ АРХИТЕКТОР в процессе разработки требований.
         Ваша роль - задавать глубокие вопросы, анализировать потребности
@@ -32,10 +48,14 @@ workflow:
         Вы фокусируетесь на полноте, ясности и реализуемости требований.
       temperature: 0.7
       max_tokens: 4000
-    
+      # Разрешения по умолчанию для архитектора
+      default_permissions:
+        read: ["*.md", "artifacts/**/*"]
+        write: ["artifacts/**/*.md"]
+
     copilot:
-      adapter: "claude-cli"
-      model: "claude-sonnet-3.5"
+      adapter: "gemini-cli"
+      model: "gemini-2.5-pro"
       role_definition: |
         Вы - ВТОРОЙ ПИЛОТ, предоставляющий критический анализ и альтернативные перспективы.
         Ваша роль - выявлять пробелы, предлагать улучшения и задавать вопросы,
@@ -43,6 +63,13 @@ workflow:
         Вы фокусируетесь на пользовательском опыте и практичности решения.
       temperature: 0.7
       max_tokens: 4000
+      # Разрешения по умолчанию для второго пилота
+      default_permissions:
+        read: ["*.md", "artifacts/**/*"]
+        write: ["artifacts/**/*.md"]
+      # Gemini поддерживает веб-поиск
+      default_capabilities:
+        web_search: true
   
   steps:
     # ============================================================
@@ -77,7 +104,52 @@ workflow:
         [Любая другая важная информация]
       outputs:
         user_need: "${artifacts_dir}/step1_user_need.md"
-    
+
+    # ============================================================
+    # ШАГ 1b: Веб-исследование по теме пользователя
+    # ============================================================
+    - id: "step1b_web_research"
+      name: "Веб-исследование"
+      type: "model"
+      role: "researcher"
+      depends_on: ["step1_user_need"]
+      description: "Исследователь собирает информацию из интернета по теме пользователя"
+      # Используются default_capabilities роли: web_search: true, web_fetch: true
+      prompt_template: |
+        Пользователь описал свою потребность:
+
+        ${user_need}
+
+        Проведи веб-исследование по этой теме. Найди:
+
+        1. **Существующие решения**
+           - Аналоги и конкуренты
+           - Их сильные и слабые стороны
+           - Ценовые категории
+
+        2. **Best practices**
+           - Рекомендуемые подходы в индустрии
+           - Стандарты и паттерны
+           - Типичные ошибки, которых стоит избежать
+
+        3. **Технологии и инструменты**
+           - Популярные технологические решения
+           - Фреймворки и библиотеки
+           - Интеграции и API
+
+        4. **Рыночная информация**
+           - Тренды в данной области
+           - Целевая аудитория и её потребности
+           - Размер рынка (если применимо)
+
+        Предоставь структурированный отчет с ссылками на источники.
+        Сосредоточься на информации, которая поможет сформулировать
+        правильные вопросы и требования.
+      inputs:
+        user_need: "${user_need}"
+      outputs:
+        web_research: "${artifacts_dir}/step1b_web_research.md"
+
     # ============================================================
     # ШАГ 2: Архитектор формирует первичные вопросы
     # ============================================================
@@ -85,23 +157,35 @@ workflow:
       name: "Вопросы от архитектора"
       type: "model"
       role: "architect"
-      depends_on: ["step1_user_need"]
+      depends_on: ["step1_user_need", "step1b_web_research"]
       description: "Архитектор формирует вопросы для уточнения требований"
       prompt_template: |
         Пользователь описал свою потребность:
-        
+
+        <user_need>
         ${user_need}
-        
-        Задай все необходимые вопросы для решения этой задачи.
+        </user_need>
+
+        Вот результаты веб-исследования по этой теме:
+
+        <web_research>
+        ${web_research}
+        </web_research>
+
+        Учитывая потребность пользователя и результаты исследования,
+        задай все необходимые вопросы для решения этой задачи.
+
         Сфокусируйся на:
-        - Функциональных требованиях
-        - Технических аспектах
+        - Функциональных требованиях (с учетом найденных аналогов)
+        - Технических аспектах (с учетом best practices)
         - Ограничениях и зависимостях
         - Критериях успеха
-        
+        - Отличиях от конкурентов
+
         Сформулируй вопросы четко и структурированно.
       inputs:
         user_need: "${user_need}"
+        web_research: "${web_research}"
       outputs:
         architect_questions: "${artifacts_dir}/step2_architect_questions.md"
     
@@ -112,23 +196,34 @@ workflow:
       name: "Вопросы от второго пилота"
       type: "model"
       role: "copilot"
-      depends_on: ["step1_user_need"]
+      depends_on: ["step1_user_need", "step1b_web_research"]
       description: "Второй пилот формирует альтернативные вопросы"
       prompt_template: |
         Пользователь описал свою потребность:
-        
+
+        <user_need>
         ${user_need}
-        
-        Задай все необходимые вопросы для решения этой задачи.
+        </user_need>
+
+        Вот результаты веб-исследования по этой теме:
+
+        <web_research>
+        ${web_research}
+        </web_research>
+
+        Учитывая потребность пользователя и результаты исследования,
+        задай все необходимые вопросы для решения этой задачи.
+
         Сфокусируйся на:
-        - Пользовательском опыте
+        - Пользовательском опыте (с учетом конкурентов)
         - Бизнес-логике
-        - Рисках и проблемах
-        - Альтернативных подходах
-        
+        - Рисках и проблемах (учитывая типичные ошибки из исследования)
+        - Альтернативных подходах (на основе найденных решений)
+
         Сформулируй вопросы четко и структурированно.
       inputs:
         user_need: "${user_need}"
+        web_research: "${web_research}"
       outputs:
         copilot_questions: "${artifacts_dir}/step3_copilot_questions.md"
     
@@ -223,39 +318,47 @@ workflow:
       name: "MVP вопросы от архитектора"
       type: "model"
       role: "architect"
-      depends_on: ["step1_user_need", "step4_architect_analysis", "step5_copilot_analysis"]
+      depends_on: ["step1_user_need", "step1b_web_research", "step4_architect_analysis", "step5_copilot_analysis"]
       description: "Архитектор формирует финальные вопросы для MVP"
       prompt_template: |
         Напоминаю исходную потребность пользователя:
-        
+
         <user_need>
         ${user_need}
         </user_need>
-        
+
+        Результаты веб-исследования (для контекста о рынке и конкурентах):
+
+        <web_research>
+        ${web_research}
+        </web_research>
+
         Вот мнение по вопросам от второго пилота:
-        
+
         <copilot_analysis>
         ${copilot_analysis}
         </copilot_analysis>
-        
+
         Вот твой анализ:
-        
+
         <architect_analysis>
         ${architect_analysis}
         </architect_analysis>
-        
+
         Напиши мне такой список вопросов, ответив на который, мы получим
-        самый простой минимальный рабочий вариант (MVP) для решения 
+        самый простой минимальный рабочий вариант (MVP) для решения
         потребности пользователя.
-        
+
         Сфокусируйся на:
         - Критически важных функциях для решения задачи
         - Минимальных требованиях для запуска
         - Ключевых решениях, которые нужно принять сейчас
-        
+        - Отличиях от конкурентов (на основе веб-исследования)
+
         Сформулируй вопросы четко, пронумеруй их.
       inputs:
         user_need: "${user_need}"
+        web_research: "${web_research}"
         copilot_analysis: "${copilot_analysis}"
         architect_analysis: "${architect_analysis}"
       outputs:
@@ -400,18 +503,28 @@ workflow:
       name: "Финальные требования"
       type: "model"
       role: "architect"
-      depends_on: ["step9_user_answers", "step1_user_need"]
+      depends_on: ["step9_user_answers", "step1_user_need", "step1b_web_research"]
       description: "Архитектор формирует полные бизнес-требования"
+      # Явные разрешения для этого шага:
+      # - Чтение предыдущих артефактов
+      # - Запись финального документа
+      permissions:
+        read: ["${artifacts_dir}/*.md"]
+        write: ["${artifacts_dir}/step10_*.md"]
       prompt_template: |
-        На основе ответов пользователя сформируй полностью описанные
-        бизнес-требования.
-        
+        На основе ответов пользователя и веб-исследования сформируй
+        полностью описанные бизнес-требования.
+
         ## Исходная потребность
-        
+
         ${user_need}
-        
+
+        ## Веб-исследование (конкуренты, best practices, технологии)
+
+        ${web_research}
+
         ## Ответы пользователя
-        
+
         ${user_answers}
         
         ## Задача
@@ -464,8 +577,10 @@ workflow:
         - Четкие формулировки
         - Измеримые критерии где возможно
         - Приоритизация требований (must-have, should-have, nice-to-have)
+        - Сравнение с конкурентами (на основе веб-исследования)
       inputs:
         user_need: "${user_need}"
+        web_research: "${web_research}"
         user_answers: "${user_answers}"
       outputs:
         final_requirements: "${artifacts_dir}/step10_final_requirements.md"

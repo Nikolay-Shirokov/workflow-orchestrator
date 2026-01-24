@@ -4,7 +4,14 @@
  */
 
 import { BaseCLIAdapter } from './base-cli-adapter.js';
-import { AdapterConfig, AdapterRequest } from '../core/types.js';
+import {
+  AdapterConfig,
+  AdapterRequest,
+  StepPermissions,
+  AdapterResponse,
+  StepCapabilities,
+  CapabilitySupport
+} from '../core/types.js';
 import { spawn } from 'child_process';
 
 /**
@@ -112,10 +119,19 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
     if (codexRequest.fullAuto) {
       args.push('--full-auto');
     }
-    
+
     // Добавляем флаг --sandbox для управления политикой песочницы
+    // Приоритет: явно указанный sandbox > permissions > read-only по умолчанию
     if (codexRequest.sandbox) {
+      // Явно указанный sandbox имеет приоритет
       args.push('--sandbox', codexRequest.sandbox);
+    } else if (codexRequest.permissions) {
+      // Используем permissions для определения режима sandbox
+      const permissionArgs = this.mapPermissionsToArgs(codexRequest.permissions);
+      args.push(...permissionArgs);
+    } else {
+      // По умолчанию - безопасный режим read-only
+      args.push('--sandbox', 'read-only');
     }
     
     // Добавляем флаг --cd для установки рабочей директории
@@ -133,9 +149,21 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
       args.push('--color', codexRequest.colorMode);
     }
     
-    // Добавляем флаг --search для включения веб-поиска
+    // --search не поддерживается в exec режиме
     if (codexRequest.enableSearch) {
-      args.push('--search');
+      console.warn(`[${this.name}] Предупреждение: enableSearch не работает в режиме exec (--search только для интерактивного режима)`);
+    }
+
+    // Добавляем аргументы из capabilities
+    const capabilities = this.mergeCapabilities(codexRequest);
+    if (capabilities) {
+      const capabilityArgs = this.mapCapabilitiesToArgs(capabilities);
+      // Добавляем только если --search ещё не добавлен
+      for (const arg of capabilityArgs) {
+        if (!args.includes(arg)) {
+          args.push(arg);
+        }
+      }
     }
     
     // Добавляем флаг --json для получения вывода в формате JSONL
@@ -144,8 +172,10 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
     }
     
     // Добавляем флаг --output-last-message для сохранения финального сообщения
-    if (codexRequest.outputFile) {
-      args.push('--output-last-message', codexRequest.outputFile);
+    // Проверяем как явный outputFile из CodexAdapterRequest, так и из базового AdapterRequest
+    const outputFile = codexRequest.outputFile || request.outputFile;
+    if (outputFile) {
+      args.push('--output-last-message', outputFile);
     }
     
     // Добавляем конфигурационные переопределения через флаг -c
@@ -166,23 +196,33 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
    * Выполнение запроса к Codex CLI
    * Переопределяет базовый метод для передачи промпта через stdin
    * Это решает проблему с кириллицей в аргументах командной строки Windows
+   *
+   * При указании outputFile:
+   * 1. Добавляется флаг --output-last-message для сохранения результата в файл
+   * 2. После выполнения читается содержимое файла
+   * 3. При неудаче чтения файла используется stdout как fallback
+   *
    * @param request - Запрос к адаптеру
    * @returns Promise<AdapterResponse> - Ответ от модели
    */
-  async execute(request: AdapterRequest): Promise<import('../core/types.js').AdapterResponse> {
+  async execute(request: AdapterRequest): Promise<AdapterResponse> {
     const codexRequest = request as CodexAdapterRequest;
     const startTime = Date.now();
 
     try {
       // Подготавливаем аргументы (включая "-" для stdin)
       const args = this.prepareArguments(request);
-      
+
       // Подготавливаем переменные окружения
       const env = this.prepareEnvironment(request);
-      
+
       // Определяем таймаут
       const timeout = request.timeout || this.config.timeout || 300000;
-      
+
+      // DEBUG: Log the command
+      console.log(`[codex-cli] Command: ${this.config.command} ${args.join(' ')}`);
+      console.log(`[codex-cli] Prompt length: ${request.prompt.length} chars`);
+
       // Выполняем команду с передачей промпта через stdin
       const result = await this.executeCommandWithStdin(
         this.config.command,
@@ -191,27 +231,63 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
         timeout,
         codexRequest.prompt
       );
-      
+
       // Проверяем код выхода
       if (result.exitCode !== 0) {
         throw new Error(`Команда завершилась с кодом ${result.exitCode}. stderr: ${result.stderr}`);
       }
-      
-      // Парсим ответ
-      const content = this.parseResponse(result.stdout);
-      
+
       const executionTime = Date.now() - startTime;
-      
+
+      // Определяем путь к файлу с результатом
+      const outputFile = codexRequest.outputFile || request.outputFile;
+
+      // Если указан outputFile, пытаемся прочитать результат из файла
+      let content: string;
+      let resultSource: 'file' | 'stdout' = 'stdout';
+
+      if (outputFile) {
+        const fileResult = await this.readOutputFile(outputFile, result.stdout);
+        content = fileResult.content;
+        resultSource = fileResult.source;
+
+        // Если контент пустой после чтения файла, используем парсинг stdout
+        if (!content || content.trim().length === 0) {
+          content = this.parseResponse(result.stdout);
+          resultSource = 'stdout';
+        }
+      } else {
+        // Парсим ответ из stdout
+        content = this.parseResponse(result.stdout);
+      }
+
+      // Определяем sandbox режим для metadata
+      let sandboxMode: string | undefined;
+      if (codexRequest.sandbox) {
+        sandboxMode = codexRequest.sandbox;
+      } else if (codexRequest.permissions?.fullAccess) {
+        sandboxMode = 'full-access';
+      } else if (codexRequest.permissions?.execute) {
+        sandboxMode = 'workspace-write';
+      } else if (codexRequest.permissions?.write?.length) {
+        sandboxMode = 'workspace-write';
+      } else {
+        sandboxMode = 'read-only';
+      }
+
       return {
         content,
         model: request.model || 'unknown',
         executionTime,
         metadata: {
           exitCode: result.exitCode,
-          stderr: result.stderr
+          stderr: result.stderr,
+          outputFile: outputFile,
+          resultSource: resultSource,
+          sandboxMode: sandboxMode
         }
       };
-      
+
     } catch (error) {
       // Обрабатываем ошибку через handleError
       throw this.handleError(error as Error);
@@ -492,7 +568,7 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
         {},
         5000 // 5 секунд таймаут для проверки
       );
-      
+
       // Возвращаем true если команда выполнилась успешно (exitCode = 0)
       return result.exitCode === 0;
     } catch (error) {
@@ -500,5 +576,161 @@ export class CodexCLIAdapter extends BaseCLIAdapter {
       // возвращаем false
       return false;
     }
+  }
+
+  // ============================================================================
+  // Методы для работы с разрешениями и файловым выводом
+  // ============================================================================
+
+  /**
+   * Маппинг разрешений шага на аргументы командной строки Codex CLI
+   *
+   * Правила маппинга:
+   * - Без permissions или пустые permissions -> --sandbox read-only (безопасный режим)
+   * - permissions.write указан -> --sandbox workspace-write (ограниченная запись)
+   * - permissions.execute=true -> --full-auto (выполнение shell-команд)
+   * - permissions.fullAccess=true -> (без --sandbox, полный доступ, только при явном указании)
+   *
+   * ВАЖНО: --yolo никогда не используется по умолчанию для безопасности
+   *
+   * @param permissions - Разрешения из конфигурации шага
+   * @returns string[] - Массив аргументов для sandbox/execution режима
+   */
+  protected mapPermissionsToArgs(permissions?: StepPermissions): string[] {
+    // Если permissions не указаны, используем безопасный режим read-only
+    if (!permissions) {
+      return ['--sandbox', 'read-only'];
+    }
+
+    // Валидируем permissions перед использованием
+    this.validatePermissions(permissions);
+
+    const args: string[] = [];
+
+    // fullAccess - полный доступ (не добавляем --sandbox, но требует явного указания)
+    // ВАЖНО: fullAccess=true означает отсутствие sandbox, но НЕ означает --yolo
+    if (permissions.fullAccess) {
+      // Не добавляем --sandbox, модель работает без ограничений
+      // Но --yolo НЕ добавляется для безопасности
+      return args;
+    }
+
+    // execute=true - разрешено выполнение shell-команд
+    if (permissions.execute) {
+      args.push('--full-auto');
+      // При execute=true также нужен workspace-write для записи файлов
+      args.push('--sandbox', 'workspace-write');
+      return args;
+    }
+
+    // write указан - разрешена запись в указанные паттерны
+    if (permissions.write && permissions.write.length > 0) {
+      args.push('--sandbox', 'workspace-write');
+      return args;
+    }
+
+    // read-only по умолчанию (только чтение)
+    args.push('--sandbox', 'read-only');
+    return args;
+  }
+
+  /**
+   * Чтение результата из файла --output-last-message
+   * Использует polling с таймаутом для ожидания создания файла
+   *
+   * @param outputPath - Путь к файлу с результатом
+   * @param stdout - Вывод stdout (fallback)
+   * @returns Promise<{ content: string; source: 'file' | 'stdout' }>
+   */
+  protected async readOutputFile(
+    outputPath: string,
+    stdout: string
+  ): Promise<{ content: string; source: 'file' | 'stdout' }> {
+    // Используем метод из базового класса с настройками по умолчанию
+    return this.readResultFromFile(outputPath, stdout, {
+      maxWaitTime: 5000,
+      pollInterval: 200
+    });
+  }
+
+  // ============================================================================
+  // Методы для работы с capabilities
+  // ============================================================================
+
+  /**
+   * Получение информации о поддержке capabilities для Codex CLI
+   *
+   * Codex CLI поддерживает:
+   * - web_search: через флаг --search
+   * - mcp_tools: автоматически доступны если настроены через `codex mcp add`
+   *
+   * Не поддерживает:
+   * - web_fetch
+   * - browser
+   *
+   * @returns Record<keyof StepCapabilities, CapabilitySupport>
+   */
+  override getCapabilitySupport(): Record<keyof StepCapabilities, CapabilitySupport> {
+    return {
+      web_search: {
+        supported: false,
+        flags: [],
+        note: 'Codex exec не поддерживает --search (только интерактивный режим)'
+      },
+      web_fetch: {
+        supported: false,
+        note: 'Codex CLI не поддерживает загрузку веб-страниц'
+      },
+      mcp_tools: {
+        supported: true,
+        note: 'MCP доступен автоматически если настроен через `codex mcp add`. Нет возможности ограничить инструменты во время exec'
+      },
+      browser: {
+        supported: false,
+        note: 'Codex CLI не поддерживает интеграцию с браузером'
+      }
+    };
+  }
+
+  /**
+   * Преобразование capabilities в аргументы командной строки Codex CLI
+   *
+   * Маппинг:
+   * - web_search: warning (не поддерживается в exec режиме)
+   * - mcp_tools: true → логируем что MCP доступен (настройка через codex mcp)
+   * - web_fetch: warning (не поддерживается)
+   * - browser: warning (не поддерживается)
+   *
+   * @param capabilities - Capabilities для преобразования
+   * @returns string[] - Массив аргументов командной строки
+   */
+  protected override mapCapabilitiesToArgs(capabilities: StepCapabilities): string[] {
+    const args: string[] = [];
+
+    // web_search - не поддерживается в exec режиме
+    if (capabilities.web_search) {
+      console.warn(`[${this.name}] Предупреждение: web_search не поддерживается в режиме exec (--search работает только в интерактивном режиме)`);
+    }
+
+    // mcp_tools - просто логируем информацию
+    if (capabilities.mcp_tools) {
+      if (Array.isArray(capabilities.mcp_tools)) {
+        console.log(`[${this.name}] Информация: MCP-инструменты [${capabilities.mcp_tools.join(', ')}] будут доступны если настроены через 'codex mcp add'. Codex CLI не позволяет ограничить инструменты во время exec`);
+      } else {
+        console.log(`[${this.name}] Информация: Все MCP-инструменты будут доступны если настроены через 'codex mcp add'`);
+      }
+    }
+
+    // web_fetch - предупреждение
+    if (capabilities.web_fetch) {
+      console.warn(`[${this.name}] Предупреждение: web_fetch не поддерживается Codex CLI`);
+    }
+
+    // browser - предупреждение
+    if (capabilities.browser) {
+      console.warn(`[${this.name}] Предупреждение: browser не поддерживается Codex CLI`);
+    }
+
+    return args;
   }
 }

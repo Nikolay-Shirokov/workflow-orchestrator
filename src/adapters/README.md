@@ -8,6 +8,13 @@ CLI-адаптеры предоставляют унифицированный �
 
 ## Доступные адаптеры
 
+| Адаптер | CLI-утилита | Модели | Permissions | Capabilities |
+|---------|-------------|--------|-------------|--------------|
+| `ClaudeCLIAdapter` | `claude` | Claude Sonnet, Opus, Haiku | ✅ Полная поддержка | ✅ Полная |
+| `CodexCLIAdapter` | `codex` | GPT-4, Codex | ✅ Полная поддержка | ⚡ Частичная |
+| `GeminiCLIAdapter` | `gemini` | Gemini Pro, Ultra | ✅ Полная поддержка | ⚡ Частичная |
+| `OpenAICLIAdapter` | `openai` | GPT-4, GPT-3.5 | Базовая | ❌ Нет |
+
 ### ClaudeCLIAdapter
 
 Адаптер для взаимодействия с Anthropic Claude через `claude-cli`.
@@ -16,44 +23,106 @@ CLI-адаптеры предоставляют унифицированный �
 - Установленная утилита `claude-cli`
 - Авторизация через `claude-cli` (на уровне системы) ИЛИ переменная окружения `ANTHROPIC_API_KEY`
 
-**Примечание:** API ключ не обязателен, если вы уже авторизованы через `claude-cli` на уровне машины/пользователя.
-
 **Пример использования:**
 ```typescript
 import { ClaudeCLIAdapter } from './adapters/claude-cli-adapter.js';
 
 const adapter = new ClaudeCLIAdapter();
 
-// Проверка доступности
-const available = await adapter.isAvailable();
-
-// Выполнение запроса
+// Базовый запрос
 const response = await adapter.execute({
   prompt: 'Привет, как дела?',
   model: 'claude-sonnet-3.5'
 });
 
-console.log(response.content);
+// Запрос с permissions и outputFile
+const response = await adapter.execute({
+  prompt: 'Проанализируй код в src/',
+  permissions: {
+    read: ['src/**/*.ts'],
+    write: ['docs/*.md']
+  },
+  outputFile: 'artifacts/analysis.md'
+});
 ```
 
-**Конфигурация по умолчанию:**
+**Маппинг permissions на флаги CLI:**
+
+| Permissions | Флаги Claude CLI |
+|-------------|------------------|
+| Без permissions | `--tools "Read,Grep,Glob"` (только чтение) |
+| `write: [...]` | Добавляет `Write` в `--tools` и `--allowedTools` |
+| `execute: true` | Добавляет `Bash` в `--tools` и `--allowedTools` |
+| `fullAccess: true` | `--dangerously-skip-permissions` ⚠️ |
+
+### CodexCLIAdapter
+
+Адаптер для взаимодействия с OpenAI Codex через `codex-cli`.
+
+**Требования:**
+- Установленная утилита `codex-cli`
+- Авторизация через `codex-cli` ИЛИ переменная окружения `OPENAI_API_KEY`
+
+**Пример использования:**
 ```typescript
-{
-  name: 'claude-cli',
-  command: 'claude',
-  args: ['-p', '${prompt}'],
-  env: { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY },
-  parser: 'markdown',
-  timeout: 300000 // 5 минут
-}
+import { CodexCLIAdapter } from './adapters/codex-cli-adapter.js';
+
+const adapter = new CodexCLIAdapter();
+
+// Запрос с permissions
+const response = await adapter.execute({
+  prompt: 'Напиши функцию сортировки',
+  permissions: {
+    read: ['src/**/*'],
+    write: ['src/utils/*.ts']
+  },
+  outputFile: 'artifacts/result.md'
+});
 ```
 
-**Примечание:** Флаг `--model` добавляется автоматически, если модель указана в запросе.
+**Маппинг permissions на флаги CLI:**
 
-**Парсинг ответов:**
-- Удаляет префиксы: `Assistant:`, `Claude:`, `Response:`, `Output:`
-- Обрабатывает Markdown форматирование
-- Удаляет лишние пробелы
+| Permissions | Флаги Codex CLI |
+|-------------|-----------------|
+| Без permissions | `--sandbox read-only` |
+| `write: [...]` | `--sandbox workspace-write` |
+| `execute: true` | Добавляет `--full-auto` |
+| `fullAccess: true` | `--yolo` ⚠️ |
+
+**Поддержка outputFile:**
+- Флаг `--output-last-message <путь>` для записи результата в файл
+
+### GeminiCLIAdapter
+
+Адаптер для взаимодействия с Google Gemini через `gemini-cli`.
+
+**Требования:**
+- Установленная утилита `gemini-cli`
+- Авторизация через `gemini-cli` ИЛИ переменная окружения `GOOGLE_API_KEY`
+
+**Пример использования:**
+```typescript
+import { GeminiCLIAdapter } from './adapters/gemini-cli-adapter.js';
+
+const adapter = new GeminiCLIAdapter();
+
+const response = await adapter.execute({
+  prompt: 'Объясни квантовую физику',
+  permissions: {
+    read: ['docs/**/*'],
+    write: ['output/*.md']
+  }
+});
+```
+
+**Маппинг permissions на флаги CLI:**
+
+| Permissions | Флаги Gemini CLI |
+|-------------|------------------|
+| Без permissions | Безопасный режим (без `--yolo`) |
+| `write: [...]` | `--allowed-tools write_file --yolo` |
+| `execute: true` | `--allowed-tools shell --yolo` |
+| `fullAccess: true` | `--yolo` ⚠️ |
 
 ### OpenAICLIAdapter
 
@@ -61,9 +130,7 @@ console.log(response.content);
 
 **Требования:**
 - Установленная утилита `openai-cli`
-- Авторизация через `openai-cli` (на уровне системы) ИЛИ переменная окружения `OPENAI_API_KEY`
-
-**Примечание:** API ключ не обязателен, если вы уже авторизованы через `openai-cli` на уровне машины/пользователя.
+- Авторизация через `openai-cli` ИЛИ переменная окружения `OPENAI_API_KEY`
 
 **Пример использования:**
 ```typescript
@@ -75,119 +142,181 @@ const response = await adapter.execute({
   prompt: 'Напиши короткое стихотворение',
   model: 'gpt-4'
 });
-
-console.log(response.content);
 ```
 
-**Конфигурация по умолчанию:**
+## Система разрешений (Permissions)
+
+Все адаптеры поддерживают систему разрешений `StepPermissions` для контроля действий AI-моделей.
+
+### Структура StepPermissions
+
 ```typescript
-{
-  name: 'openai-cli',
-  command: 'openai',
-  args: ['api', 'chat.completions.create', '-g', 'user', '${prompt}'],
-  env: { OPENAI_API_KEY: process.env.OPENAI_API_KEY },
-  parser: 'json',
-  timeout: 300000 // 5 минут
+interface StepPermissions {
+  read?: string[];      // Паттерны файлов для чтения (glob)
+  write?: string[];     // Паттерны файлов для записи (glob)
+  execute?: boolean;    // Разрешены ли shell-команды
+  fullAccess?: boolean; // Полный доступ (ОПАСНО!)
 }
 ```
 
-**Примечание:** Флаг `-m` добавляется автоматически, если модель указана в запросе.
+### Принципы безопасности
 
-**Парсинг ответов:**
-- Парсит JSON структуру: `{ choices: [{ message: { content: "..." } }] }`
-- Извлекает контент из первого choice
-- Обрабатывает невалидный JSON как текст
-- Выводит предупреждения при неожиданной структуре
+1. **Безопасность по умолчанию**: Без permissions используется режим только чтения
+2. **Минимальные привилегии**: Запрашивайте только необходимые разрешения
+3. **Явное указание опасных режимов**: `fullAccess` требует явного указания
+4. **Валидация паттернов**: Path traversal (`..`) запрещён в паттернах
 
-### GeminiCLIAdapter
+### Пример использования
 
-Адаптер для взаимодействия с Google Gemini через `gemini-cli`.
-
-**Требования:**
-- Установленная утилита `gemini-cli`
-- Авторизация через `gemini-cli` (на уровне системы) ИЛИ переменная окружения `GOOGLE_API_KEY`
-
-**Примечание:** API ключ не обязателен, если вы уже авторизованы через `gemini-cli` на уровне машины/пользователя.
-
-**Пример использования:**
 ```typescript
-import { GeminiCLIAdapter } from './adapters/gemini-cli-adapter.js';
-
-const adapter = new GeminiCLIAdapter();
-
-const response = await adapter.execute({
-  prompt: 'Объясни квантовую физику простыми словами',
-  model: 'gemini-pro'
+// Только чтение (безопасно)
+const response1 = await adapter.execute({
+  prompt: 'Проанализируй код',
+  permissions: {
+    read: ['src/**/*.ts', '*.md']
+  }
 });
 
-console.log(response.content);
+// Чтение и запись
+const response2 = await adapter.execute({
+  prompt: 'Создай документацию',
+  permissions: {
+    read: ['src/**/*.ts'],
+    write: ['docs/**/*.md']
+  }
+});
+
+// С выполнением команд
+const response3 = await adapter.execute({
+  prompt: 'Запусти тесты и исправь ошибки',
+  permissions: {
+    read: ['src/**/*', 'tests/**/*'],
+    write: ['src/**/*.ts'],
+    execute: true
+  }
+});
 ```
 
-**Конфигурация по умолчанию:**
+### ⚠️ Важные гарантии безопасности
+
+- `--yolo` (Codex) и `--dangerously-skip-permissions` (Claude) **НИКОГДА** не используются без явного `fullAccess: true`
+- `Bash` инструмент (Claude) **НЕДОСТУПЕН** без `execute: true`
+- `shell` инструмент (Gemini) **НЕДОСТУПЕН** без `execute: true`
+
+## Capabilities (Дополнительные возможности)
+
+Capabilities расширяют базовые разрешения файловой системы дополнительными возможностями: веб-поиск, MCP-инструменты, интеграция с браузером.
+
+### Поддержка capabilities по адаптерам
+
+| Capability | Claude CLI | Codex CLI | Gemini CLI |
+|------------|------------|-----------|------------|
+| `web_search` | ✅ WebSearch | ✅ `--search` | ✅ google_web_search |
+| `web_fetch` | ✅ WebFetch | ❌ | ✅ web_fetch |
+| `mcp_tools` | ✅ `--tools`, `--allowedTools` | ⚡ авто через `codex mcp` | ✅ settings.json |
+| `browser` | ✅ `--chrome` | ❌ | ❌ |
+
+### Структура StepCapabilities
+
 ```typescript
-{
-  name: 'gemini-cli',
-  command: 'gemini',
-  args: ['--prompt', '${prompt}'],
-  env: { GOOGLE_API_KEY: process.env.GOOGLE_API_KEY },
-  parser: 'text',
-  timeout: 300000 // 5 минут
+interface StepCapabilities {
+  web_search?: boolean;           // Поиск в интернете
+  web_fetch?: boolean;            // Загрузка веб-страниц по URL
+  mcp_tools?: boolean | string[]; // MCP-инструменты
+  browser?: boolean;              // Интеграция с браузером
 }
 ```
 
-**Примечание:** Флаг `--model` добавляется автоматически, если модель указана в запросе.
+### Пример использования
 
-**Парсинг ответов:**
-- Обрабатывает текстовый формат
-- Парсит JSON с полями: `text`, `content`
-- Обрабатывает массивы кандидатов
-- Удаляет префиксы: `Response:`, `Output:`, `Generated:`, `Gemini:`
+```typescript
+// Запрос с веб-поиском
+const response = await adapter.execute({
+  prompt: 'Найди последние новости о TypeScript 5.0',
+  permissions: {
+    capabilities: {
+      web_search: true
+    }
+  }
+});
+
+// Запрос с веб-поиском и MCP
+const response = await adapter.execute({
+  prompt: 'Исследуй API и создай интеграцию',
+  permissions: {
+    write: ['src/**/*.ts'],
+    capabilities: {
+      web_search: true,
+      web_fetch: true,
+      mcp_tools: true  // Все настроенные MCP-инструменты
+    }
+  }
+});
+
+// Запрос с конкретными MCP-инструментами
+const response = await adapter.execute({
+  prompt: 'Используй базу данных',
+  permissions: {
+    capabilities: {
+      mcp_tools: ['db_query', 'db_insert']  // Только указанные
+    }
+  }
+});
+```
+
+### Примечания по MCP
+
+MCP-серверы настраиваются **вне workflow** на уровне CLI-утилиты:
+
+- **Claude**: через `--mcp-config` или глобальную конфигурацию
+- **Codex**: через `codex mcp add` (все настроенные серверы доступны автоматически)
+- **Gemini**: через `mcpServers` в `settings.json` или `gemini mcp add`
+
+Workflow лишь **даёт разрешение** на использование уже настроенных MCP-инструментов.
+
+## Запись результата в файл (outputFile)
+
+Адаптеры поддерживают запись результата выполнения в файл.
+
+### Использование
+
+```typescript
+const response = await adapter.execute({
+  prompt: 'Создай отчёт',
+  outputFile: 'artifacts/report.md',
+  permissions: {
+    write: ['artifacts/*.md']
+  }
+});
+
+// Метаданные ответа
+console.log(response.metadata.outputFile);    // 'artifacts/report.md'
+console.log(response.metadata.resultSource);  // 'file' или 'stdout'
+```
+
+### Механизм работы
+
+1. Адаптер добавляет инструкцию записи в промпт
+2. После выполнения использует polling для чтения файла (интервал 200мс, таймаут 5с)
+3. Если файл не создан, использует stdout как fallback
 
 ## Использование с реестром
-
-Все адаптеры можно регистрировать в `AdapterRegistry` для централизованного управления:
 
 ```typescript
 import { AdapterRegistry } from './adapters/adapter-registry.js';
 import { ClaudeCLIAdapter } from './adapters/claude-cli-adapter.js';
-import { OpenAICLIAdapter } from './adapters/openai-cli-adapter.js';
+import { CodexCLIAdapter } from './adapters/codex-cli-adapter.js';
 import { GeminiCLIAdapter } from './adapters/gemini-cli-adapter.js';
 
 const registry = new AdapterRegistry();
 
 // Регистрация адаптеров
 registry.register(new ClaudeCLIAdapter());
-registry.register(new OpenAICLIAdapter());
+registry.register(new CodexCLIAdapter());
 registry.register(new GeminiCLIAdapter());
 
 // Получение адаптера по имени
-const claudeAdapter = registry.get('claude-cli');
-
-// Проверка наличия
-if (registry.has('openai-cli')) {
-  const openaiAdapter = registry.get('openai-cli');
-  // ...
-}
-
-// Получение всех адаптеров
-const allAdapters = registry.getAll();
-console.log(`Зарегистрировано адаптеров: ${allAdapters.length}`);
-```
-
-## Пользовательская конфигурация
-
-Все адаптеры поддерживают переопределение конфигурации:
-
-```typescript
-const customAdapter = new ClaudeCLIAdapter({
-  command: 'custom-claude-path',
-  timeout: 60000, // 1 минута
-  env: {
-    ANTHROPIC_API_KEY: 'custom-key',
-    CUSTOM_VAR: 'value'
-  },
-  args: ['custom', 'args']
-});
+const adapter = registry.get('claude-cli');
 ```
 
 ## Создание собственного адаптера
@@ -196,7 +325,7 @@ const customAdapter = new ClaudeCLIAdapter({
 
 ```typescript
 import { BaseCLIAdapter } from './base-cli-adapter.js';
-import { AdapterConfig } from '../core/types.js';
+import { AdapterConfig, StepPermissions, AdapterRequest } from '../core/types.js';
 
 export class CustomCLIAdapter extends BaseCLIAdapter {
   name: string = 'custom-cli';
@@ -216,42 +345,83 @@ export class CustomCLIAdapter extends BaseCLIAdapter {
     super({ ...defaultConfig, ...config });
   }
 
-  // Переопределите parseResponse для специфичного парсинга
+  /**
+   * ОБЯЗАТЕЛЬНО: Реализуйте маппинг permissions на флаги вашего CLI
+   */
+  protected mapPermissionsToArgs(permissions?: StepPermissions): string[] {
+    const args: string[] = [];
+
+    // Валидация permissions (проверка path traversal и т.д.)
+    this.validatePermissions(permissions);
+
+    if (!permissions) {
+      // Безопасный режим по умолчанию
+      args.push('--safe-mode');
+      return args;
+    }
+
+    if (permissions.fullAccess) {
+      args.push('--full-access');
+      return args;
+    }
+
+    if (permissions.write && permissions.write.length > 0) {
+      args.push('--allow-write');
+    }
+
+    if (permissions.execute) {
+      args.push('--allow-execute');
+    }
+
+    return args;
+  }
+
+  /**
+   * Опционально: Переопределите parseResponse для специфичного парсинга
+   */
   parseResponse(rawOutput: string): string {
-    // Ваша логика парсинга
     return rawOutput.trim();
   }
 
-  // Опционально: переопределите isAvailable для дополнительных проверок
-  async isAvailable(): Promise<boolean> {
-    // Проверка API ключа
-    if (!this.config.env?.CUSTOM_API_KEY) {
-      return false;
+  /**
+   * Опционально: Переопределите prepareArguments для добавления специфичных флагов
+   */
+  protected prepareArguments(request: AdapterRequest): string[] {
+    const args = super.prepareArguments(request);
+
+    // Добавить флаги permissions
+    const permArgs = this.mapPermissionsToArgs(request.permissions);
+    args.push(...permArgs);
+
+    // Добавить outputFile если указан
+    if (request.outputFile) {
+      args.push('--output', request.outputFile);
     }
-    
-    // Проверка доступности команды
-    return await super.isAvailable();
+
+    return args;
   }
 }
 ```
 
-## Обработка ошибок
+### Вспомогательные методы BaseCLIAdapter
 
-Все адаптеры используют единую систему обработки ошибок:
+| Метод | Описание |
+|-------|----------|
+| `validatePermissions(permissions)` | Проверяет permissions на path traversal и конфликты |
+| `appendFileWriteInstruction(prompt, outputPath, toolName?)` | Добавляет инструкцию записи в файл к промпту |
+| `readResultFromFile(outputPath, stdout, options?)` | Читает результат из файла с polling |
+
+## Обработка ошибок
 
 ```typescript
 try {
   const response = await adapter.execute({ prompt: 'test' });
 } catch (error) {
   const adapterError = error as AdapterError;
-  
+
   console.error(`Код ошибки: ${adapterError.code}`);
   console.error(`Сообщение: ${adapterError.message}`);
   console.error(`Можно повторить: ${adapterError.retryable}`);
-  
-  if (adapterError.retryable) {
-    // Повторить запрос
-  }
 }
 ```
 
@@ -272,58 +442,35 @@ import { MockCLIAdapter } from './adapters/mock-cli-adapter.js';
 const mockAdapter = new MockCLIAdapter();
 
 // Настройка ответа
-mockAdapter.setResponse(
-  /привет/i,
-  'Привет! Как я могу помочь?'
-);
-
-// Настройка ответа с задержкой
-mockAdapter.setResponse(
-  'сложный вопрос',
-  'Сложный ответ',
-  { delay: 1000 }
-);
-
-// Симуляция ошибки
-mockAdapter.setResponse(
-  'ошибка',
-  '',
-  { shouldError: true, errorMessage: 'Тестовая ошибка' }
-);
+mockAdapter.setResponse(/привет/i, 'Привет! Как я могу помочь?');
 
 // Использование
-const response = await mockAdapter.execute({
-  prompt: 'привет'
-});
+const response = await mockAdapter.execute({ prompt: 'привет' });
 
 // Проверка истории
 const history = mockAdapter.getRequestHistory();
-console.log(`Выполнено запросов: ${history.length}`);
 ```
-
-## Требования к системе
-
-- Node.js >= 18.0.0
-- TypeScript >= 5.0.0
-- Установленные CLI-утилиты для соответствующих моделей
-- API ключи в переменных окружения
 
 ## Переменные окружения
 
 API ключи опциональны, если CLI-утилиты уже авторизованы на уровне системы:
 
 ```bash
-# Для Claude (опционально, если уже авторизованы через claude-cli)
+# Claude
 export ANTHROPIC_API_KEY="your-key-here"
 
-# Для OpenAI (опционально, если уже авторизованы через openai-cli)
+# OpenAI / Codex
 export OPENAI_API_KEY="your-key-here"
 
-# Для Gemini (опционально, если уже авторизованы через gemini-cli)
+# Gemini
 export GOOGLE_API_KEY="your-key-here"
 ```
 
-**Примечание:** Большинство современных CLI-утилит поддерживают авторизацию на уровне машины/пользователя. После однократной авторизации через команду (например, `claude login`), API ключи в переменных окружения не требуются.
+## Ссылки
+
+- [SECURITY.md](../../docs/SECURITY.md) - Подробная документация по безопасности
+- [CUSTOM_ADAPTERS.md](../../docs/CUSTOM_ADAPTERS.md) - Создание пользовательских адаптеров
+- [DSL_SYNTAX.md](../../docs/DSL_SYNTAX.md) - Использование permissions в workflow
 
 ## Лицензия
 

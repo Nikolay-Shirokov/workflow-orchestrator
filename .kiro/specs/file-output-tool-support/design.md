@@ -2,25 +2,27 @@
 
 ## Обзор
 
-Данный дизайн описывает реализацию универсального механизма поддержки инструмента `write_file` для CLI-адаптеров в системе workflow-оркестратора. Механизм позволяет моделям записывать большие тексты напрямую в файлы, избегая проблем с обрезанием вывода при чтении из stdout.
+Данный дизайн описывает реализацию универсального механизма поддержки записи результатов в файлы для CLI-адаптеров в системе workflow-оркестратора. Механизм позволяет моделям записывать большие тексты напрямую в файлы, избегая проблем с обрезанием вывода при чтении из stdout, а также обеспечивает безопасность через систему разрешений.
 
 ### Текущее состояние
 
 В настоящее время:
 - Gemini адаптер уже поддерживает инструмент `write_file` через флаги `--allowed-tools write_file` и `--yolo`
 - Gemini адаптер извлекает путь к выходному файлу из промпта и читает результат из файла
-- Codex адаптер не поддерживает инструмент записи файлов
-- Claude адаптер не поддерживает инструмент записи файлов
-- Отсутствует общая логика в базовом адаптере для работы с файловым выводом
+- Codex адаптер поддерживает `--output-last-message` но не читает результат из файла
+- Claude адаптер не поддерживает файловый вывод
+- Отсутствует система разрешений для ограничения действий модели
+- Используется небезопасный режим `--yolo` по умолчанию
 
 ### Целевое состояние
 
 После реализации:
-- Codex адаптер будет поддерживать инструмент `write_file` через флаги `--allowed-tools write_file`, `--yolo` и `--output-last-message`
-- Claude адаптер будет поддерживать инструмент `write_file` (если Claude CLI поддерживает инструменты)
+- Codex адаптер будет использовать `--output-last-message` для сохранения результата с безопасным sandbox режимом
+- Claude адаптер будет поддерживать инструмент `Write` с ограничением набора инструментов
 - Базовый адаптер будет предоставлять общую логику для работы с файловым выводом
-- Все адаптеры будут автоматически добавлять инструкцию записи в файл в промпт при наличии `outputs` в конфигурации шага
-- Система будет поддерживать graceful degradation при отсутствии поддержки инструментов
+- Система разрешений будет контролировать что модель может делать на каждом шаге
+- Все адаптеры будут использовать безопасные режимы по умолчанию (read-only)
+- Система будет поддерживать graceful degradation при отсутствии поддержки
 
 ## Архитектура
 
@@ -31,10 +33,7 @@
 - Читают вывод из stdout
 - Могут столкнуться с проблемой обрезания больших текстов
 
-**HTTP-адаптеры** (например, `OpenAICompatibleAdapter`) **не требуют** этих изменений, так как:
-- Получают ответ напрямую в теле HTTP-ответа
-- Не имеют проблемы обрезания вывода
-- Работают с структурированными JSON-ответами
+**HTTP-адаптеры** (например, `OpenAICompatibleAdapter`) **не требуют** этих изменений.
 
 ### Компоненты системы
 
@@ -49,16 +48,16 @@
 ┌─────────────────────────────────────────────────────────────┐
 │                    StepExecutor                              │
 │  - Выполнение шагов типа 'model'                            │
-│  - Подготовка AdapterRequest с outputs                      │
+│  - Подготовка AdapterRequest с outputs и permissions        │
 │  - Сохранение результата в артефакты                        │
 └─────────────────────┬───────────────────────────────────────┘
                       │
                       ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                  BaseCLIAdapter                              │
-│  + extractOutputPath(prompt): string | undefined            │
-│  + appendFileWriteInstruction(prompt, path): string         │
-│  + readResultFromFile(path, stdout): Promise<string>        │
+│  + appendFileWriteInstruction(prompt, path, toolName)       │
+│  + readResultFromFile(path, stdout, options): Promise       │
+│  + mapPermissionsToArgs(permissions): string[]              │
 │  # prepareArguments(request): string[]                      │
 │  # execute(request): Promise<AdapterResponse>               │
 └─────────────────────┬───────────────────────────────────────┘
@@ -67,34 +66,33 @@
           ▼                       ▼               ▼
 ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
 │  GeminiAdapter   │    │  CodexAdapter    │    │  ClaudeAdapter   │
-│  - Использует    │    │  - Добавляет     │    │  - Добавляет     │
-│    общую логику  │    │    флаги для     │    │    флаги для     │
-│  - Переопределяет│    │    write_file    │    │    write_file    │
-│    execute()     │    │  - Использует    │    │  - Использует    │
-└──────────────────┘    │    общую логику  │    │    общую логику  │
-                        └──────────────────┘    └──────────────────┘
+│  --allowed-tools │    │  --sandbox       │    │  --tools         │
+│  write_file      │    │  --output-last-  │    │  --allowedTools  │
+│  --yolo          │    │  message         │    │  Write           │
+└──────────────────┘    └──────────────────┘    └──────────────────┘
 ```
 
 ### Поток данных
 
 1. **Конфигурация шага** → WorkflowEngine → StepExecutor
    - Шаг содержит `outputs: { result: "path/to/file.md" }`
+   - Шаг содержит `permissions: { read: ["**/*"], write: ["artifacts/*.md"], execute: false }`
 
 2. **StepExecutor** → Адаптер
-   - Создает `AdapterRequest` с полем `outputFile: "path/to/file.md"`
+   - Создает `AdapterRequest` с полями `outputFile` и `permissions`
    - Адаптер автоматически добавляет инструкцию записи в промпт
 
 3. **Адаптер** → CLI-утилита
-   - Передает флаги для разрешения инструмента `write_file`
+   - Передает флаги безопасности на основе permissions
    - Передает промпт с инструкцией записи
 
 4. **CLI-утилита** → Модель
    - Модель получает промпт с инструкцией
-   - Модель использует инструмент `write_file` (если доступен)
+   - CLI ограничивает действия модели согласно флагам
 
 5. **Модель** → Файл / stdout
-   - Если инструмент доступен: записывает в файл
-   - Если инструмент недоступен: выводит в stdout
+   - Если инструмент записи доступен и разрешен: записывает в файл
+   - Если недоступен: выводит в stdout
 
 6. **Адаптер** → StepExecutor
    - Читает результат из файла (если файл создан)
@@ -106,6 +104,17 @@
 ### Расширение AdapterRequest
 
 ```typescript
+export interface StepPermissions {
+  /** Паттерны файлов разрешенных для чтения */
+  read?: string[];
+  /** Паттерны файлов разрешенных для записи */
+  write?: string[];
+  /** Разрешено ли выполнять shell-команды */
+  execute?: boolean;
+  /** Режим полного доступа (ОПАСНО) */
+  fullAccess?: boolean;
+}
+
 export interface AdapterRequest {
   prompt: string;
   model?: string;
@@ -114,9 +123,12 @@ export interface AdapterRequest {
   systemPrompt?: string;
   env?: Record<string, string>;
   timeout?: number;
-  
-  // НОВОЕ: путь к выходному файлу
+
+  /** Путь к выходному файлу */
   outputFile?: string;
+
+  /** Разрешения для шага */
+  permissions?: StepPermissions;
 }
 ```
 
@@ -131,12 +143,15 @@ export interface AdapterResponse {
   metadata?: {
     exitCode?: number;
     stderr?: string;
-    
-    // НОВОЕ: путь к файлу, из которого был прочитан результат
+
+    /** Путь к файлу, из которого был прочитан результат */
     outputFile?: string;
-    
-    // НОВОЕ: источник результата
+
+    /** Источник результата */
     resultSource?: 'file' | 'stdout';
+
+    /** Примененный режим sandbox */
+    sandboxMode?: string;
   };
 }
 ```
@@ -146,620 +161,445 @@ export interface AdapterResponse {
 ```typescript
 abstract class BaseCLIAdapter {
   /**
-   * Извлечение пути к выходному файлу из промпта
-   * Ищет паттерн: "file path: <путь>" или "to file path: <путь>"
-   * @param prompt - Промпт с инструкцией
-   * @returns string | undefined - Путь к файлу или undefined
-   */
-  protected extractOutputPath(prompt: string): string | undefined;
-  
-  /**
    * Добавление инструкции записи в файл в конец промпта
    * @param prompt - Исходный промпт
    * @param outputPath - Путь к выходному файлу
+   * @param toolName - Имя инструмента записи (write_file, Write)
    * @returns string - Промпт с добавленной инструкцией
    */
-  protected appendFileWriteInstruction(prompt: string, outputPath: string): string;
-  
+  protected appendFileWriteInstruction(
+    prompt: string,
+    outputPath: string,
+    toolName?: string
+  ): string;
+
   /**
    * Чтение результата из файла с fallback на stdout
    * @param outputPath - Путь к выходному файлу
    * @param stdout - Вывод из stdout (fallback)
-   * @param waitTime - Время ожидания записи файла в мс (по умолчанию 1000)
+   * @param options - Опции чтения
    * @returns Promise<{ content: string; source: 'file' | 'stdout' }>
    */
   protected async readResultFromFile(
     outputPath: string,
     stdout: string,
-    waitTime?: number
+    options?: {
+      maxWaitTime?: number;    // Максимальное время ожидания (мс)
+      pollInterval?: number;   // Интервал проверки (мс)
+    }
   ): Promise<{ content: string; source: 'file' | 'stdout' }>;
+
+  /**
+   * Маппинг permissions на флаги CLI (абстрактный)
+   * @param permissions - Разрешения шага
+   * @returns string[] - Массив флагов для CLI
+   */
+  protected abstract mapPermissionsToArgs(permissions: StepPermissions): string[];
 }
 ```
-
-## Модели данных
-
-### Формат инструкции записи в файл
-
-```
-CRITICAL: If write_file tool is available, use it to save your response to file path: <путь>. If write_file tool is not available, output your response to console.
-
-Note: The file path is relative to the current working directory.
-```
-
-### Паттерны для извлечения пути из промпта
-
-Регулярное выражение для поиска пути:
-```typescript
-const outputFileMatch = prompt.match(/(?:to )?file path:\s*([^\s\n]+\.md)/i);
-```
-
-Поддерживаемые форматы:
-- `file path: path/to/file.md`
-- `to file path: path/to/file.md`
-- `FILE PATH: path/to/file.md` (case-insensitive)
 
 ## Специфика адаптеров
 
-### CLI-адаптеры vs HTTP-адаптеры
+### Gemini CLI
 
-**Важное различие**: Данный дизайн применим **только к CLI-адаптерам**, которые запускают внешние процессы и читают вывод из stdout или файлов.
+**Текущая реализация работает**, но требует рефакторинга для использования общих методов.
 
-**CLI-адаптеры** (применимо):
-- `GeminiCLIAdapter` - использует `gemini` CLI
-- `CodexCLIAdapter` - использует `codex` CLI  
-- `ClaudeCLIAdapter` - использует `claude` CLI
+```bash
+# Текущая команда (оставляем как есть)
+gemini --allowed-tools write_file --yolo -p "..."
+```
 
-**HTTP-адаптеры** (не применимо):
-- `OpenAICompatibleAdapter` - использует HTTP API
-- Другие HTTP-based адаптеры
+**Инструмент записи:** `write_file`
 
-**Обоснование**:
-- HTTP-адаптеры получают ответ напрямую в теле HTTP-ответа (JSON)
-- У них нет проблемы обрезания вывода из stdout
-- Они не используют внешние CLI-утилиты с инструментами
-- Модели через HTTP API возвращают полный ответ в структурированном формате
+**Особенности:**
+- `--allowed-tools write_file` ограничивает только этим инструментом
+- `--yolo` автоподтверждает использование инструмента
+- Модель создает файл напрямую
 
 ### Codex CLI
 
-Codex CLI поддерживает инструменты через следующие флаги:
-- `--allowed-tools write_file` - разрешает только инструмент write_file
-- `--yolo` - автоматически подтверждает использование инструментов
-- `--output-last-message <путь>` - сохраняет финальное сообщение в файл
+**Ключевое открытие:** `--output-last-message` работает независимо от sandbox режима! CLI сам сохраняет последнее сообщение в файл после завершения.
 
-**Пример команды**:
 ```bash
-codex exec --allowed-tools write_file --yolo --output-last-message output.md -
+# Безопасный режим: только чтение, CLI сохраняет результат
+codex exec --sandbox read-only --output-last-message output.md -
+
+# С правами записи в workspace
+codex exec --sandbox workspace-write --output-last-message output.md -
 ```
 
-### Claude CLI
-
-Claude CLI **поддерживает инструменты** через следующие флаги:
-- `--allowedTools` - инструменты, которые выполняются без запроса разрешения
-- `--tools` - ограничить встроенные инструменты (например, `"Bash,Edit,Read"`)
-- `--dangerously-skip-permissions` - пропустить запросы разрешения
-
-**Подход для Claude CLI**:
-1. Использовать `--allowedTools "Write"` для разрешения инструмента записи файлов
-2. Использовать `--dangerously-skip-permissions` для автоматического подтверждения
-3. Проверить, есть ли аналог `--output-last-message` для указания пути к файлу
-
-**Примечание**: Необходимо проверить, как именно называется инструмент записи файлов в Claude CLI (возможно `Write`, `WriteFile` или другое имя). Также нужно проверить, поддерживает ли Claude CLI явное указание пути для сохранения результата.
-
-**Пример команды** (предположительно):
-```bash
-claude -p --allowedTools "Write" --dangerously-skip-permissions "query"
-```
-
-### Gemini CLI
-
-Gemini CLI уже поддерживает инструменты:
-- `--allowed-tools write_file` - разрешает инструмент write_file
-- `--yolo` - автоматически подтверждает использование
-
-Текущая реализация будет рефакторена для использования общих методов из `BaseCLIAdapter`.
-
-## Свойства корректности
-
-*Свойство (property) — это характеристика или поведение, которое должно выполняться для всех допустимых выполнений системы. По сути, это формальное утверждение о том, что система должна делать. Свойства служат мостом между человекочитаемыми спецификациями и машинно-проверяемыми гарантиями корректности.*
-
-### Property 1: Автоматическое добавление инструкции
-
-*Для любого* запроса к адаптеру с указанным `outputFile`, промпт должен содержать инструкцию записи в файл с правильным путем.
-
-**Validates: Requirements 2.1, 2.2, 2.3**
-
-### Property 2: Приоритет файлового вывода
-
-*Для любого* выполнения адаптера, если файл был создан моделью, результат должен быть прочитан из файла, а не из stdout.
-
-**Validates: Requirements 1.4, 7.2**
-
-### Property 3: Graceful degradation
-
-*Для любого* выполнения адаптера, если файл не был создан, результат должен быть прочитан из stdout без ошибок.
-
-**Validates: Requirements 1.5, 7.1, 7.2**
-
-### Property 4: Флаги инструментов для Codex и Claude
-
-*Для любого* запроса к Codex адаптеру с указанным `outputFile`, аргументы команды должны содержать флаги `--allowed-tools write_file`, `--yolo` и `--output-last-message <путь>`.
-
-*Для любого* запроса к Claude адаптеру с указанным `outputFile`, аргументы команды должны содержать флаги `--allowedTools "Write"` и `--dangerously-skip-permissions`.
-
-**Validates: Requirements 1.1, 1.2, 1.3**
-
-### Property 5: Сохранение пути в метаданных
-
-*Для любого* ответа адаптера, если результат был прочитан из файла, метаданные должны содержать путь к файлу и источник `'file'`.
-
-**Validates: Requirements 2.4**
-
-### Property 6: Обработка ошибок чтения файла
-
-*Для любого* выполнения адаптера, если чтение файла завершилось ошибкой, адаптер должен залогировать предупреждение и использовать stdout.
-
-**Validates: Requirements 5.1, 5.2, 5.3**
-
-### Property 7: Работа без outputFile
-
-*Для любого* запроса к адаптеру без указанного `outputFile`, адаптер должен работать в стандартном режиме (чтение из stdout).
-
-**Validates: Requirements 6.1, 6.2, 6.3**
-
-## Обработка ошибок
-
-### Категории ошибок
-
-1. **Ошибки чтения файла**
-   - Файл не существует после выполнения
-   - Файл пустой
-   - Нет прав на чтение файла
-   - **Действие**: Логирование предупреждения + fallback на stdout
-
-2. **Ошибки валидации пути**
-   - Некорректный путь к файлу
-   - Путь содержит недопустимые символы
-   - **Действие**: Логирование ошибки + fallback на stdout
-
-3. **Ошибки выполнения CLI**
-   - CLI-утилита не поддерживает инструменты
-   - Ошибка при передаче флагов
-   - **Действие**: Повтор без флагов инструментов (для Requirement 7.4)
-
-### Стратегия обработки
+**Маппинг permissions на флаги:**
 
 ```typescript
-try {
-  // Попытка прочитать из файла
-  const content = await fs.readFile(outputPath, 'utf-8');
-  if (content.trim().length === 0) {
-    logger.warn(`Файл ${outputPath} пустой, используем stdout`);
-    return { content: stdout, source: 'stdout' };
+protected mapPermissionsToArgs(permissions: StepPermissions): string[] {
+  const args: string[] = [];
+
+  if (permissions.fullAccess) {
+    // ОПАСНО: Только если явно указано
+    args.push('--yolo');
+  } else if (permissions.write && permissions.write.length > 0) {
+    // Разрешена запись - workspace-write режим
+    args.push('--sandbox', 'workspace-write');
+    // Добавляем директории если указаны
+    for (const pattern of permissions.write) {
+      const dir = this.extractDirectory(pattern);
+      if (dir && dir !== '.') {
+        args.push('--add-dir', dir);
+      }
+    }
+  } else {
+    // По умолчанию: только чтение
+    args.push('--sandbox', 'read-only');
   }
-  return { content, source: 'file' };
-} catch (error) {
-  logger.warn(`Не удалось прочитать файл ${outputPath}: ${error.message}, используем stdout`);
-  return { content: stdout, source: 'stdout' };
+
+  if (permissions.execute) {
+    // Разрешены shell-команды - нужен минимум full-auto
+    args.push('--full-auto');
+  }
+
+  return args;
 }
 ```
 
-### Логирование
+**Режимы sandbox:**
 
-Все операции с файловым выводом должны логироваться:
-- `[DEBUG]` Обнаружен путь к выходному файлу: {путь}
-- `[DEBUG]` Прочитано {размер} байт из файла {путь}
-- `[WARN]` Не удалось прочитать файл {путь}, используем stdout
-- `[WARN]` Файл {путь} пустой, используем stdout
-- `[INFO]` Результат прочитан из {источник}
+| Режим | Модель может | Флаги |
+|-------|-------------|-------|
+| read-only | Только читать | `--sandbox read-only` |
+| workspace-write | Читать + писать в workspace | `--sandbox workspace-write` |
+| full-auto | + выполнять команды с подтверждением | `--full-auto` |
+| yolo | ВСЁ без ограничений | `--yolo` ⚠️ |
+
+### Claude CLI
+
+**Важно:** Claude CLI не имеет `--output-last-message`. Результат получается либо из stdout, либо модель должна создать файл через инструмент `Write`.
+
+```bash
+# Только чтение (результат в stdout)
+claude -p --tools "Read,Grep,Glob" "..."
+
+# С разрешением записи файла
+claude -p --tools "Read,Grep,Glob,Write" --allowedTools "Write" "..."
+
+# С разрешением выполнения команд
+claude -p --tools "Read,Grep,Glob,Bash" "..."
+```
+
+**Инструмент записи:** `Write` (не `write_file`!)
+
+**Маппинг permissions на флаги:**
+
+```typescript
+protected mapPermissionsToArgs(permissions: StepPermissions): string[] {
+  // Базовые инструменты чтения
+  const tools: string[] = ['Read', 'Grep', 'Glob'];
+  const allowedTools: string[] = [];
+
+  if (permissions.write && permissions.write.length > 0) {
+    tools.push('Write');
+    allowedTools.push('Write'); // Без подтверждения
+  }
+
+  if (permissions.execute) {
+    tools.push('Bash');
+    // Bash НЕ в allowedTools - требует подтверждения
+  }
+
+  if (permissions.fullAccess) {
+    // ОПАСНО: Только если явно указано
+    return ['--dangerously-skip-permissions'];
+  }
+
+  const args: string[] = ['--tools', tools.join(',')];
+
+  if (allowedTools.length > 0) {
+    args.push('--allowedTools', allowedTools.join(','));
+  }
+
+  return args;
+}
+```
+
+**Доступные инструменты Claude CLI:**
+
+| Инструмент | Назначение |
+|-----------|-----------|
+| `Read` | Чтение файлов |
+| `Grep` | Поиск в файлах |
+| `Glob` | Поиск файлов по паттерну |
+| `Write` | Создание/перезапись файлов |
+| `Edit` | Редактирование существующих файлов |
+| `Bash` | Выполнение shell-команд |
+
+## Формат инструкции записи в файл
+
+Инструкция должна быть адаптивной к конкретному CLI:
+
+```typescript
+protected appendFileWriteInstruction(
+  prompt: string,
+  outputPath: string,
+  toolName?: string
+): string {
+  const instruction = toolName
+    ? `\n\nCRITICAL: Save your complete response to file: ${outputPath}
+Use the ${toolName} tool to write the file.
+If the ${toolName} tool is not available, output the full response to console.
+Note: The file path is relative to the current working directory.`
+    : `\n\nCRITICAL: Save your complete response to file: ${outputPath}
+If you cannot write to file, output the full response to console.
+Note: The file path is relative to the current working directory.`;
+
+  return prompt + instruction;
+}
+```
+
+## Чтение результата с polling
+
+Вместо фиксированной задержки используем polling с таймаутом:
+
+```typescript
+protected async readResultFromFile(
+  outputPath: string,
+  stdout: string,
+  options: { maxWaitTime?: number; pollInterval?: number } = {}
+): Promise<{ content: string; source: 'file' | 'stdout' }> {
+  const maxWaitTime = options.maxWaitTime ?? 5000;
+  const pollInterval = options.pollInterval ?? 200;
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < maxWaitTime) {
+    try {
+      const stat = await fs.stat(outputPath);
+      if (stat.size > 0) {
+        const content = await fs.readFile(outputPath, 'utf-8');
+        if (content.trim().length > 0) {
+          this.logger?.debug(`Прочитано ${content.length} байт из ${outputPath}`);
+          return { content: content.trim(), source: 'file' };
+        }
+      }
+    } catch (error) {
+      // Файл еще не создан, продолжаем polling
+    }
+
+    await new Promise(r => setTimeout(r, pollInterval));
+  }
+
+  // Fallback на stdout
+  this.logger?.warn(`Файл ${outputPath} не найден или пуст, используем stdout`);
+  return { content: stdout.trim(), source: 'stdout' };
+}
+```
+
+## Свойства корректности (Properties)
+
+### Property 1: Безопасность по умолчанию
+
+*Для любого* запроса к адаптеру без явного `permissions.fullAccess`, адаптер НЕ должен использовать режимы `--yolo` или `--dangerously-skip-permissions`.
+
+**Validates: Requirements 1.6, 2.7, 9.1**
+
+### Property 2: Изоляция записи
+
+*Для любого* запроса к адаптеру с указанным `permissions.write`, модель должна иметь возможность записи ТОЛЬКО в указанные паттерны файлов.
+
+**Validates: Requirements 4.2, 9.3**
+
+### Property 3: Запрет execute по умолчанию
+
+*Для любого* запроса к адаптеру без явного `permissions.execute: true`, модель НЕ должна иметь возможности выполнять shell-команды.
+
+**Validates: Requirements 2.4, 4.3, 9.6**
+
+### Property 4: Graceful degradation
+
+*Для любого* выполнения адаптера, если файл не был создан, результат должен быть прочитан из stdout без ошибок.
+
+**Validates: Requirements 6.1, 8.2**
+
+### Property 5: Адаптивная инструкция
+
+*Для любого* запроса к адаптеру с `outputFile`, инструкция записи должна содержать правильное имя инструмента для данного CLI.
+
+**Validates: Requirement 3.2**
+
+## Примеры конфигурации workflow
+
+### Пример 1: Анализ кода (только чтение)
+
+```yaml
+steps:
+  - id: analyze
+    name: "Анализ архитектуры"
+    type: model
+    role: architect
+    permissions:
+      read: ["**/*.ts", "**/*.md"]
+      write: []
+      execute: false
+    prompt_template: |
+      Проанализируй архитектуру проекта и опиши её.
+    outputs:
+      analysis: "artifacts/analysis.md"
+```
+
+**Результат:** Codex использует `--sandbox read-only --output-last-message`, модель не может изменять файлы.
+
+### Пример 2: Генерация документации
+
+```yaml
+steps:
+  - id: generate_docs
+    name: "Генерация документации"
+    type: model
+    role: technical_writer
+    permissions:
+      read: ["**/*.ts", "**/*.md"]
+      write: ["docs/*.md", "artifacts/*.md"]
+      execute: false
+    prompt_template: |
+      Создай документацию API на основе кода.
+    outputs:
+      docs: "docs/api.md"
+```
+
+**Результат:** Claude использует `--tools "Read,Grep,Glob,Write" --allowedTools "Write"`, может писать только в docs/ и artifacts/.
+
+### Пример 3: Генерация кода (с записью)
+
+```yaml
+steps:
+  - id: generate_code
+    name: "Генерация модуля"
+    type: model
+    role: developer
+    permissions:
+      read: ["**/*"]
+      write: ["src/**/*.ts"]
+      execute: false
+    prompt_template: |
+      Создай модуль для работы с API.
+    outputs:
+      module: "src/api-client.ts"
+```
+
+**Результат:** Codex использует `--sandbox workspace-write`, может писать в workspace но не выполнять команды.
+
+### Пример 4: Полная автоматизация (ОПАСНО)
+
+```yaml
+steps:
+  - id: full_automation
+    name: "Полная автоматизация"
+    type: model
+    role: automation
+    permissions:
+      fullAccess: true  # ОПАСНО!
+    prompt_template: |
+      Установи зависимости и запусти тесты.
+```
+
+**Результат:** Только если явно указано `fullAccess: true`.
 
 ## Стратегия тестирования
 
 ### Unit-тесты
 
-1. **Тесты BaseCLIAdapter**
-   - `extractOutputPath()` корректно извлекает путь из различных форматов
-   - `appendFileWriteInstruction()` добавляет правильную инструкцию
-   - `readResultFromFile()` читает из файла при его наличии
-   - `readResultFromFile()` использует stdout при отсутствии файла
-   - `readResultFromFile()` обрабатывает пустые файлы
+1. **Тесты mapPermissionsToArgs для каждого адаптера**
+   - Проверить генерацию правильных флагов для разных комбинаций permissions
+   - Проверить что yolo не используется без fullAccess
 
-2. **Тесты CodexCLIAdapter**
-   - `prepareArguments()` добавляет флаги при наличии `outputFile`
-   - `prepareArguments()` не добавляет флаги при отсутствии `outputFile`
-   - `execute()` корректно обрабатывает файловый вывод
-   - `execute()` корректно обрабатывает fallback на stdout
+2. **Тесты readResultFromFile**
+   - Проверить polling механизм
+   - Проверить fallback на stdout
+   - Проверить обработку пустых файлов
 
-3. **Тесты ClaudeCLIAdapter**
-   - `prepareArguments()` добавляет флаги при наличии `outputFile`
-   - `prepareArguments()` не добавляет флаги при отсутствии `outputFile`
-   - `execute()` корректно обрабатывает файловый вывод
-   - `execute()` корректно обрабатывает fallback на stdout
-
-4. **Тесты GeminiCLIAdapter**
-   - Существующая логика продолжает работать
-   - Использует общие методы из базового класса
+3. **Тесты appendFileWriteInstruction**
+   - Проверить правильное имя инструмента для каждого CLI
+   - Проверить формат инструкции
 
 ### Property-based тесты
 
-Все property-based тесты должны выполняться минимум 100 итераций.
-
-1. **Property 1: Автоматическое добавление инструкции**
-   - Генерируем случайные промпты и пути к файлам
-   - Проверяем, что инструкция всегда добавляется корректно
-   - **Feature: file-output-tool-support, Property 1**
-
-2. **Property 2: Приоритет файлового вывода**
-   - Генерируем случайные файлы с контентом и stdout
-   - Проверяем, что результат всегда читается из файла
-   - **Feature: file-output-tool-support, Property 2**
-
-3. **Property 3: Graceful degradation**
-   - Генерируем случайные сценарии без файла
-   - Проверяем, что результат всегда читается из stdout
-   - **Feature: file-output-tool-support, Property 3**
-
-4. **Property 7: Работа без outputFile**
-   - Генерируем случайные запросы без `outputFile`
-   - Проверяем, что адаптер работает в стандартном режиме
-   - **Feature: file-output-tool-support, Property 7**
+1. **Property 1: Безопасность по умолчанию** - 100 итераций
+2. **Property 2: Изоляция записи** - 100 итераций
+3. **Property 3: Запрет execute по умолчанию** - 100 итераций
 
 ### Integration-тесты
 
-1. **Тест полного workflow**
-   - Создаем workflow с шагом, использующим `outputs`
-   - Проверяем, что результат корректно сохраняется в артефакт
-   - Проверяем, что файл создается и читается
+1. **Тест с реальным Codex CLI** в read-only режиме
+2. **Тест с реальным Claude CLI** с ограниченными инструментами
+3. **Тест graceful degradation** при отсутствии файла
 
-2. **Тест с Gemini CLI**
-   - Реальный запрос к Gemini с инструментом `write_file`
-   - Проверяем создание файла и чтение результата
+## План миграции
 
-3. **Тест с Codex CLI**
-   - Реальный запрос к Codex с инструментом `write_file`
-   - Проверяем создание файла и чтение результата
+### Фаза 1: Расширение типов
+- Добавить `StepPermissions` в types.ts
+- Добавить `permissions` в `AdapterRequest`
 
-4. **Тест с Claude CLI**
-   - Реальный запрос к Claude с инструментом записи файлов
-   - Проверяем создание файла и чтение результата
-   - Проверяем graceful degradation если файл не создан
+### Фаза 2: Базовый адаптер
+- Реализовать `appendFileWriteInstruction` с параметром toolName
+- Реализовать `readResultFromFile` с polling
+- Добавить абстрактный метод `mapPermissionsToArgs`
 
-### Тестовые данные
+### Фаза 3: Codex адаптер
+- Реализовать `mapPermissionsToArgs` с sandbox режимами
+- Читать файл из `--output-last-message` после выполнения
+- Убедиться что yolo не используется по умолчанию
 
-Для property-based тестов используем генераторы:
-- Случайные промпты (ASCII и Unicode)
-- Случайные пути к файлам (относительные и абсолютные)
-- Случайный контент файлов (пустые, малые, большие)
-- Случайный stdout (пустой, малый, большой)
+### Фаза 4: Claude адаптер
+- Реализовать `mapPermissionsToArgs` с --tools и --allowedTools
+- Добавить инструкцию записи с инструментом `Write`
+- Реализовать чтение файла с fallback
 
-## Решения по дизайну
+### Фаза 5: Gemini адаптер
+- Рефакторинг для использования общих методов
+- Сохранить текущее поведение
 
-### 1. Общая логика в базовом адаптере
-
-**Решение**: Вынести логику работы с файловым выводом в `BaseCLIAdapter`
-
-**Обоснование**:
-- Избегаем дублирования кода между адаптерами (Gemini, Codex, Claude)
-- Упрощаем добавление поддержки в новые адаптеры
-- Обеспечиваем консистентность поведения
-
-**Альтернативы**:
-- Реализовать в каждом адаптере отдельно (отклонено: дублирование кода)
-- Создать отдельный helper-класс (отклонено: излишняя сложность)
-
-### 2. Автоматическое добавление инструкции
-
-**Решение**: Автоматически добавлять инструкцию записи в промпт при наличии `outputFile`
-
-**Обоснование**:
-- Упрощает конфигурацию workflow (не нужно дублировать инструкцию)
-- Обеспечивает консистентность формата инструкции
-- Снижает вероятность ошибок пользователя
-
-**Альтернативы**:
-- Требовать явного указания инструкции в промпте (отклонено: дублирование)
-- Использовать отдельное поле в конфигурации (отклонено: излишняя сложность)
-
-### 3. Graceful degradation
-
-**Решение**: Всегда пытаться прочитать из файла, но fallback на stdout при ошибках
-
-**Обоснование**:
-- Обеспечивает совместимость с моделями без поддержки инструментов
-- Обеспечивает совместимость с CLI-утилитами без поддержки инструментов (например, Claude CLI)
-- Повышает надежность системы
-- Не требует изменений в существующих workflow
-
-**Альтернативы**:
-- Выбрасывать ошибку при отсутствии файла (отклонено: низкая надежность)
-- Требовать явного указания режима (отклонено: усложнение конфигурации)
-
-### 4. Формат инструкции
-
-**Решение**: Использовать формат "CRITICAL: If write_file tool is available, use it..."
-
-**Обоснование**:
-- Явно указывает на важность инструкции
-- Предоставляет fallback-инструкцию для моделей без поддержки
-- Совместимо с различными моделями (Gemini, GPT, Claude)
-
-**Альтернативы**:
-- Использовать более короткую инструкцию (отклонено: менее явная)
-- Использовать JSON-формат (отклонено: не все модели поддерживают)
-
-### 5. Флаги для Codex
-
-**Решение**: Использовать `--allowed-tools write_file`, `--yolo`, `--output-last-message`
-
-**Обоснование**:
-- `--allowed-tools write_file`: ограничивает разрешенные инструменты
-- `--yolo`: автоматически подтверждает использование инструмента
-- `--output-last-message`: указывает путь для сохранения финального сообщения
-
-**Альтернативы**:
-- Использовать только `--allowed-tools` (отклонено: требует ручного подтверждения)
-- Не использовать `--output-last-message` (отклонено: менее надежно)
-
-### 6. Время ожидания записи файла
-
-**Решение**: Ждать 1 секунду перед чтением файла
-
-**Обоснование**:
-- Дает время модели записать файл на диск
-- Предотвращает race condition
-- Достаточно для большинства случаев
-
-**Альтернативы**:
-- Не ждать (отклонено: race condition)
-- Ждать дольше (отклонено: замедляет выполнение)
-- Использовать polling (отклонено: излишняя сложность)
-
-### 7. Подход к Claude CLI
-
-**Решение**: Использовать флаги `--allowedTools "Write"` и `--dangerously-skip-permissions` для поддержки инструментов
-
-**Обоснование**:
-- Claude CLI поддерживает инструменты через флаг `--allowedTools`
-- `--dangerously-skip-permissions` автоматически подтверждает использование инструментов
-- Graceful degradation обеспечивает работоспособность если инструмент не сработает
-- Единообразный подход с Codex и Gemini
-
-**Альтернативы**:
-- Не использовать инструменты для Claude (отклонено: упускаем возможность)
-- Требовать ручного подтверждения (отклонено: не подходит для автоматизации)
-
-**Открытые вопросы**:
-- Точное название инструмента записи файлов (предположительно `Write`)
-- Наличие аналога `--output-last-message` для явного указания пути
-
-## Миграция и развертывание
-
-### Изменения в существующем коде
-
-1. **BaseCLIAdapter**
-   - Добавление новых protected методов
-   - Изменение сигнатуры `execute()` не требуется
-
-2. **GeminiCLIAdapter**
-   - Рефакторинг для использования общих методов
-   - Поведение остается функционально идентичным
-
-3. **CodexCLIAdapter**
-   - Добавление логики для `outputFile`
-   - Поведение без `outputFile` остается неизменным
-
-4. **ClaudeCLIAdapter**
-   - Добавление логики для `outputFile`
-   - Поведение без `outputFile` остается неизменным
-
-### План развертывания
-
-1. **Фаза 1**: Добавление методов в `BaseCLIAdapter`
-   - Реализация `extractOutputPath()`
-   - Реализация `appendFileWriteInstruction()`
-   - Реализация `readResultFromFile()`
-   - Unit-тесты для новых методов
-
-2. **Фаза 2**: Рефакторинг `GeminiCLIAdapter`
-   - Использование общих методов
-   - Удаление дублирующегося кода
-   - Тестирование функциональности
-
-3. **Фаза 3**: Обновление `CodexCLIAdapter`
-   - Добавление поддержки `outputFile`
-   - Добавление флагов инструментов
-   - Тестирование с реальным Codex CLI
-
-4. **Фаза 4**: Обновление `ClaudeCLIAdapter`
-   - Добавление поддержки `outputFile`
-   - Добавление флагов `--allowedTools "Write"` и `--dangerously-skip-permissions`
-   - Проверка точного названия инструмента записи файлов
-   - Тестирование с реальным Claude CLI
-
-5. **Фаза 5**: Актуализация примеров и документации
-   - Обновление примеров workflow в директории `examples/`
-   - Добавление примеров использования `outputs` в шагах
-   - Обновление README адаптеров
-   - Обновление руководства пользователя
-   - Создание миграционного руководства для существующих workflow
+### Фаза 6: Тестирование и документация
+- Написать тесты для всех properties
+- Обновить примеры workflow
+- Создать миграционное руководство
 
 ## Безопасность
 
-### Валидация путей к файлам
+### Принцип минимальных привилегий
 
-Необходимо валидировать пути к файлам для предотвращения:
-- Path traversal атак (например, `../../etc/passwd`)
-- Записи в системные директории
-- Перезаписи критических файлов
+1. **По умолчанию: read-only** - модель может только читать
+2. **Явное указание write** - только тогда разрешена запись
+3. **Явное указание execute** - только тогда разрешены команды
+4. **fullAccess только явно** - никогда автоматически
 
-**Рекомендации**:
-- Использовать `path.resolve()` для нормализации путей
-- Проверять, что путь находится внутри рабочей директории
-- Ограничить разрешенные расширения файлов (например, только `.md`)
-
-### Разрешения инструментов
-
-Конфигурация `permissions` в роли должна контролировать:
-- Какие инструменты разрешены
-- Какие файлы можно редактировать (по маске)
-- Какие директории доступны
-
-**Пример**:
-```yaml
-roles:
-  requirements_writer:
-    adapter: gemini-cli
-    permissions:
-      - edit: "*.md"  # Только markdown файлы
-      - read: "**/*"  # Чтение всех файлов
-```
-
-## Производительность
-
-### Оптимизации
-
-1. **Кэширование результатов**
-   - Не требуется: каждый запрос уникален
-
-2. **Параллельное выполнение**
-   - Не применимо: шаги выполняются последовательно
-
-3. **Размер файлов**
-   - Ограничение не требуется: модели сами ограничивают размер вывода
-
-### Метрики
-
-Необходимо отслеживать:
-- Время чтения файла vs stdout
-- Частота использования файлового вывода
-- Частота fallback на stdout
-- Размер создаваемых файлов
-- Успешность использования инструментов по адаптерам
-
-## Зависимости
-
-### Внешние зависимости
-
-- `fs/promises`: для асинхронного чтения файлов
-- `path`: для работы с путями
-- `os`: для получения временной директории (уже используется в Gemini)
-
-### Внутренние зависимости
-
-- `BaseCLIAdapter`: базовый класс для всех адаптеров
-- `AdapterRequest`, `AdapterResponse`: типы для запросов и ответов
-- `Logger`: для логирования операций
-
-## Будущие улучшения
-
-### Возможные расширения
-
-1. **Поддержка множественных выходных файлов**
-   - Модель может создавать несколько файлов
-   - Требует изменения формата `outputs`
-
-2. **Поддержка бинарных файлов**
-   - Модель может создавать изображения, PDF и т.д.
-   - Требует изменения логики чтения
-
-3. **Валидация содержимого файлов**
-   - Проверка формата (например, валидный Markdown)
-   - Проверка размера
-   - Проверка на вредоносный контент
-
-4. **Streaming вывода**
-   - Чтение файла по мере записи
-   - Отображение прогресса пользователю
-
-5. **Поддержка других инструментов**
-   - `read_file`: чтение файлов моделью
-   - `edit_file`: редактирование существующих файлов
-   - `delete_file`: удаление файлов
-
-6. **Автоматическое определение поддержки инструментов**
-   - Проверка возможностей CLI-утилиты при инициализации
-   - Автоматический выбор стратегии (с инструментами или без)
-
-## Примеры использования
-
-### Пример 1: Workflow с генерацией требований
-
-```yaml
-steps:
-  - id: generate_requirements
-    name: "Генерация требований"
-    type: model
-    role: requirements_writer
-    prompt_template: |
-      Создай документ требований для функции: ${feature_description}
-    outputs:
-      requirements: "artifacts/${session_id}/requirements.md"
-```
-
-### Пример 2: Codex адаптер с файловым выводом
+### Валидация permissions
 
 ```typescript
-const request: AdapterRequest = {
-  prompt: "Напиши документ требований для системы аутентификации",
-  model: "gpt-5.2",
-  outputFile: "artifacts/requirements.md"
-};
+function validatePermissions(permissions: StepPermissions): void {
+  if (permissions.fullAccess && (permissions.read || permissions.write)) {
+    throw new Error('fullAccess нельзя комбинировать с read/write');
+  }
 
-const response = await codexAdapter.execute(request);
-// response.content содержит контент из файла
-// response.metadata.outputFile === "artifacts/requirements.md"
-// response.metadata.resultSource === "file"
-```
-
-### Пример 3: Claude адаптер с файловым выводом
-
-```typescript
-const request: AdapterRequest = {
-  prompt: "Напиши документ архитектуры для микросервисов",
-  model: "claude-sonnet-4-5",
-  outputFile: "architecture.md"
-};
-
-const response = await claudeAdapter.execute(request);
-// response.content содержит контент из файла (если инструмент сработал)
-// или из stdout (graceful degradation)
-// response.metadata.outputFile === "architecture.md"
-// response.metadata.resultSource === "file" или "stdout"
-```
-
-### Пример 4: Gemini адаптер (рефакторенный)
-
-```typescript
-const request: AdapterRequest = {
-  prompt: "Создай документ дизайна для API",
-  model: "gemini-1.5-pro",
-  outputFile: "design.md"
-};
-
-const response = await geminiAdapter.execute(request);
-// response.content содержит контент из файла
-// response.metadata.outputFile === "design.md"
-// response.metadata.resultSource === "file"
+  // Проверка паттернов на path traversal
+  for (const pattern of [...(permissions.read || []), ...(permissions.write || [])]) {
+    if (pattern.includes('..')) {
+      throw new Error(`Недопустимый паттерн: ${pattern}`);
+    }
+  }
+}
 ```
 
 ## Заключение
 
 Данный дизайн обеспечивает:
-- **Унификацию**: общая логика для всех **CLI-адаптеров** (Gemini, Codex, Claude)
-- **Надежность**: graceful degradation при отсутствии поддержки инструментов
-- **Расширяемость**: легкое добавление поддержки в новые CLI-адаптеры
-- **Безопасность**: валидация путей и контроль разрешений
-- **Четкое разделение**: HTTP-адаптеры не затронуты, так как не имеют проблемы обрезания вывода
 
-Все три основных CLI-адаптера (Gemini, Codex, Claude) поддерживают инструменты записи файлов, что позволяет реализовать единообразное решение для всех CLI-платформ.
+1. **Безопасность по умолчанию** - read-only режим без явного указания permissions
+2. **Гибкость** - разные уровни доступа через permissions
+3. **Унификация** - общий подход для всех CLI-адаптеров
+4. **Graceful degradation** - работа даже при отсутствии поддержки инструментов
+5. **Аудит** - логирование всех действий
 
-### Открытые вопросы для реализации
+### Ключевые изменения от исходного дизайна Kiro
 
-1. **Claude CLI**: Точное название инструмента записи файлов (предположительно `Write`)
-2. **Claude CLI**: Наличие аналога `--output-last-message` для явного указания пути к файлу
-3. **Все CLI-адаптеры**: Оптимальное время ожидания записи файла (текущее значение: 1 секунда)
-
-### Задачи после реализации
-
-1. **Актуализация примеров workflow** в директории `examples/`
-2. **Создание миграционного руководства** для обновления существующих workflow
-3. **Обновление документации** с примерами использования `outputs`
+1. **Убран `--allowed-tools write_file` для Codex** - такого флага нет в Codex CLI
+2. **Добавлена система permissions** - контроль действий модели
+3. **Безопасный режим по умолчанию** - никогда не используем yolo автоматически
+4. **Polling вместо фиксированной задержки** - надежное чтение файла
+5. **Адаптивное имя инструмента** - `write_file` для Gemini, `Write` для Claude

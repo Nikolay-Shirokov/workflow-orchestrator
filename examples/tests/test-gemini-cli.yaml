@@ -1,0 +1,62 @@
+# Тестовый сценарий для Gemini CLI адаптера
+# Проверяет базовые функции: временный файл, модель, вывод
+
+workflow:
+  name: "test-gemini-cli"
+  version: "1.0"
+  description: "Тест Gemini CLI адаптера"
+
+  settings:
+    artifacts_dir: "artifacts/test-gemini-${timestamp}"
+    default_adapter: "gemini-cli"
+    log_level: "debug"
+
+  roles:
+    tester:
+      adapter: "gemini-cli"
+      model: "gemini-2.5-pro"
+      role_definition: "Ты тестовый ассистент. Отвечай кратко."
+      temperature: 0.3
+      max_tokens: 500
+      permissions:
+        - read
+        - "edit:artifacts/**/*"
+      default_permissions:
+        read: ["**/*"]
+        write: ["artifacts/**/*"]
+
+  steps:
+    # Тест 1: Базовый запрос через временный файл
+    - id: test1_basic
+      name: "Тест 1: Базовый запрос"
+      type: model
+      role: tester
+      prompt_template: |
+        Скажи "Hello from Gemini CLI" и больше ничего.
+      outputs:
+        result: "${artifacts_dir}/test1_basic.md"
+
+    # Тест 2: Запрос на русском (проверка кодировки)
+    - id: test2_russian
+      name: "Тест 2: Русский текст"
+      type: model
+      role: tester
+      prompt_template: |
+        Скажи "Привет от Gemini CLI" на русском языке и больше ничего.
+      outputs:
+        result: "${artifacts_dir}/test2_russian.md"
+
+    # Тест 3: Генерация структурированного вывода
+    - id: test3_structured
+      name: "Тест 3: Структурированный вывод"
+      type: model
+      role: tester
+      prompt_template: |
+        Создай JSON объект с полями:
+        - adapter: "gemini-cli"
+        - status: "working"
+        - timestamp: текущая дата
+
+        Выведи ТОЛЬКО JSON, без пояснений.
+      outputs:
+        result: "${artifacts_dir}/test3_structured.json"

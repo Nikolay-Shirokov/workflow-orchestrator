@@ -11,9 +11,14 @@
 
 ## 🚀 Быстрый старт
 
+> **Примечание:** Пакет пока не опубликован на npm. Используйте локальную установку из репозитория.
+
 ```bash
-# Установка
-npm install -g workflow-orchestrator
+# Клонирование и установка
+git clone https://github.com/anthropics/workflow-orchestrator.git
+cd workflow-orchestrator
+npm install
+npm run build
 
 # Создайте файл my-workflow.yaml
 cat > my-workflow.yaml << 'EOF'
@@ -38,9 +43,11 @@ workflow:
         result: "${artifacts_dir}/greeting.md"
 EOF
 
-# Запустите
-workflow-orchestrator run my-workflow.yaml
+# Запустите (из директории проекта)
+node dist/cli/cli.js run my-workflow.yaml
 ```
+
+> После публикации на npm можно будет использовать: `workflow-orchestrator run my-workflow.yaml`
 
 📖 Подробнее: [Руководство по началу работы](docs/GETTING_STARTED.md)
 

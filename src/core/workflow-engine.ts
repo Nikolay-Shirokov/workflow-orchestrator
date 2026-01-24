@@ -25,7 +25,6 @@ import {
 import { WorkflowConfigParser, DependencyGraph } from './workflow-config-parser.js';
 import { StateManager } from './state-manager.js';
 import { RoleManager } from './role-manager.js';
-import { MCPManager, MCPContext } from './mcp-manager.js';
 import { IProgressDisplay } from '../cli/display-types.js';
 
 /**
@@ -109,9 +108,6 @@ export interface WorkflowEngineConfig {
   
   /** Менеджер ролей (опционально) */
   roleManager?: RoleManager;
-  
-  /** Менеджер MCP-инструментов (опционально) */
-  mcpManager?: MCPManager;
 }
 
 /**
@@ -126,8 +122,6 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
   private artifactManager: ArtifactManager;
   private logger: Logger;
   private roleManager?: RoleManager;
-  private mcpManager?: MCPManager;
-  private mcpContext?: MCPContext;
 
   constructor(config: WorkflowEngineConfig) {
     this.configParser = config.configParser;
@@ -138,7 +132,6 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
     this.artifactManager = config.artifactManager;
     this.logger = config.logger;
     this.roleManager = config.roleManager;
-    this.mcpManager = config.mcpManager;
   }
 
   /**
@@ -228,23 +221,11 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       this.logger.info(`Загружено ролей: ${Object.keys(config.roles).length}`);
     }
 
-    // Инициализация MCP-инструментов, если они определены
-    if (config.settings.mcp_tools && this.mcpManager) {
-      this.logger.info('Проверка доступности MCP-инструментов...');
-      const toolsInfo = await this.mcpManager.checkMultipleTools(config.settings.mcp_tools);
-      this.mcpContext = this.mcpManager.createMCPContext(toolsInfo);
-      
-      // Передаем MCP-контекст в StepExecutor, если он поддерживает это
-      if (this.stepExecutor && 'setMCPContext' in this.stepExecutor) {
-        (this.stepExecutor as any).setMCPContext(this.mcpContext);
-      }
-      
-      // Логирование недоступных инструментов
-      this.mcpManager.logUnavailableTools(toolsInfo);
-      
-      this.logger.info(
-        `MCP-инструменты: ${this.mcpContext.available_tools.length} доступно, ` +
-        `${this.mcpContext.unavailable_tools.length} недоступно`
+    // Предупреждение о deprecated mcp_tools в settings
+    if (config.settings.mcp_tools && config.settings.mcp_tools.length > 0) {
+      this.logger.warn(
+        'settings.mcp_tools устарело. Используйте StepCapabilities.mcp_tools в permissions шага. ' +
+        'MCP-серверы настраиваются на уровне CLI-утилиты.'
       );
     }
 
@@ -281,9 +262,7 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       workflow_name: config.name,
       workflow_version: config.version,
       session_id: state.sessionId,
-      timestamp: state.sessionId.match(/session_(.+?)_/)?.[1] || '',
-      // Добавляем MCP-контекст, если доступен
-      ...(this.mcpContext ? { mcp_tools: this.mcpContext.flags } : {})
+      timestamp: state.sessionId.match(/session_(.+?)_/)?.[1] || ''
     };
 
     // Сохранение начального состояния
@@ -323,33 +302,16 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       this.logger.info(`Загружено ролей: ${Object.keys(config.roles).length}`);
     }
 
-    // Инициализация MCP-инструментов, если они определены
-    if (config.settings.mcp_tools && this.mcpManager) {
-      this.logger.info('Проверка доступности MCP-инструментов...');
-      const toolsInfo = await this.mcpManager.checkMultipleTools(config.settings.mcp_tools);
-      this.mcpContext = this.mcpManager.createMCPContext(toolsInfo);
-      
-      // Передаем MCP-контекст в StepExecutor, если он поддерживает это
-      if (this.stepExecutor && 'setMCPContext' in this.stepExecutor) {
-        (this.stepExecutor as any).setMCPContext(this.mcpContext);
-      }
-      
-      // Логирование недоступных инструментов
-      this.mcpManager.logUnavailableTools(toolsInfo);
-      
-      this.logger.info(
-        `MCP-инструменты: ${this.mcpContext.available_tools.length} доступно, ` +
-        `${this.mcpContext.unavailable_tools.length} недоступно`
+    // Предупреждение о deprecated mcp_tools в settings
+    if (config.settings.mcp_tools && config.settings.mcp_tools.length > 0) {
+      this.logger.warn(
+        'settings.mcp_tools устарело. Используйте StepCapabilities.mcp_tools в permissions шага. ' +
+        'MCP-серверы настраиваются на уровне CLI-утилиты.'
       );
     }
 
     // Загрузка состояния
     const state = await this.stateManager.loadState(sessionId);
-
-    // Обновляем MCP-контекст в состоянии, если доступен
-    if (this.mcpContext) {
-      state.context.mcp_tools = this.mcpContext.flags;
-    }
 
     // Проверка совместимости версий
     if (state.workflowName !== config.name) {
@@ -628,20 +590,7 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       return true;
     }
 
-    // Проверяем MCP-условия, если доступен MCPManager
-    if (this.mcpManager && this.mcpContext) {
-      const mcpResult = this.mcpManager.evaluateCondition(step.condition, this.mcpContext);
-      
-      // Если это MCP-условие и оно не выполнено, пропускаем шаг
-      if (!mcpResult && step.condition in this.mcpContext.flags) {
-        this.logger.info(
-          `Шаг ${step.id} пропущен: MCP-условие "${step.condition}" не выполнено`
-        );
-        return false;
-      }
-    }
-
-    // Проверяем другие условия из контекста
+    // Проверяем условия из контекста
     try {
       // Простая оценка условия из контекста
       const conditionValue = this.evaluateConditionExpression(step.condition, state.context);

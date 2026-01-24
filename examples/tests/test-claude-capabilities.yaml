@@ -1,0 +1,39 @@
+# Тест capabilities для Claude CLI
+# Проверяет web_search и file write через Write tool
+
+workflow:
+  name: "test-claude-capabilities"
+  version: "1.0"
+  description: "Тест capabilities Claude CLI"
+
+  settings:
+    artifacts_dir: "artifacts/test-claude-caps-${timestamp}"
+    log_level: "debug"
+
+  roles:
+    researcher:
+      adapter: "claude-cli"
+      model: "sonnet"
+      role_definition: "Ты исследователь. Отвечай кратко."
+      temperature: 0.3
+      max_tokens: 1000
+      permissions:
+        - read
+        - "edit:artifacts/**/*"
+      default_permissions:
+        read: ["**/*"]
+        write: ["artifacts/**/*"]
+      default_capabilities:
+        web_search: true
+
+  steps:
+    # Тест 1: Web search capability
+    - id: test_web_search
+      name: "Тест: Web Search"
+      type: model
+      role: researcher
+      prompt_template: |
+        Найди в интернете текущую версию Node.js LTS.
+        Ответь одной строкой в формате: "Node.js LTS: версия X.Y.Z"
+      outputs:
+        result: "${artifacts_dir}/web_search_result.md"

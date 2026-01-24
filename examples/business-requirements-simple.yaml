@@ -19,9 +19,10 @@ workflow:
       adapter: "codex-cli"
       model: "gpt-5.2"
       role_definition: "Вы - бизнес-аналитик, помогающий формировать требования"
-      permissions:
-        - read
-        - edit: "*.md"  # Разрешение на редактирование markdown файлов
+      # Разрешения: чтение и запись markdown файлов
+      default_permissions:
+        read: ["*.md", "artifacts/**/*"]
+        write: ["artifacts/**/*.md"]
   
   steps:
     # Шаг 1: Описание потребности

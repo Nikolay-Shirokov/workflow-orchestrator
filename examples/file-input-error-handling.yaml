@@ -29,6 +29,10 @@ workflow:
       adapter: "claude-cli"
       model: "claude-sonnet-3.5"
       role_definition: "Дружелюбный помощник"
+      # Разрешения: чтение и запись в artifacts
+      default_permissions:
+        read: ["*.md", "*.yaml", "*.json", "*.txt", "artifacts/**/*"]
+        write: ["artifacts/**/*"]
   
   steps:
     # ============================================================

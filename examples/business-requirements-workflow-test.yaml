@@ -1,0 +1,653 @@
+# ТЕСТОВАЯ ВЕРСИЯ: Workflow для проектирования бизнес-требований
+# Mock-данные вместо user_input для автоматической отладки
+
+workflow:
+  name: "business-requirements-design-test"
+  version: "2.0-test"
+  description: "ТЕСТОВАЯ ВЕРСИЯ с mock-данными для отладки"
+  author: "Workflow Orchestrator Team"
+
+  settings:
+    artifacts_dir: "artifacts/test-${timestamp}"
+    default_adapter: "claude-cli"
+    default_file_format: "markdown"
+    log_level: "debug"
+
+  # Определение ролей
+  roles:
+    researcher:
+      adapter: "gemini-cli"
+      model: "gemini-2.5-pro"
+      role_definition: |
+        Вы - ИССЛЕДОВАТЕЛЬ, который собирает информацию из интернета.
+        Ваша роль - найти релевантные данные, примеры, best practices
+        и конкурентов по теме пользователя.
+      temperature: 0.5
+      max_tokens: 4000
+      # Разрешения для внутренней проверки
+      permissions:
+        - read
+        - "edit:artifacts/**/*"
+      # Разрешения для CLI-адаптера
+      default_permissions:
+        read: ["**/*.md", "artifacts/**/*"]
+        write: ["artifacts/**/*"]
+      default_capabilities:
+        web_search: true
+
+    architect:
+      adapter: "claude-cli"
+      model: "sonnet"
+      role_definition: |
+        Вы - ГЛАВНЫЙ АРХИТЕКТОР в процессе разработки требований.
+        Ваша роль - задавать глубокие вопросы, анализировать потребности
+        и формировать структурированные требования.
+        Вы фокусируетесь на полноте, ясности и реализуемости требований.
+      temperature: 0.7
+      max_tokens: 4000
+      permissions:
+        - read
+        - "edit:artifacts/**/*"
+      default_permissions:
+        read: ["**/*.md", "artifacts/**/*"]
+        write: ["artifacts/**/*"]
+
+    copilot:
+      adapter: "gemini-cli"
+      model: "gemini-2.5-pro"
+      role_definition: |
+        Вы - ВТОРОЙ ПИЛОТ, предоставляющий критический анализ и альтернативные перспективы.
+        Ваша роль - выявлять пробелы, предлагать улучшения и задавать вопросы,
+        которые могли быть упущены.
+        Вы фокусируетесь на пользовательском опыте и практичности решения.
+      temperature: 0.7
+      max_tokens: 4000
+      permissions:
+        - read
+        - "edit:artifacts/**/*"
+      default_permissions:
+        read: ["**/*.md", "artifacts/**/*"]
+        write: ["artifacts/**/*"]
+      default_capabilities:
+        web_search: true
+
+  steps:
+    # ============================================================
+    # ШАГ 1: MOCK - Описание потребности пользователя
+    # ============================================================
+    - id: "step1_user_need"
+      name: "[MOCK] Описание потребности"
+      type: "script"
+      description: "Mock-данные вместо ввода пользователя"
+      shell: "bash"
+      script: "cat examples/mock-data/user_need.md"
+      outputs:
+        user_need: "${artifacts_dir}/step1_user_need.md"
+
+    # ============================================================
+    # ШАГ 1b: Веб-исследование по теме пользователя
+    # ============================================================
+    - id: "step1b_web_research"
+      name: "Веб-исследование"
+      type: "model"
+      role: "researcher"
+      depends_on: ["step1_user_need"]
+      description: "Исследователь собирает информацию из интернета по теме пользователя"
+      prompt_template: |
+        Пользователь описал свою потребность:
+
+        ${user_need}
+
+        Проведи веб-исследование по этой теме. Найди:
+
+        1. **Существующие решения**
+           - Аналоги и конкуренты
+           - Их сильные и слабые стороны
+           - Ценовые категории
+
+        2. **Best practices**
+           - Рекомендуемые подходы в индустрии
+           - Стандарты и паттерны
+           - Типичные ошибки, которых стоит избежать
+
+        3. **Технологии и инструменты**
+           - Популярные технологические решения
+           - Фреймворки и библиотеки
+           - Интеграции и API
+
+        4. **Рыночная информация**
+           - Тренды в данной области
+           - Целевая аудитория и её потребности
+           - Размер рынка (если применимо)
+
+        Предоставь структурированный отчет с ссылками на источники.
+        Сосредоточься на информации, которая поможет сформулировать
+        правильные вопросы и требования.
+      inputs:
+        user_need: "${user_need}"
+      outputs:
+        web_research: "${artifacts_dir}/step1b_web_research.md"
+
+    # ============================================================
+    # ШАГ 2: Архитектор формирует первичные вопросы
+    # ============================================================
+    - id: "step2_architect_questions"
+      name: "Вопросы от архитектора"
+      type: "model"
+      role: "architect"
+      depends_on: ["step1_user_need", "step1b_web_research"]
+      description: "Архитектор формирует вопросы для уточнения требований"
+      prompt_template: |
+        Пользователь описал свою потребность:
+
+        <user_need>
+        ${user_need}
+        </user_need>
+
+        Вот результаты веб-исследования по этой теме:
+
+        <web_research>
+        ${web_research}
+        </web_research>
+
+        Учитывая потребность пользователя и результаты исследования,
+        задай все необходимые вопросы для решения этой задачи.
+
+        Сфокусируйся на:
+        - Функциональных требованиях (с учетом найденных аналогов)
+        - Технических аспектах (с учетом best practices)
+        - Ограничениях и зависимостях
+        - Критериях успеха
+        - Отличиях от конкурентов
+
+        Сформулируй вопросы четко и структурированно.
+      inputs:
+        user_need: "${user_need}"
+        web_research: "${web_research}"
+      outputs:
+        architect_questions: "${artifacts_dir}/step2_architect_questions.md"
+
+    # ============================================================
+    # ШАГ 3: Второй пилот формирует свои вопросы
+    # ============================================================
+    - id: "step3_copilot_questions"
+      name: "Вопросы от второго пилота"
+      type: "model"
+      role: "copilot"
+      depends_on: ["step1_user_need", "step1b_web_research"]
+      description: "Второй пилот формирует альтернативные вопросы"
+      prompt_template: |
+        Пользователь описал свою потребность:
+
+        <user_need>
+        ${user_need}
+        </user_need>
+
+        Вот результаты веб-исследования по этой теме:
+
+        <web_research>
+        ${web_research}
+        </web_research>
+
+        Учитывая потребность пользователя и результаты исследования,
+        задай все необходимые вопросы для решения этой задачи.
+
+        Сфокусируйся на:
+        - Пользовательском опыте (с учетом конкурентов)
+        - Бизнес-логике
+        - Рисках и проблемах (учитывая типичные ошибки из исследования)
+        - Альтернативных подходах (на основе найденных решений)
+
+        Сформулируй вопросы четко и структурированно.
+      inputs:
+        user_need: "${user_need}"
+        web_research: "${web_research}"
+      outputs:
+        copilot_questions: "${artifacts_dir}/step3_copilot_questions.md"
+
+    # ============================================================
+    # ШАГ 4: Архитектор анализирует вопросы второго пилота
+    # ============================================================
+    - id: "step4_architect_analysis"
+      name: "Анализ архитектора"
+      type: "model"
+      role: "architect"
+      depends_on: ["step1_user_need", "step2_architect_questions", "step3_copilot_questions"]
+      description: "Архитектор анализирует вопросы второго пилота"
+      prompt_template: |
+        Напоминаю исходную потребность пользователя:
+
+        <user_need>
+        ${user_need}
+        </user_need>
+
+        Я задал этот же вопрос другой нейросети. Ты будешь главным архитектором,
+        а она "вторым пилотом".
+
+        Вот вопросы от второго пилота:
+
+        <copilot>
+        ${copilot_questions}
+        </copilot>
+
+        Вот твои вопросы:
+
+        <architect>
+        ${architect_questions}
+        </architect>
+
+        Проанализируй их в контексте исходной потребности, собери вместе то,
+        с чем вы согласны, и выдели то, что есть только у них или у тебя.
+        Укажи, какие вопросы наиболее важны для решения задачи пользователя.
+      inputs:
+        user_need: "${user_need}"
+        copilot_questions: "${copilot_questions}"
+        architect_questions: "${architect_questions}"
+      outputs:
+        architect_analysis: "${artifacts_dir}/step4_architect_analysis.md"
+
+    # ============================================================
+    # ШАГ 5: Второй пилот дает рекомендации
+    # ============================================================
+    - id: "step5_copilot_analysis"
+      name: "Рекомендации второго пилота"
+      type: "model"
+      role: "copilot"
+      depends_on: ["step1_user_need", "step2_architect_questions", "step3_copilot_questions"]
+      description: "Второй пилот анализирует вопросы архитектора"
+      prompt_template: |
+        Напоминаю исходную потребность пользователя:
+
+        <user_need>
+        ${user_need}
+        </user_need>
+
+        Отлично, ты будешь работать со мной и другой нейросетью как "второй пилот".
+        Она дает основу, а ты анализируешь и даешь рекомендации.
+
+        Сейчас я дам тебе резюме вопросов от архитектора:
+
+        <architect>
+        ${architect_questions}
+        </architect>
+
+        Вот твои вопросы для сравнения:
+
+        <copilot>
+        ${copilot_questions}
+        </copilot>
+
+        Проанализируй их в контексте исходной потребности и дай рекомендации:
+        - Что упущено для решения задачи пользователя?
+        - Что можно улучшить?
+        - Какие вопросы избыточны?
+        - Какие аспекты требуют большего внимания?
+      inputs:
+        user_need: "${user_need}"
+        architect_questions: "${architect_questions}"
+        copilot_questions: "${copilot_questions}"
+      outputs:
+        copilot_analysis: "${artifacts_dir}/step5_copilot_analysis.md"
+
+    # ============================================================
+    # ШАГ 6: Архитектор формирует MVP вопросы
+    # ============================================================
+    - id: "step6_architect_mvp_questions"
+      name: "MVP вопросы от архитектора"
+      type: "model"
+      role: "architect"
+      depends_on: ["step1_user_need", "step1b_web_research", "step4_architect_analysis", "step5_copilot_analysis"]
+      description: "Архитектор формирует финальные вопросы для MVP"
+      prompt_template: |
+        Напоминаю исходную потребность пользователя:
+
+        <user_need>
+        ${user_need}
+        </user_need>
+
+        Результаты веб-исследования (для контекста о рынке и конкурентах):
+
+        <web_research>
+        ${web_research}
+        </web_research>
+
+        Вот мнение по вопросам от второго пилота:
+
+        <copilot_analysis>
+        ${copilot_analysis}
+        </copilot_analysis>
+
+        Вот твой анализ:
+
+        <architect_analysis>
+        ${architect_analysis}
+        </architect_analysis>
+
+        Напиши мне такой список вопросов, ответив на который, мы получим
+        самый простой минимальный рабочий вариант (MVP) для решения
+        потребности пользователя.
+
+        Сфокусируйся на:
+        - Критически важных функциях для решения задачи
+        - Минимальных требованиях для запуска
+        - Ключевых решениях, которые нужно принять сейчас
+        - Отличиях от конкурентов (на основе веб-исследования)
+
+        Сформулируй вопросы четко, пронумеруй их.
+      inputs:
+        user_need: "${user_need}"
+        web_research: "${web_research}"
+        copilot_analysis: "${copilot_analysis}"
+        architect_analysis: "${architect_analysis}"
+      outputs:
+        architect_mvp_questions: "${artifacts_dir}/step6_architect_mvp_questions.md"
+
+    # ============================================================
+    # ШАГ 7: Второй пилот предлагает улучшения
+    # ============================================================
+    - id: "step7_copilot_improvements"
+      name: "Улучшения от второго пилота"
+      type: "model"
+      role: "copilot"
+      depends_on: ["step1_user_need", "step6_architect_mvp_questions"]
+      description: "Второй пилот предлагает улучшения для MVP вопросов"
+      prompt_template: |
+        Напоминаю исходную потребность пользователя:
+
+        <user_need>
+        ${user_need}
+        </user_need>
+
+        Я хочу MVP для решения этой потребности. Посмотри что предложил архитектор:
+
+        <architect_mvp>
+        ${architect_mvp_questions}
+        </architect_mvp>
+
+        Напиши только предложения к упрощению/улучшению вопросов в контексте
+        создания MVP для решения потребности пользователя.
+
+        Сфокусируйся на:
+        - Упрощении формулировок
+        - Удалении избыточных вопросов
+        - Объединении связанных вопросов
+        - Приоритизации вопросов
+
+        Будь конкретен и конструктивен.
+      inputs:
+        user_need: "${user_need}"
+        architect_mvp_questions: "${architect_mvp_questions}"
+      outputs:
+        copilot_improvements: "${artifacts_dir}/step7_copilot_improvements.md"
+
+    # ============================================================
+    # ШАГ 8: Архитектор формирует финальные вопросы
+    # ============================================================
+    - id: "step8_final_questions"
+      name: "Финальные вопросы"
+      type: "model"
+      role: "architect"
+      depends_on: ["step1_user_need", "step6_architect_mvp_questions", "step7_copilot_improvements"]
+      description: "Архитектор формирует финальный список вопросов"
+      prompt_template: |
+        Напоминаю исходную потребность пользователя:
+
+        <user_need>
+        ${user_need}
+        </user_need>
+
+        Держи мнение второго пилота по вопросам для пользователя:
+
+        <copilot_improvements>
+        ${copilot_improvements}
+        </copilot_improvements>
+
+        Твои MVP вопросы:
+
+        <mvp_questions>
+        ${architect_mvp_questions}
+        </mvp_questions>
+
+        Напиши итоговый список вопросов для пользователя, которые помогут
+        создать требования для решения его потребности.
+
+        Требования к списку:
+        - Четкие, понятные формулировки
+        - Логическая группировка по темам
+        - Нумерация вопросов
+        - Краткие пояснения где необходимо
+        - Примеры ответов для сложных вопросов
+
+        Формат:
+        ## [Название группы]
+
+        ### Вопрос N: [Текст вопроса]
+        [Краткое пояснение]
+        [Пример ответа при необходимости]
+      inputs:
+        user_need: "${user_need}"
+        copilot_improvements: "${copilot_improvements}"
+        architect_mvp_questions: "${architect_mvp_questions}"
+      outputs:
+        final_questions: "${artifacts_dir}/step8_final_questions.md"
+
+    # ============================================================
+    # ШАГ 9: MOCK - Ответы пользователя
+    # ============================================================
+    - id: "step9_user_answers"
+      name: "[MOCK] Ответы пользователя"
+      type: "script"
+      description: "Mock-ответы вместо ввода пользователя"
+      depends_on: ["step8_final_questions"]
+      shell: "bash"
+      script: "cat examples/mock-data/user_answers.md"
+      outputs:
+        user_answers: "${artifacts_dir}/step9_user_answers.md"
+
+    # ============================================================
+    # ШАГ 10: Архитектор формирует финальные требования
+    # ============================================================
+    - id: "step10_final_requirements"
+      name: "Финальные требования"
+      type: "model"
+      role: "architect"
+      depends_on: ["step9_user_answers", "step1_user_need", "step1b_web_research"]
+      description: "Архитектор формирует полные бизнес-требования"
+      timeout: 600000
+      permissions:
+        read: ["${artifacts_dir}/*.md"]
+        write: ["${artifacts_dir}/step10_*.md"]
+      prompt_template: |
+        На основе ответов пользователя и веб-исследования сформируй
+        полностью описанные бизнес-требования.
+
+        ## Исходная потребность
+
+        ${user_need}
+
+        ## Веб-исследование (конкуренты, best practices, технологии)
+
+        ${web_research}
+
+        ## Ответы пользователя
+
+        ${user_answers}
+
+        ## Задача
+
+        Создай документ с бизнес-требованиями, включающий:
+
+        1. **Краткое описание проекта**
+           - Цель проекта
+           - Целевая аудитория
+           - Ключевая ценность
+
+        2. **Функциональные требования**
+           - Основные функции (must-have)
+           - Дополнительные функции (nice-to-have)
+           - Детальное описание каждой функции
+
+        3. **Нефункциональные требования**
+           - Производительность
+           - Безопасность
+           - Масштабируемость
+           - Доступность
+
+        4. **Сценарии использования**
+           - Основные user stories
+           - Пошаговые сценарии
+           - Альтернативные потоки
+
+        5. **Сценарии тестирования**
+           - Критерии приемки
+           - Тестовые случаи
+           - Граничные условия
+
+        6. **Диаграммы взаимодействия (Mermaid)**
+           - Диаграмма последовательности для ключевых сценариев
+           - Диаграмма компонентов (если применимо)
+
+        7. **Ограничения и зависимости**
+           - Технические ограничения
+           - Бюджетные ограничения
+           - Временные рамки
+           - Внешние зависимости
+
+        8. **Критерии успеха**
+           - Метрики успеха
+           - KPI
+
+        Требования к документу:
+        - Без "воды", только конкретика
+        - Структурированный формат
+        - Четкие формулировки
+        - Измеримые критерии где возможно
+        - Приоритизация требований (must-have, should-have, nice-to-have)
+        - Сравнение с конкурентами (на основе веб-исследования)
+      inputs:
+        user_need: "${user_need}"
+        web_research: "${web_research}"
+        user_answers: "${user_answers}"
+      outputs:
+        final_requirements: "${artifacts_dir}/step10_final_requirements.md"
+
+    # ============================================================
+    # ШАГ 11: Второй пилот проводит ревью требований
+    # ============================================================
+    - id: "step11_requirements_review"
+      name: "Ревью требований"
+      type: "model"
+      role: "copilot"
+      depends_on: ["step1_user_need", "step9_user_answers", "step10_final_requirements"]
+      description: "Второй пилот проводит критическое ревью требований"
+      timeout: 600000
+      prompt_template: |
+        Напоминаю исходную потребность пользователя:
+
+        <user_need>
+        ${user_need}
+        </user_need>
+
+        Вот ответы пользователя на вопросы:
+
+        <user_answers>
+        ${user_answers}
+        </user_answers>
+
+        Проведи критическое ревью следующих бизнес-требований:
+
+        <requirements>
+        ${final_requirements}
+        </requirements>
+
+        Проанализируй в контексте исходной потребности и ответов:
+
+        1. **Полнота**
+           - Все ли аспекты исходной потребности покрыты?
+           - Все ли ответы пользователя учтены?
+           - Что упущено?
+
+        2. **Ясность**
+           - Все ли требования понятны?
+           - Есть ли двусмысленности?
+
+        3. **Реализуемость**
+           - Реалистичны ли требования?
+           - Есть ли противоречия?
+
+        4. **Приоритизация**
+           - Правильно ли расставлены приоритеты?
+           - Что действительно критично для MVP?
+
+        5. **Риски**
+           - Какие риски не учтены?
+           - Что может пойти не так?
+
+        Предоставь:
+        - Список найденных проблем
+        - Конкретные рекомендации по улучшению
+        - Предложения по оптимизации
+
+        Будь конструктивен и конкретен.
+      inputs:
+        user_need: "${user_need}"
+        user_answers: "${user_answers}"
+        final_requirements: "${final_requirements}"
+      outputs:
+        requirements_review: "${artifacts_dir}/step11_requirements_review.md"
+
+    # ============================================================
+    # ШАГ 12: Архитектор создает финальную версию с учетом ревью
+    # ============================================================
+    - id: "step12_final_version"
+      name: "Финальная версия требований"
+      type: "model"
+      role: "architect"
+      depends_on: ["step1_user_need", "step9_user_answers", "step10_final_requirements", "step11_requirements_review"]
+      description: "Архитектор создает финальную версию с учетом ревью"
+      timeout: 600000
+      prompt_template: |
+        Напоминаю исходную потребность пользователя:
+
+        <user_need>
+        ${user_need}
+        </user_need>
+
+        Вот ответы пользователя:
+
+        <user_answers>
+        ${user_answers}
+        </user_answers>
+
+        Вот бизнес-требования, которые ты создал:
+
+        <requirements>
+        ${final_requirements}
+        </requirements>
+
+        Вот ревью от второго пилота:
+
+        <review>
+        ${requirements_review}
+        </review>
+
+        Создай финальную версию требований, учитывая все замечания и рекомендации.
+        Убедись, что требования полностью соответствуют исходной потребности и
+        учитывают все ответы пользователя.
+
+        Сохрани структуру, но:
+        - Исправь найденные проблемы
+        - Добавь упущенные аспекты из исходной потребности и ответов
+        - Уточни неясные моменты
+        - Оптимизируй приоритизацию
+        - Добавь раздел с рисками и их митигацией
+
+        Это должна быть финальная, готовая к использованию версия документа,
+        которая полностью решает потребность пользователя.
+      inputs:
+        user_need: "${user_need}"
+        user_answers: "${user_answers}"
+        final_requirements: "${final_requirements}"
+        requirements_review: "${requirements_review}"
+      outputs:
+        final_version: "${artifacts_dir}/step12_final_requirements_v2.md"

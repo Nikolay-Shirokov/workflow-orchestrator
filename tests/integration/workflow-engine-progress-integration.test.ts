@@ -14,7 +14,6 @@ import { DefaultTemplateEngine } from '../../src/core/template-engine.js';
 import { createArtifactManager } from '../../src/core/artifact-manager.js';
 import { WorkflowConfigParser } from '../../src/core/workflow-config-parser.js';
 import { RoleManager } from '../../src/core/role-manager.js';
-import { MCPManager } from '../../src/core/mcp-manager.js';
 import { WorkflowConfig, WorkflowStep, WorkflowState, StepHistory } from '../../src/core/types.js';
 import { IProgressDisplay } from '../../src/cli/display-types.js';
 import { Logger, LogLevel } from '../../src/core/logger.js';
@@ -90,10 +89,8 @@ describe('Workflow Engine Progress Integration', () => {
       logger: logger
     });
     const roleManager = new RoleManager();
-    const mcpManager = new MCPManager(logger);
     const stepExecutor = createStepExecutor({
-      roleManager,
-      mcpManager
+      roleManager
     });
 
     workflowEngine = createWorkflowEngine({
@@ -104,8 +101,7 @@ describe('Workflow Engine Progress Integration', () => {
       templateEngine,
       artifactManager,
       logger: logger,
-      roleManager,
-      mcpManager
+      roleManager
     });
   });
 

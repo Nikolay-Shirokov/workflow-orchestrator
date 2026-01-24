@@ -187,6 +187,191 @@ await securityManager.initialize();
 }
 ```
 
+### 6. Разрешения на уровне шага (StepPermissions)
+
+Система разрешений позволяет контролировать действия AI-моделей на уровне каждого шага workflow. Это предотвращает ситуации, когда модель выполняет действия за пределами намерений пользователя.
+
+#### Структура StepPermissions
+
+```typescript
+interface StepPermissions {
+  read?: string[];      // Паттерны файлов для чтения
+  write?: string[];     // Паттерны файлов для записи
+  execute?: boolean;    // Разрешено ли выполнять shell-команды
+  fullAccess?: boolean; // Режим полного доступа (ОПАСНО)
+}
+```
+
+#### Принципы безопасности
+
+1. **Безопасность по умолчанию**: Без указания permissions используется режим только чтения
+2. **Минимальные привилегии**: Запрашивайте только необходимые разрешения
+3. **Явное указание опасных режимов**: `fullAccess` требует явного указания
+4. **Валидация паттернов**: Path traversal (`..`) запрещён в паттернах
+
+#### Маппинг на CLI-утилиты
+
+Разрешения автоматически преобразуются в безопасные флаги CLI:
+
+| Permissions | Codex CLI | Claude CLI | Gemini CLI |
+|-------------|-----------|------------|------------|
+| Без permissions | `--sandbox read-only` | Базовые tools | Без `--yolo` |
+| `write: [...]` | `--sandbox workspace-write` | `--tools "...,Write"` | `--allowed-tools write_file --yolo` |
+| `execute: true` | `--full-auto` | `--tools "...,Bash"` | `--allowed-tools shell --yolo` |
+| `fullAccess: true` | Без sandbox | `--dangerously-skip-permissions` | `--yolo` |
+
+#### Важные гарантии
+
+- `--yolo` (Codex) и `--dangerously-skip-permissions` (Claude) **НИКОГДА** не используются без явного `fullAccess: true`
+- `Bash` инструмент (Claude) **НЕДОСТУПЕН** без `execute: true`
+- `shell` инструмент (Gemini) **НЕДОСТУПЕН** без `execute: true`
+
+#### Пример в workflow
+
+```yaml
+steps:
+  - id: "analyze"
+    type: "model"
+    role: "architect"
+    permissions:
+      read: ["src/**/*.ts", "*.md"]
+    # Модель может только читать файлы, не может писать или выполнять команды
+
+  - id: "generate"
+    type: "model"
+    role: "architect"
+    permissions:
+      read: ["src/**/*.ts"]
+      write: ["docs/*.md"]
+    outputs:
+      documentation: "docs/API.md"
+    # Модель может читать и писать в указанные паттерны
+```
+
+### 7. Capabilities (Дополнительные возможности)
+
+Capabilities расширяют базовые разрешения файловой системы дополнительными возможностями: веб-поиск, загрузка веб-страниц, MCP-инструменты, интеграция с браузером.
+
+#### Структура StepCapabilities
+
+```typescript
+interface StepCapabilities {
+  web_search?: boolean;           // Поиск в интернете
+  web_fetch?: boolean;            // Загрузка веб-страниц по URL
+  mcp_tools?: boolean | string[]; // MCP-инструменты
+  browser?: boolean;              // Интеграция с браузером
+}
+```
+
+#### Риски безопасности
+
+| Capability | Риск | Описание |
+|------------|------|----------|
+| `web_search` | Средний | Модель может искать информацию в интернете, потенциально раскрывая контекст задачи |
+| `web_fetch` | Средний | Модель может загружать произвольные URL, возможна утечка данных через URL-параметры |
+| `mcp_tools` | Высокий | MCP-инструменты могут выполнять произвольные действия в зависимости от настройки сервера |
+| `browser` | Высокий | Полный доступ к браузеру, возможны атаки на пользовательские сессии |
+
+#### Рекомендации по использованию
+
+1. **Принцип минимальных привилегий**: Включайте только необходимые capabilities
+
+```yaml
+# Хорошо: только нужные capabilities
+permissions:
+  capabilities:
+    web_search: true
+
+# Плохо: все capabilities включены без необходимости
+permissions:
+  capabilities:
+    web_search: true
+    web_fetch: true
+    mcp_tools: true
+    browser: true
+```
+
+2. **Ограничение MCP-инструментов**: Если нужны MCP, указывайте конкретный список
+
+```yaml
+# Хорошо: только конкретные инструменты
+permissions:
+  capabilities:
+    mcp_tools: ["db_query", "db_read"]
+
+# Рискованно: все MCP-инструменты
+permissions:
+  capabilities:
+    mcp_tools: true
+```
+
+3. **Избегайте browser в продакшене**: Интеграция с браузером создаёт значительные риски
+
+```yaml
+# Для исследовательских задач
+permissions:
+  capabilities:
+    browser: true  # Только для интерактивных сценариев
+
+# Для автоматизации предпочтительнее
+permissions:
+  capabilities:
+    web_fetch: true  # Ограниченная загрузка страниц
+```
+
+4. **Разделение ролей**: Создавайте роли с разными уровнями capabilities
+
+```yaml
+roles:
+  researcher:
+    adapter: "claude-cli"
+    default_capabilities:
+      web_search: true
+      web_fetch: true
+    # Для исследовательских задач
+
+  writer:
+    adapter: "claude-cli"
+    default_capabilities: {}
+    # Без интернет-доступа для генерации контента
+
+  admin:
+    adapter: "claude-cli"
+    default_capabilities:
+      mcp_tools: true
+      browser: true
+    # Только для доверенных операций
+```
+
+#### Поддержка адаптерами
+
+| Capability | Claude CLI | Codex CLI | Gemini CLI |
+|------------|------------|-----------|------------|
+| `web_search` | ✅ WebSearch | ✅ --search | ✅ google_web_search |
+| `web_fetch` | ✅ WebFetch | ❌ | ✅ web_fetch |
+| `mcp_tools` | ✅ | ✅ (авто) | ✅ |
+| `browser` | ✅ --chrome | ❌ | ❌ |
+
+**Примечание**: Неподдерживаемые capabilities игнорируются с предупреждением в логах.
+
+#### MCP-безопасность
+
+MCP-серверы настраиваются **вне workflow** на уровне CLI-утилиты:
+
+```bash
+# Настройка MCP-сервера
+claude mcp add my-server --command "node /path/to/server.js"
+codex mcp add my-server
+gemini mcp add my-server
+```
+
+**Рекомендации по MCP**:
+
+1. Настраивайте MCP-серверы с минимальными привилегиями
+2. Используйте `includeTools`/`excludeTools` для ограничения доступных инструментов
+3. Логируйте все вызовы MCP-инструментов
+4. Не передавайте секреты через MCP без необходимости
+
 ## Интеграция с другими компонентами
 
 ### StateManager

@@ -1,9 +1,10 @@
-# Пример конфигурации рабочего процесса с MCP-инструментами
+# Пример конфигурации рабочего процесса с capabilities
+# Демонстрирует использование web_search, web_fetch и mcp_tools
 workflow:
   name: "research-workflow"
   version: "1.0"
-  description: "Рабочий процесс с использованием MCP-инструментов для веб-исследования"
-  
+  description: "Рабочий процесс с использованием capabilities для веб-исследования"
+
   settings:
     artifacts_dir: "artifacts/session_${timestamp}"
     default_adapter: "claude-cli"
@@ -11,42 +12,47 @@ workflow:
     max_retries: 3
     timeout: 300
     log_level: "info"
-    
-    # Конфигурация MCP-инструментов
-    mcp_tools:
-      # Инструмент веб-поиска
-      - name: "web_search"
-        checkCommand: "which mcp-web-search"  # Команда для проверки доступности
-        expectedExitCode: 0
-        timeout: 5000
-        required: false  # Не обязателен, процесс продолжится без него
-      
-      # Инструмент доступа к файлам
-      - name: "file_access"
-        checkCommand: "which mcp-file-access"
-        expectedExitCode: 0
-        timeout: 5000
-        required: false
-      
-      # Инструмент работы с базой данных
-      - name: "database"
-        checkCommand: "which mcp-database"
-        expectedExitCode: 0
-        timeout: 5000
-        required: true  # Обязателен, процесс завершится с ошибкой если недоступен
-  
-  # Определение ролей
+
+  # Определение ролей с default_capabilities
   roles:
     researcher:
       adapter: "claude-cli"
       model: "claude-sonnet-3.5"
       role_definition: |
         Вы - исследователь, который анализирует информацию и создает отчеты.
-        Используйте доступные MCP-инструменты для сбора информации.
-      permissions:
-        - read
-        - mcp
-  
+        Используйте доступные инструменты для сбора информации.
+      # Разрешения: чтение и запись в artifacts
+      default_permissions:
+        read: ["*.md", "*.txt", "artifacts/**/*"]
+        write: ["artifacts/**/*.md", "artifacts/**/*.txt"]
+      # Capabilities по умолчанию для роли
+      default_capabilities:
+        web_search: true   # Разрешить веб-поиск
+        web_fetch: true    # Разрешить получение веб-страниц
+
+    analyst:
+      adapter: "gemini-cli"
+      model: "gemini-pro"
+      role_definition: |
+        Вы - аналитик данных, который обрабатывает и структурирует информацию.
+      default_permissions:
+        read: ["artifacts/**/*", "data/**/*"]
+        write: ["artifacts/**/*.md"]
+      default_capabilities:
+        web_search: true   # Gemini поддерживает google_web_search
+        mcp_tools: ["analytics_tool", "chart_generator"]  # Конкретные MCP инструменты
+
+    reviewer:
+      adapter: "codex-cli"
+      model: "o3"
+      role_definition: |
+        Вы - рецензент, который проверяет качество отчетов.
+      default_permissions:
+        read: ["artifacts/**/*"]
+        write: ["artifacts/reviews/**/*.md"]
+      default_capabilities:
+        web_search: true   # Codex использует --search
+
   # Шаги процесса
   steps:
     # Шаг 1: Инициализация
@@ -57,64 +63,135 @@ workflow:
         echo "Начало исследования: ${research_topic}" > ${artifacts_dir}/init.txt
       outputs:
         init_file: "${artifacts_dir}/init.txt"
-    
-    # Шаг 2: Веб-исследование (условное выполнение)
+
+    # Шаг 2: Веб-исследование с capabilities из роли
     - id: "web_research"
       name: "Веб-исследование"
       type: "model"
       role: "researcher"
-      # Условие: выполняется только если web_search доступен
-      condition: "mcp_tools.web_search_available"
+      # Используются default_capabilities роли (web_search: true, web_fetch: true)
       prompt_template: |
         Проведите веб-исследование по теме: ${research_topic}
-        
-        Используйте инструмент веб-поиска для сбора актуальной информации.
+
+        Используйте веб-поиск для сбора актуальной информации.
         Создайте краткий отчет с основными находками.
       inputs:
         research_topic: "${research_topic}"
       outputs:
         web_research_file: "${artifacts_dir}/web_research.md"
-    
-    # Шаг 3: Анализ файлов (условное выполнение)
-    - id: "file_analysis"
-      name: "Анализ локальных файлов"
+
+    # Шаг 3: Анализ с ограниченными capabilities (переопределение роли)
+    - id: "secure_analysis"
+      name: "Безопасный анализ (без веб-доступа)"
       type: "model"
       role: "researcher"
-      # Условие: выполняется только если file_access доступен
-      condition: "mcp_tools.file_access_available"
+      permissions:
+        read: ["artifacts/**/*"]
+        write: ["artifacts/analysis/**/*.md"]
+        # Переопределяем capabilities роли - отключаем веб
+        capabilities:
+          web_search: false
+          web_fetch: false
       prompt_template: |
-        Проанализируйте локальные файлы, связанные с темой: ${research_topic}
-        
-        Используйте инструмент доступа к файлам для чтения релевантных документов.
-        Создайте сводку найденной информации.
+        Проанализируйте результаты веб-исследования без дополнительного веб-доступа.
+
+        Исследование:
+        ${artifact:${web_research_file}}
+
+        Создайте структурированный анализ.
+      inputs:
+        web_research_file: "${web_research_file}"
+      outputs:
+        analysis_file: "${artifacts_dir}/analysis/analysis.md"
+
+    # Шаг 4: Анализ с использованием браузера (только Claude)
+    - id: "browser_research"
+      name: "Исследование через браузер"
+      type: "model"
+      role: "researcher"
+      permissions:
+        read: ["artifacts/**/*"]
+        write: ["artifacts/**/*.md"]
+        capabilities:
+          browser: true     # Включить --chrome (только Claude)
+          web_search: true
+      prompt_template: |
+        Используйте браузер для детального исследования темы: ${research_topic}
+
+        Соберите дополнительную информацию с веб-страниц.
       inputs:
         research_topic: "${research_topic}"
       outputs:
-        file_analysis_file: "${artifacts_dir}/file_analysis.md"
-    
-    # Шаг 4: Сводный отчет
+        browser_research_file: "${artifacts_dir}/browser_research.md"
+
+    # Шаг 5: Анализ данных с MCP (Gemini)
+    - id: "data_analysis"
+      name: "Анализ данных с MCP инструментами"
+      type: "model"
+      role: "analyst"
+      # Используются default_capabilities роли: mcp_tools: ["analytics_tool", "chart_generator"]
+      depends_on:
+        - "web_research"
+        - "secure_analysis"
+      prompt_template: |
+        Проанализируйте собранные данные используя аналитические инструменты.
+
+        Веб-исследование:
+        ${artifact:${web_research_file}}
+
+        Анализ:
+        ${artifact:${analysis_file}}
+
+        Создайте визуализации и статистику.
+      inputs:
+        web_research_file: "${web_research_file}"
+        analysis_file: "${analysis_file}"
+      outputs:
+        data_analysis_file: "${artifacts_dir}/data_analysis.md"
+
+    # Шаг 6: Рецензирование с веб-поиском (Codex)
+    - id: "review"
+      name: "Рецензирование с проверкой фактов"
+      type: "model"
+      role: "reviewer"
+      # Используются default_capabilities роли: web_search: true (--search в Codex)
+      depends_on:
+        - "data_analysis"
+      prompt_template: |
+        Проведите рецензию финального анализа.
+        Используйте веб-поиск для проверки фактов.
+
+        Анализ данных:
+        ${artifact:${data_analysis_file}}
+
+        Укажите на неточности и предложите улучшения.
+      inputs:
+        data_analysis_file: "${data_analysis_file}"
+      outputs:
+        review_file: "${artifacts_dir}/reviews/review.md"
+
+    # Шаг 7: Финальный отчет
     - id: "final_report"
       name: "Создание финального отчета"
       type: "model"
       role: "researcher"
       depends_on:
-        - "web_research"
-        - "file_analysis"
+        - "review"
       prompt_template: |
         Создайте финальный отчет по теме: ${research_topic}
-        
-        Используйте следующую информацию:
-        
-        Веб-исследование:
-        ${artifact:${web_research_file}}
-        
-        Анализ файлов:
-        ${artifact:${file_analysis_file}}
-        
+
+        Учитывая:
+        - Веб-исследование: ${artifact:${web_research_file}}
+        - Анализ: ${artifact:${analysis_file}}
+        - Анализ данных: ${artifact:${data_analysis_file}}
+        - Рецензия: ${artifact:${review_file}}
+
         Создайте структурированный отчет с выводами и рекомендациями.
       inputs:
         research_topic: "${research_topic}"
         web_research_file: "${web_research_file}"
-        file_analysis_file: "${file_analysis_file}"
+        analysis_file: "${analysis_file}"
+        data_analysis_file: "${data_analysis_file}"
+        review_file: "${review_file}"
       outputs:
         final_report_file: "${artifacts_dir}/final_report.md"

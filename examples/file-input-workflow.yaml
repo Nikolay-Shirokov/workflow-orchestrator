@@ -30,7 +30,11 @@ workflow:
         с анализом их требований и созданием планов реализации.
       temperature: 0.7
       max_tokens: 4000
-    
+      # Разрешения: чтение и запись markdown/json файлов
+      default_permissions:
+        read: ["*.md", "*.json", "artifacts/**/*"]
+        write: ["artifacts/**/*.md", "artifacts/**/*.json"]
+
     analyst:
       adapter: "claude-cli"
       model: "claude-sonnet-3.5"
@@ -39,6 +43,10 @@ workflow:
         требований и предлагает оптимальные решения.
       temperature: 0.5
       max_tokens: 4000
+      # Разрешения: чтение и запись в artifacts
+      default_permissions:
+        read: ["*.md", "*.yaml", "*.json", "artifacts/**/*"]
+        write: ["artifacts/**/*.md"]
   
   # Шаги процесса
   steps:

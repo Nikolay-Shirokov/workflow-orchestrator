@@ -4,10 +4,27 @@
  */
 
 import { BaseCLIAdapter } from './base-cli-adapter.js';
-import { AdapterConfig, AdapterRequest, AdapterResponse } from '../core/types.js';
+import {
+  AdapterConfig,
+  AdapterRequest,
+  AdapterResponse,
+  StepPermissions,
+  StepCapabilities,
+  CapabilitySupport
+} from '../core/types.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
+
+/**
+ * Расширенный запрос для Gemini CLI с дополнительными опциями
+ */
+export interface GeminiAdapterRequest extends AdapterRequest {
+  // Специфичные для Gemini CLI опции
+  allowedTools?: string[];     // Флаг --allowed-tools (список инструментов)
+  yolo?: boolean;              // Флаг --yolo (автоподтверждение)
+  sandbox?: 'none' | 'functions-only' | 'limited'; // Режим sandbox
+}
 
 /**
  * Адаптер для Gemini CLI
@@ -49,21 +66,123 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
    * Подготовка аргументов команды с подстановкой параметров
    * Переопределяем для добавления флага --model если модель указана
    * Промпт НЕ добавляется в аргументы - он передается через временный файл
+   *
+   * Логика работы с permissions:
+   * - Без permissions - только чтение (без --yolo и --allowed-tools)
+   * - permissions.write - добавляем write_file в --allowed-tools и --yolo
+   * - permissions.execute - добавляем shell в --allowed-tools и --yolo
+   * - permissions.fullAccess - полный --yolo без ограничений
+   *
    * @param request - Запрос к адаптеру
    * @returns string[] - Массив аргументов
    */
   protected prepareArguments(request: AdapterRequest): string[] {
-    // Разрешаем только инструмент write_file и автоподтверждаем его использование
-    // Это позволяет Gemini создавать полные документы, но ограничивает другие действия
-    const args: string[] = ['--allowed-tools', 'write_file', '--yolo'];
-    
+    const geminiRequest = request as GeminiAdapterRequest;
+    const args: string[] = [];
+
     // Добавляем флаг --model если модель указана
     if (request.model) {
       args.push('--model', request.model);
     }
-    
+
+    // Обрабатываем permissions или явные опции
+    const permissionArgs = this.mapPermissionsToArgs(request.permissions, geminiRequest);
+    args.push(...permissionArgs);
+
     // Промпт НЕ добавляем в аргументы - он передается через временный файл
-    
+
+    return args;
+  }
+
+  /**
+   * Маппинг разрешений шага на аргументы командной строки Gemini CLI
+   *
+   * Правила маппинга:
+   * - Без permissions - режим только чтения (без инструментов)
+   * - permissions.write -> добавляем write_file в --allowed-tools + --yolo
+   * - permissions.execute -> добавляем shell в --allowed-tools + --yolo
+   * - permissions.fullAccess -> --yolo без ограничения инструментов
+   * - permissions.capabilities -> добавляем соответствующие инструменты
+   *
+   * ВАЖНО: --yolo никогда не используется по умолчанию для безопасности
+   *
+   * @param permissions - Разрешения из конфигурации шага
+   * @param geminiRequest - Расширенный запрос с явными опциями
+   * @returns string[] - Массив аргументов для tools/yolo
+   */
+  protected mapPermissionsToArgs(
+    permissions?: StepPermissions,
+    geminiRequest?: GeminiAdapterRequest
+  ): string[] {
+    const args: string[] = [];
+
+    // Если явно указаны allowedTools в запросе, используем их
+    if (geminiRequest?.allowedTools && geminiRequest.allowedTools.length > 0) {
+      args.push('--allowed-tools', geminiRequest.allowedTools.join(','));
+    }
+
+    // Если явно указан yolo, добавляем флаг
+    if (geminiRequest?.yolo) {
+      args.push('--yolo');
+      return args;
+    }
+
+    // Если permissions не указаны и нет capabilities, проверяем только capabilities из запроса
+    if (!permissions) {
+      // Проверяем capabilities из запроса напрямую
+      const capabilities = geminiRequest ? this.mergeCapabilities(geminiRequest) : undefined;
+      if (capabilities) {
+        const capabilityTools = this.mapCapabilitiesToTools(capabilities);
+        if (capabilityTools.length > 0 && (!geminiRequest?.allowedTools || geminiRequest.allowedTools.length === 0)) {
+          args.push('--allowed-tools', capabilityTools.join(','));
+          args.push('--yolo');
+        }
+      }
+      return args;
+    }
+
+    // Валидируем permissions
+    this.validatePermissions(permissions);
+
+    // fullAccess - полный доступ без ограничений
+    if (permissions.fullAccess) {
+      args.push('--yolo');
+      return args;
+    }
+
+    // Формируем список инструментов на основе permissions и capabilities
+    // Если allowedTools уже указаны явно, не добавляем автоматически
+    if (!geminiRequest?.allowedTools || geminiRequest.allowedTools.length === 0) {
+      const tools: string[] = [];
+
+      // permissions.write - разрешаем инструмент write_file
+      if (permissions.write && permissions.write.length > 0) {
+        tools.push('write_file');
+      }
+
+      // permissions.execute - разрешаем инструмент shell
+      if (permissions.execute) {
+        tools.push('shell');
+      }
+
+      // Добавляем инструменты из capabilities
+      const capabilities = geminiRequest ? this.mergeCapabilities(geminiRequest) : undefined;
+      if (capabilities) {
+        const capabilityTools = this.mapCapabilitiesToTools(capabilities);
+        for (const tool of capabilityTools) {
+          if (!tools.includes(tool)) {
+            tools.push(tool);
+          }
+        }
+      }
+
+      // Добавляем --allowed-tools и --yolo если есть инструменты
+      if (tools.length > 0) {
+        args.push('--allowed-tools', tools.join(','));
+        args.push('--yolo'); // Автоподтверждение только для разрешенных инструментов
+      }
+    }
+
     return args;
   }
 
@@ -71,62 +190,78 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
    * Выполнение запроса к модели через временный файл для ввода
    * Переопределяем базовый метод для использования временного файла для ввода
    * Если Gemini создает файл через write_file, читаем результат из него
+   *
+   * При указании outputFile и permissions.write:
+   * 1. Добавляется инструкция записи в промпт через appendFileWriteInstruction()
+   * 2. Модель использует инструмент write_file для сохранения результата
+   * 3. После выполнения читается содержимое файла через readResultFromFile()
+   * 4. При неудаче чтения файла используется stdout как fallback
+   *
    * @param request - Запрос к адаптеру
    * @returns Promise<AdapterResponse> - Ответ от модели
    */
   async execute(request: AdapterRequest): Promise<AdapterResponse> {
     const startTime = Date.now();
     let tempInputPath: string | undefined;
-    let outputFilePath: string | undefined;
-    
+
     try {
       // Создаем временный файл для ввода
       const tmpDir = os.tmpdir();
       const timestamp = Date.now();
       tempInputPath = path.join(tmpDir, `gemini-prompt-${timestamp}.txt`);
-      
-      // Пытаемся извлечь путь к выходному файлу из промпта
-      // Ищем паттерн: "file path: <путь>" или "to file path: <путь>"
-      const outputFileMatch = request.prompt.match(/(?:to )?file path:\s*([^\s\n]+\.md)/i);
-      if (outputFileMatch) {
-        outputFilePath = outputFileMatch[1];
-        // Убираем возможные кавычки
-        outputFilePath = outputFilePath.replace(/['"]/g, '');
-        console.log(`[DEBUG] Обнаружен путь к выходному файлу: ${outputFilePath}`);
+
+      // Определяем путь к выходному файлу
+      // Приоритет: явно указанный outputFile > парсинг из промпта (для обратной совместимости)
+      let outputFilePath = request.outputFile;
+
+      if (!outputFilePath) {
+        // Для обратной совместимости: пытаемся извлечь путь из промпта
+        const outputFileMatch = request.prompt.match(/(?:to )?file path:\s*([^\s\n]+\.md)/i);
+        if (outputFileMatch) {
+          outputFilePath = outputFileMatch[1].replace(/['"]/g, '');
+          console.log(`[DEBUG] Обнаружен путь к выходному файлу в промпте: ${outputFilePath}`);
+        }
       }
-      
+
+      // Формируем промпт с инструкцией записи если нужно
+      let prompt = request.prompt;
+      if (outputFilePath && request.permissions?.write?.length) {
+        // Добавляем инструкцию записи через метод базового класса
+        prompt = this.appendFileWriteInstruction(prompt, outputFilePath, 'write_file');
+      }
+
       // Записываем промпт во входной файл
-      await fs.writeFile(tempInputPath, request.prompt, { encoding: 'utf-8' });
-      
+      await fs.writeFile(tempInputPath, prompt, { encoding: 'utf-8' });
+
       // Подготовка аргументов команды
       const args = this.prepareArguments(request);
-      
+
       // Подготовка переменных окружения
       const env = this.prepareEnvironment(request);
-      
+
       // Определение таймаута
       const timeout = request.timeout || this.config.timeout || 300000;
-      
+
       // Используем cmd.exe для перенаправления ввода, но читаем stdout напрямую
-      // cmd /c "type input.txt | gemini --allowed-tools write_file --approval-mode yolo"
+      // cmd /c "type input.txt | gemini --allowed-tools write_file --yolo"
       const command = process.platform === 'win32'
         ? `cmd /c "type "${tempInputPath}" | ${this.config.command} ${args.join(' ')}"`
         : `cat "${tempInputPath}" | ${this.config.command} ${args.join(' ')}`;
-      
+
       const result = await this.executeCommand(
         command,
         [],
         env,
         timeout
       );
-      
+
       // Удаляем временный файл
       try {
         await fs.unlink(tempInputPath);
       } catch (cleanupError) {
         // Игнорируем ошибки удаления
       }
-      
+
       // Проверка на ошибки
       if (result.exitCode !== 0) {
         throw new Error(
@@ -134,28 +269,43 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
           `stderr: ${result.stderr}`
         );
       }
-      
+
+      const executionTime = Date.now() - startTime;
+
+      // Если указан путь к выходному файлу, используем readResultFromFile из базового класса
       let content: string;
-      
-      // Если указан путь к выходному файлу, пытаемся прочитать из него
+      let resultSource: 'file' | 'stdout' = 'stdout';
+
       if (outputFilePath) {
-        try {
-          // Ждем немного, чтобы файл был записан
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          
-          content = await fs.readFile(outputFilePath, { encoding: 'utf-8' });
-          console.log(`[DEBUG] Прочитано ${content.length} байт из файла ${outputFilePath}`);
-        } catch (fileError) {
-          console.log(`[DEBUG] Не удалось прочитать файл ${outputFilePath}, используем stdout`);
+        const fileResult = await this.readResultFromFile(outputFilePath, result.stdout, {
+          maxWaitTime: 5000,
+          pollInterval: 200
+        });
+        content = fileResult.content;
+        resultSource = fileResult.source;
+
+        // Если контент пустой после чтения файла, используем парсинг stdout
+        if (!content || content.trim().length === 0) {
           content = this.parseResponse(result.stdout);
+          resultSource = 'stdout';
         }
       } else {
         // Парсинг ответа из stdout
         content = this.parseResponse(result.stdout);
       }
-      
-      const executionTime = Date.now() - startTime;
-      
+
+      // Определяем режим permissions для metadata
+      let permissionsMode: string;
+      if (request.permissions?.fullAccess) {
+        permissionsMode = 'yolo';
+      } else if (request.permissions?.execute) {
+        permissionsMode = 'execute';
+      } else if (request.permissions?.write?.length) {
+        permissionsMode = 'write';
+      } else {
+        permissionsMode = 'read-only';
+      }
+
       return {
         content,
         model: request.model || 'unknown',
@@ -163,7 +313,9 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
         metadata: {
           exitCode: result.exitCode,
           stderr: result.stderr,
-          outputFile: outputFilePath
+          outputFile: outputFilePath,
+          resultSource: resultSource,
+          permissionsMode: permissionsMode
         }
       };
     } catch (error) {
@@ -251,6 +403,9 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
       }
     }
 
+    // Очищаем markdown code blocks если есть
+    content = this.stripMarkdownCodeBlocks(content);
+
     return content;
   }
 
@@ -270,5 +425,98 @@ export class GeminiCLIAdapter extends BaseCLIAdapter {
     } catch (error) {
       return false;
     }
+  }
+
+  // ============================================================================
+  // Методы для работы с capabilities
+  // ============================================================================
+
+  /**
+   * Получение информации о поддержке capabilities для Gemini CLI
+   *
+   * Gemini CLI поддерживает:
+   * - web_search: через инструмент google_web_search
+   * - web_fetch: через инструмент web_fetch
+   * - mcp_tools: через mcpServers в settings.json, includeTools/excludeTools
+   *
+   * Не поддерживает:
+   * - browser
+   *
+   * @returns Record<keyof StepCapabilities, CapabilitySupport>
+   */
+  override getCapabilitySupport(): Record<keyof StepCapabilities, CapabilitySupport> {
+    return {
+      web_search: {
+        supported: true,
+        flags: ['--allowed-tools', 'google_web_search'],
+        note: 'Добавляет инструмент google_web_search для поиска в интернете'
+      },
+      web_fetch: {
+        supported: true,
+        flags: ['--allowed-tools', 'web_fetch'],
+        note: 'Добавляет инструмент web_fetch для загрузки веб-страниц'
+      },
+      mcp_tools: {
+        supported: true,
+        note: 'MCP настраивается через mcpServers в settings.json или `gemini mcp add`. Контроль через includeTools/excludeTools на уровне сервера'
+      },
+      browser: {
+        supported: false,
+        note: 'Gemini CLI не поддерживает интеграцию с браузером'
+      }
+    };
+  }
+
+  /**
+   * Преобразование capabilities в список инструментов для Gemini CLI
+   *
+   * Маппинг:
+   * - web_search: true → google_web_search
+   * - web_fetch: true → web_fetch
+   * - mcp_tools: логируем информацию (настройка через settings.json)
+   * - browser: warning (не поддерживается)
+   *
+   * @param capabilities - Capabilities для преобразования
+   * @returns string[] - Список инструментов для --allowed-tools
+   */
+  protected mapCapabilitiesToTools(capabilities: StepCapabilities): string[] {
+    const tools: string[] = [];
+
+    // web_search → google_web_search
+    if (capabilities.web_search) {
+      tools.push('google_web_search');
+      console.log(`[${this.name}] Включен веб-поиск (google_web_search)`);
+    }
+
+    // web_fetch → web_fetch
+    if (capabilities.web_fetch) {
+      tools.push('web_fetch');
+      console.log(`[${this.name}] Включена загрузка веб-страниц (web_fetch)`);
+    }
+
+    // mcp_tools - просто логируем информацию
+    if (capabilities.mcp_tools) {
+      if (Array.isArray(capabilities.mcp_tools)) {
+        console.log(`[${this.name}] Информация: MCP-инструменты [${capabilities.mcp_tools.join(', ')}] должны быть настроены в settings.json через includeTools/excludeTools`);
+      } else {
+        console.log(`[${this.name}] Информация: Все MCP-инструменты будут доступны если настроены в settings.json`);
+      }
+    }
+
+    // browser - предупреждение
+    if (capabilities.browser) {
+      console.warn(`[${this.name}] Предупреждение: browser не поддерживается Gemini CLI`);
+    }
+
+    return tools;
+  }
+
+  /**
+   * Переопределение базового mapCapabilitiesToArgs
+   * Для Gemini мы не возвращаем аргументы напрямую - они объединяются в mapPermissionsToArgs
+   */
+  protected override mapCapabilitiesToArgs(_capabilities: StepCapabilities): string[] {
+    // Возвращаем пустой массив - инструменты добавляются через mapPermissionsToArgs
+    return [];
   }
 }

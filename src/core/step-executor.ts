@@ -12,7 +12,9 @@
 
 import { spawn } from 'child_process';
 import { readFileSync } from 'fs';
+import { mkdir } from 'fs/promises';
 import { cpus } from 'os';
+import * as path from 'path';
 import {
   StepExecutor,
   WorkflowStep,
@@ -20,10 +22,12 @@ import {
   StepResult,
   RetryConfig,
   WorkflowErrorClass,
-  AdapterRequest
+  AdapterRequest,
+  StepCapabilities,
+  CapabilityAwareAdapter,
+  MCPContext
 } from './types.js';
 import { RoleManager } from './role-manager.js';
-import { MCPManager, MCPContext } from './mcp-manager.js';
 import type { Logger as CoreLogger } from './logger.js';
 
 /**
@@ -41,11 +45,11 @@ export interface StepExecutorConfig {
   
   /** Менеджер ролей */
   roleManager?: RoleManager;
-  
-  /** Менеджер MCP-инструментов */
-  mcpManager?: MCPManager;
-  
-  /** Контекст MCP */
+
+  /**
+   * Контекст MCP
+   * @deprecated Используйте StepCapabilities.mcp_tools вместо этого
+   */
   mcpContext?: MCPContext;
 }
 
@@ -53,14 +57,13 @@ export interface StepExecutorConfig {
  * Реализация исполнителя шагов по умолчанию
  */
 export class DefaultStepExecutor implements StepExecutor {
-  private config: Required<Omit<StepExecutorConfig, 'roleManager' | 'mcpManager' | 'mcpContext'>>;
+  private config: Required<Omit<StepExecutorConfig, 'roleManager' | 'mcpContext'>>;
   private roleManager?: RoleManager;
-  private mcpManager?: MCPManager;
+  /** @deprecated */
   private mcpContext?: MCPContext;
 
   constructor(config: StepExecutorConfig = {}) {
     this.roleManager = config.roleManager;
-    this.mcpManager = config.mcpManager;
     this.mcpContext = config.mcpContext;
     this.config = {
       defaultRetryConfig: config.defaultRetryConfig || {
@@ -84,6 +87,97 @@ export class DefaultStepExecutor implements StepExecutor {
    */
   setMCPContext(mcpContext: MCPContext): void {
     this.mcpContext = mcpContext;
+  }
+
+  /**
+   * Объединение capabilities из шага и роли
+   * Приоритет: step.permissions.capabilities > role.default_capabilities
+   *
+   * @param step - Шаг workflow
+   * @param roleName - Имя роли (опционально)
+   * @returns StepCapabilities | undefined
+   */
+  private mergeStepCapabilities(
+    step: WorkflowStep,
+    roleName?: string
+  ): StepCapabilities | undefined {
+    // Получаем capabilities из роли
+    let roleCapabilities: StepCapabilities | undefined;
+    if (roleName && this.roleManager) {
+      const role = this.roleManager.getRole(roleName);
+      roleCapabilities = role?.default_capabilities;
+    }
+
+    // Получаем capabilities из шага
+    const stepCapabilities = step.permissions?.capabilities;
+
+    // Если оба не определены, возвращаем undefined
+    if (!roleCapabilities && !stepCapabilities) {
+      return undefined;
+    }
+
+    // Merge с приоритетом шага
+    return {
+      ...roleCapabilities,
+      ...stepCapabilities
+    };
+  }
+
+  /**
+   * Проверка поддержки capabilities адаптером и логирование предупреждений
+   *
+   * @param adapter - CLI адаптер
+   * @param capabilities - Capabilities для проверки
+   * @param context - Контекст выполнения
+   * @param stepId - ID шага для логирования
+   */
+  private validateCapabilitiesSupport(
+    adapter: unknown,
+    capabilities: StepCapabilities,
+    context: ExecutionContext,
+    stepId: string
+  ): void {
+    // Проверяем, поддерживает ли адаптер интерфейс CapabilityAwareAdapter
+    const capabilityAdapter = adapter as CapabilityAwareAdapter;
+    if (typeof capabilityAdapter.getCapabilitySupport !== 'function') {
+      // Адаптер не поддерживает capabilities - логируем предупреждение
+      context.logger.warn(
+        `[${stepId}] Адаптер не поддерживает capabilities API. ` +
+        `Capabilities будут проигнорированы.`
+      );
+      return;
+    }
+
+    const support = capabilityAdapter.getCapabilitySupport();
+
+    // Проверяем каждую указанную capability
+    if (capabilities.web_search && !support.web_search.supported) {
+      context.logger.warn(
+        `[${stepId}] web_search не поддерживается адаптером. ` +
+        (support.web_search.note || '')
+      );
+    }
+
+    if (capabilities.web_fetch && !support.web_fetch.supported) {
+      context.logger.warn(
+        `[${stepId}] web_fetch не поддерживается адаптером. ` +
+        (support.web_fetch.note || '')
+      );
+    }
+
+    if (capabilities.mcp_tools && !support.mcp_tools.supported) {
+      context.logger.warn(
+        `[${stepId}] mcp_tools не поддерживается адаптером. ` +
+        (support.mcp_tools.note || '')
+      );
+    }
+
+    if (capabilities.browser && !support.browser.supported) {
+      context.logger.warn(
+        `[${stepId}] browser не поддерживается адаптером. ` +
+        (support.browser.note || '')
+      );
+    }
   }
 
   /**
@@ -460,21 +554,50 @@ export class DefaultStepExecutor implements StepExecutor {
     
     // Подготовка промпта
     const prompt = await this.preparePrompt(step, context);
-    
+
     // Определяем модель
     let model = step.model;
     if (step.role && this.roleManager) {
       model = this.roleManager.getModelForRole(step.role) || model;
     }
-    
+
+    // Объединяем capabilities из шага и роли
+    const mergedCapabilities = this.mergeStepCapabilities(step, step.role);
+
+    // Проверяем поддержку capabilities адаптером
+    if (mergedCapabilities) {
+      this.validateCapabilitiesSupport(adapter, mergedCapabilities, context, step.id);
+    }
+
+    // Определяем outputFile из step.outputs (первый output)
+    // Это позволит адаптеру добавить инструкцию записи в промпт
+    let outputFile: string | undefined;
+    if (step.outputs) {
+      const firstOutputPath = Object.values(step.outputs)[0];
+      if (firstOutputPath) {
+        outputFile = context.templateEngine.render(
+          firstOutputPath,
+          this.createTemplateContext(context)
+        );
+
+        // Создаём директорию для outputFile заранее
+        // Это необходимо для адаптеров, которые используют флаги вроде --output-last-message
+        const outputDir = path.dirname(outputFile);
+        await mkdir(outputDir, { recursive: true });
+      }
+    }
+
     // Подготовка базового запроса
     let request: AdapterRequest = {
       prompt,
       model,
       systemPrompt: step.system_prompt,
-      timeout: step.timeout || this.config.defaultTimeout
+      timeout: step.timeout || this.config.defaultTimeout,
+      permissions: step.permissions,
+      capabilities: mergedCapabilities,
+      outputFile
     };
-    
+
     // Если указана роль, обогащаем запрос инструкциями роли
     if (step.role && this.roleManager) {
       request = this.roleManager.enrichRequestWithRole(step.role, request);
@@ -1264,9 +1387,10 @@ export class DefaultStepExecutor implements StepExecutor {
       this.createTemplateContext(context)
     );
     
-    // Добавляем информацию о MCP-инструментах, если доступна
-    if (this.mcpManager && this.mcpContext) {
-      const mcpInfo = this.mcpManager.formatForPrompt(this.mcpContext);
+    // Добавляем информацию о MCP-инструментах, если доступен устаревший mcpContext
+    // @deprecated - используйте StepCapabilities.mcp_tools вместо этого
+    if (this.mcpContext && this.mcpContext.available_tools.length > 0) {
+      const mcpInfo = this.formatMCPContext(this.mcpContext);
       if (mcpInfo) {
         renderedPrompt = `${renderedPrompt}\n\n---\n\n${mcpInfo}`;
         context.logger.debug(`Добавлена информация о MCP-инструментах в промпт для шага ${step.id}`);
@@ -1339,6 +1463,41 @@ export class DefaultStepExecutor implements StepExecutor {
     }
     
     return value != null;
+  }
+
+  /**
+   * Форматирование MCPContext для добавления в промпт
+   * @deprecated Используйте StepCapabilities.mcp_tools вместо этого
+   */
+  private formatMCPContext(mcpContext: MCPContext): string {
+    const lines: string[] = [];
+
+    if (mcpContext.available_tools.length > 0) {
+      lines.push('Доступные MCP-инструменты:');
+      for (const toolName of mcpContext.available_tools) {
+        const tool = mcpContext.tools[toolName];
+        if (tool) {
+          lines.push(`  - ${tool.name}: ${tool.description}`);
+        } else {
+          lines.push(`  - ${toolName}`);
+        }
+      }
+    }
+
+    if (mcpContext.unavailable_tools.length > 0) {
+      lines.push('');
+      lines.push('Недоступные MCP-инструменты:');
+      for (const toolName of mcpContext.unavailable_tools) {
+        const tool = mcpContext.tools[toolName];
+        if (tool) {
+          lines.push(`  - ${tool.name}: ${tool.description}`);
+        } else {
+          lines.push(`  - ${toolName}`);
+        }
+      }
+    }
+
+    return lines.join('\n');
   }
 
   /**

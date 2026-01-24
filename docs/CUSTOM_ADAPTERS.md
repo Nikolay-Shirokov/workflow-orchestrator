@@ -167,10 +167,91 @@ prepareArguments(request) {
 ```javascript
 isRetryableError(error) {
   const message = error.message.toLowerCase();
-  return message.includes('rate limit') || 
+  return message.includes('rate limit') ||
          message.includes('timeout') ||
          super.isRetryableError(error);
 }
+```
+
+### Методы для работы с permissions и файловым выводом
+
+BaseCLIAdapter предоставляет защищённые методы для поддержки системы разрешений и записи результатов в файлы.
+
+#### mapPermissionsToArgs(permissions?: StepPermissions): string[]
+
+Маппинг разрешений шага на флаги CLI. Каждый адаптер должен реализовать свой маппинг.
+
+```javascript
+protected mapPermissionsToArgs(permissions) {
+  const args = [];
+
+  if (!permissions) {
+    // Безопасный режим по умолчанию
+    args.push('--safe-mode');
+    return args;
+  }
+
+  // Валидация permissions
+  this.validatePermissions(permissions);
+
+  if (permissions.fullAccess) {
+    args.push('--full-access');
+    return args;
+  }
+
+  if (permissions.write?.length) {
+    args.push('--allow-write');
+  }
+
+  if (permissions.execute) {
+    args.push('--allow-execute');
+  }
+
+  return args;
+}
+```
+
+#### appendFileWriteInstruction(prompt, outputPath, toolName?): string
+
+Добавляет инструкцию записи в файл в конец промпта.
+
+```javascript
+// Используйте для добавления инструкции записи результата в файл
+const enhancedPrompt = this.appendFileWriteInstruction(
+  request.prompt,
+  request.outputFile,
+  'write_file'  // Имя инструмента для вашей CLI-утилиты
+);
+```
+
+#### readResultFromFile(outputPath, stdout, options?): Promise<{content, source}>
+
+Чтение результата из файла с polling и fallback на stdout.
+
+```javascript
+// После выполнения команды пытаемся прочитать результат из файла
+const result = await this.readResultFromFile(
+  request.outputFile,
+  commandResult.stdout,
+  {
+    maxWaitTime: 5000,   // Максимальное время ожидания (мс)
+    pollInterval: 200    // Интервал проверки (мс)
+  }
+);
+
+// result.content - содержимое
+// result.source - 'file' или 'stdout'
+```
+
+#### validatePermissions(permissions: StepPermissions): void
+
+Валидация разрешений. Выбрасывает ошибку при некорректной конфигурации.
+
+```javascript
+// Проверяет:
+// - fullAccess нельзя комбинировать с read/write
+// - Паттерны не содержат path traversal (..)
+this.validatePermissions(permissions);
 ```
 
 ## Хуки жизненного цикла

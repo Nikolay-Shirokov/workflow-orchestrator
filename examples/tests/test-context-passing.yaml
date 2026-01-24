@@ -1,0 +1,54 @@
+# Тест передачи контекста между шагами
+# Проверяет что результат одного шага доступен в следующем
+
+workflow:
+  name: "test-context-passing"
+  version: "1.0"
+  description: "Тест передачи контекста между шагами"
+
+  settings:
+    artifacts_dir: "artifacts/test-context-${timestamp}"
+    log_level: "debug"
+
+  roles:
+    assistant:
+      adapter: "claude-cli"
+      model: "sonnet"
+      role_definition: "Ты помощник. Отвечай кратко."
+      temperature: 0.1
+      max_tokens: 500
+      permissions:
+        - read
+        - "edit:artifacts/**/*"
+      default_permissions:
+        read: ["**/*"]
+        write: ["artifacts/**/*"]
+
+  steps:
+    # Шаг 1: Генерируем уникальный идентификатор
+    - id: step1_generate
+      name: "Шаг 1: Генерация ID"
+      type: model
+      role: assistant
+      prompt_template: |
+        Сгенерируй случайный UUID и выведи ТОЛЬКО его, без пояснений.
+        Формат: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+      outputs:
+        generated_id: "${artifacts_dir}/step1_id.txt"
+
+    # Шаг 2: Используем результат шага 1
+    - id: step2_use_context
+      name: "Шаг 2: Использование контекста"
+      type: model
+      role: assistant
+      depends_on: [step1_generate]
+      prompt_template: |
+        Вот UUID из предыдущего шага:
+        ${generated_id}
+
+        Повтори этот UUID и добавь к нему суффикс "-verified".
+        Выведи ТОЛЬКО результат.
+      inputs:
+        generated_id: "${artifacts_dir}/step1_id.txt"
+      outputs:
+        result: "${artifacts_dir}/step2_verified.txt"

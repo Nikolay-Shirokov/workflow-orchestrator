@@ -4,12 +4,16 @@
  */
 
 import { spawn } from 'child_process';
+import * as fs from 'fs/promises';
 import {
   CLIAdapter,
   AdapterRequest,
   AdapterResponse,
   AdapterError,
-  AdapterConfig
+  AdapterConfig,
+  StepPermissions,
+  StepCapabilities,
+  CapabilitySupport
 } from '../core/types.js';
 
 /**
@@ -121,6 +125,49 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
   }
 
   /**
+   * Очистка markdown code blocks из ответа для структурированных данных
+   * Удаляет ```json/yaml ... ``` обёртки, оставляя чистый контент
+   *
+   * ВАЖНО: Очищает ТОЛЬКО для структурированных форматов (json, yaml, xml),
+   * чтобы не повредить markdown-файлы с code blocks.
+   *
+   * Примеры:
+   * - "```json\n{...}\n```" → "{...}" (очищаем - JSON)
+   * - "```yaml\n...\n```" → "..." (очищаем - YAML)
+   * - "```python\ncode\n```" → оставляем как есть (код, не данные)
+   * - "plain text" → "plain text" (без изменений)
+   *
+   * @param content - Контент с возможными markdown code blocks
+   * @returns string - Очищенный контент
+   */
+  protected stripMarkdownCodeBlocks(content: string): string {
+    const trimmed = content.trim();
+
+    // Паттерн для markdown code block: ```[язык]\n...\n```
+    // Очищаем ТОЛЬКО структурированные данные: json, yaml, yml, xml, toml
+    const structuredDataPattern = /^```(json|yaml|yml|xml|toml)?\s*\n?([\s\S]*?)\n?```$/;
+    const match = trimmed.match(structuredDataPattern);
+
+    if (match) {
+      const language = match[1]?.toLowerCase();
+      const innerContent = match[2].trim();
+
+      // Если язык указан явно как структурированный формат - очищаем
+      if (language && ['json', 'yaml', 'yml', 'xml', 'toml'].includes(language)) {
+        return innerContent;
+      }
+
+      // Если язык не указан, проверяем содержимое
+      // Очищаем только если похоже на JSON (начинается с { или [)
+      if (!language && (innerContent.startsWith('{') || innerContent.startsWith('['))) {
+        return innerContent;
+      }
+    }
+
+    return trimmed;
+  }
+
+  /**
    * Обработка ошибок
    * @param error - Ошибка выполнения
    * @returns AdapterError - Структурированная ошибка
@@ -143,21 +190,30 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
    * @returns string[] - Массив аргументов
    */
   protected prepareArguments(request: AdapterRequest): string[] {
-    if (!this.config.args) {
-      return [];
+    const args: string[] = [];
+
+    if (this.config.args) {
+      // Создаем контекст для подстановки
+      const context: Record<string, string> = {
+        prompt: request.prompt,
+        model: request.model || '',
+        temperature: request.temperature?.toString() || '',
+        maxTokens: request.maxTokens?.toString() || '',
+        systemPrompt: request.systemPrompt || ''
+      };
+
+      // Подставляем значения в аргументы
+      args.push(...this.config.args.map(arg => this.substituteVariables(arg, context)));
     }
-    
-    // Создаем контекст для подстановки
-    const context: Record<string, string> = {
-      prompt: request.prompt,
-      model: request.model || '',
-      temperature: request.temperature?.toString() || '',
-      maxTokens: request.maxTokens?.toString() || '',
-      systemPrompt: request.systemPrompt || ''
-    };
-    
-    // Подставляем значения в аргументы
-    return this.config.args.map(arg => this.substituteVariables(arg, context));
+
+    // Добавляем аргументы из capabilities
+    const capabilities = this.mergeCapabilities(request);
+    if (capabilities) {
+      const capabilityArgs = this.mapCapabilitiesToArgs(capabilities);
+      args.push(...capabilityArgs);
+    }
+
+    return args;
   }
 
   /**
@@ -295,6 +351,162 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
         ));
       });
     });
+  }
+
+  // ============================================================================
+  // Методы для работы с файловым выводом и разрешениями
+  // ============================================================================
+
+  /**
+   * Добавление инструкции записи в файл в конец промпта
+   * @param prompt - Исходный промпт
+   * @param outputPath - Путь к выходному файлу
+   * @param toolName - Имя инструмента записи (write_file для Gemini, Write для Claude)
+   * @returns string - Промпт с добавленной инструкцией
+   */
+  protected appendFileWriteInstruction(
+    prompt: string,
+    outputPath: string,
+    toolName?: string
+  ): string {
+    const instruction = toolName
+      ? `\n\nCRITICAL: Save your complete response to file: ${outputPath}
+Use the ${toolName} tool to write the file.
+If the ${toolName} tool is not available, output the full response to console.
+Note: The file path is relative to the current working directory.`
+      : `\n\nCRITICAL: Save your complete response to file: ${outputPath}
+If you cannot write to file, output the full response to console.
+Note: The file path is relative to the current working directory.`;
+
+    return prompt + instruction;
+  }
+
+  /**
+   * Чтение результата из файла с fallback на stdout
+   * Использует polling с таймаутом для ожидания создания файла
+   * @param outputPath - Путь к выходному файлу
+   * @param stdout - Вывод из stdout (fallback)
+   * @param options - Опции чтения
+   * @returns Promise<{ content: string; source: 'file' | 'stdout' }>
+   */
+  protected async readResultFromFile(
+    outputPath: string,
+    stdout: string,
+    options: { maxWaitTime?: number; pollInterval?: number } = {}
+  ): Promise<{ content: string; source: 'file' | 'stdout' }> {
+    const maxWaitTime = options.maxWaitTime ?? 5000;
+    const pollInterval = options.pollInterval ?? 200;
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < maxWaitTime) {
+      try {
+        const stat = await fs.stat(outputPath);
+        if (stat.size > 0) {
+          const content = await fs.readFile(outputPath, 'utf-8');
+          if (content.trim().length > 0) {
+            console.log(`[DEBUG] Прочитано ${content.length} байт из файла ${outputPath}`);
+            return { content: content.trim(), source: 'file' };
+          }
+        }
+      } catch {
+        // Файл еще не создан, продолжаем polling
+      }
+
+      await new Promise(r => setTimeout(r, pollInterval));
+    }
+
+    // Fallback на stdout
+    console.log(`[DEBUG] Файл ${outputPath} не найден или пуст, используем stdout`);
+    return { content: stdout.trim(), source: 'stdout' };
+  }
+
+  /**
+   * Валидация разрешений
+   * Проверяет корректность конфигурации permissions
+   * @param permissions - Разрешения для валидации
+   * @throws Error если permissions некорректны
+   */
+  protected validatePermissions(permissions: StepPermissions): void {
+    // fullAccess нельзя комбинировать с read/write
+    if (permissions.fullAccess && (permissions.read?.length || permissions.write?.length)) {
+      throw new Error('fullAccess нельзя комбинировать с read/write. Используйте либо fullAccess, либо явные разрешения.');
+    }
+
+    // Проверка паттернов на path traversal
+    const allPatterns = [...(permissions.read || []), ...(permissions.write || [])];
+    for (const pattern of allPatterns) {
+      if (pattern.includes('..')) {
+        throw new Error(`Недопустимый паттерн "${pattern}": path traversal (..) запрещен`);
+      }
+    }
+  }
+
+  // ============================================================================
+  // Методы для работы с capabilities
+  // ============================================================================
+
+  /**
+   * Получение информации о поддержке capabilities данным адаптером
+   * Базовая реализация возвращает все capabilities как неподдерживаемые
+   * Переопределите в подклассах для реальной поддержки
+   * @returns Record<keyof StepCapabilities, CapabilitySupport>
+   */
+  getCapabilitySupport(): Record<keyof StepCapabilities, CapabilitySupport> {
+    return {
+      web_search: { supported: false, note: 'Не поддерживается данным адаптером' },
+      web_fetch: { supported: false, note: 'Не поддерживается данным адаптером' },
+      mcp_tools: { supported: false, note: 'Не поддерживается данным адаптером' },
+      browser: { supported: false, note: 'Не поддерживается данным адаптером' }
+    };
+  }
+
+  /**
+   * Преобразование capabilities в аргументы командной строки
+   * Базовая реализация логирует предупреждения о неподдерживаемых capabilities
+   * Переопределите в подклассах для реального маппинга
+   * @param capabilities - Capabilities для преобразования
+   * @returns string[] - Массив аргументов командной строки
+   */
+  protected mapCapabilitiesToArgs(capabilities: StepCapabilities): string[] {
+    const support = this.getCapabilitySupport();
+    const args: string[] = [];
+
+    // Логируем предупреждения о неподдерживаемых capabilities
+    if (capabilities.web_search && !support.web_search.supported) {
+      console.warn(`[${this.name}] Предупреждение: web_search не поддерживается данным адаптером`);
+    }
+    if (capabilities.web_fetch && !support.web_fetch.supported) {
+      console.warn(`[${this.name}] Предупреждение: web_fetch не поддерживается данным адаптером`);
+    }
+    if (capabilities.mcp_tools && !support.mcp_tools.supported) {
+      console.warn(`[${this.name}] Предупреждение: mcp_tools не поддерживается данным адаптером`);
+    }
+    if (capabilities.browser && !support.browser.supported) {
+      console.warn(`[${this.name}] Предупреждение: browser не поддерживается данным адаптером`);
+    }
+
+    return args;
+  }
+
+  /**
+   * Объединение capabilities из разных источников
+   * Приоритет: request.capabilities > request.permissions.capabilities
+   * @param request - Запрос к адаптеру
+   * @returns StepCapabilities | undefined
+   */
+  protected mergeCapabilities(request: AdapterRequest): StepCapabilities | undefined {
+    const fromPermissions = request.permissions?.capabilities;
+    const fromRequest = request.capabilities;
+
+    if (!fromPermissions && !fromRequest) {
+      return undefined;
+    }
+
+    // Merge с приоритетом request.capabilities
+    return {
+      ...fromPermissions,
+      ...fromRequest
+    };
   }
 
   /**

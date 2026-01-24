@@ -4,20 +4,19 @@
 
 ## Установка
 
-### Быстрая установка
+> **Примечание:** Пакет пока не опубликован на npm. Используйте установку из исходников.
 
 ```bash
-npm install -g workflow-orchestrator
-```
-
-### Из исходников
-
-```bash
-git clone https://github.com/Nikolay-Shirokov/workflow-orchestrator.git
+git clone https://github.com/anthropics/workflow-orchestrator.git
 cd workflow-orchestrator
 npm install
 npm run build
-npm link
+npm link  # Опционально: для глобальной команды workflow-orchestrator
+```
+
+Без `npm link` можно запускать напрямую:
+```bash
+node dist/cli/cli.js run config.yaml
 ```
 
 ## Предварительные требования

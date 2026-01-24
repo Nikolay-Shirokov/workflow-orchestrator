@@ -4,8 +4,19 @@
 
 ## Шаг 1: Установка (если еще не установлено)
 
+> **Примечание:** Пакет пока не опубликован на npm. Используйте установку из исходников.
+
 ```bash
-npm install -g workflow-orchestrator
+git clone https://github.com/anthropics/workflow-orchestrator.git
+cd workflow-orchestrator
+npm install
+npm run build
+npm link  # Опционально: для глобальной команды workflow-orchestrator
+```
+
+Без `npm link` можно запускать напрямую:
+```bash
+node dist/cli/cli.js run examples/business-requirements-simple.yaml
 ```
 
 ## Шаг 2: Настройка API ключа

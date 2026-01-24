@@ -14,6 +14,10 @@ workflow:
     assistant:
       adapter: "claude-cli"
       model: "claude-sonnet-3.5"
+      # Разрешения: чтение и запись в artifacts
+      default_permissions:
+        read: ["*.md", "artifacts/**/*"]
+        write: ["artifacts/**/*.md"]
   
   steps:
     # Шаг 1: Сбор информации от пользователя
