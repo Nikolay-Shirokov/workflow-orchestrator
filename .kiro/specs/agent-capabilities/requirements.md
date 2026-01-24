@@ -28,7 +28,7 @@
 |------------|------------|-----------|------------|
 | **Web Search** | `WebSearch` (инструмент) | `--search` | `google_web_search` (инструмент) |
 | **Web Fetch** | `WebFetch` (инструмент) | - | `web_fetch` (инструмент) |
-| **MCP Tools** | ✓ контроль через `--tools`, `--allowedTools` | ✓ настройка `codex mcp`, без контроля в exec | ? нет данных |
+| **MCP Tools** | ✓ контроль через `--tools`, `--allowedTools` | ✓ настройка `codex mcp`, без контроля в exec | ✓ контроль через `settings.json` |
 | **Browser** | `--chrome` | - | - |
 | **Codebase Read** | `Read`, `Glob`, `Grep` (по умолчанию) | По умолчанию | По умолчанию |
 
@@ -36,7 +36,7 @@
 
 - **Claude**: MCP настраивается через `--mcp-config` или глобально. Workflow может контролировать какие MCP-инструменты разрешены через `--tools` и `--allowedTools`
 - **Codex**: MCP настраивается через `codex mcp add`. При выполнении `codex exec` настроенные MCP-серверы доступны автоматически. Нет флага для ограничения конкретных инструментов
-- **Gemini**: В документации нет информации о поддержке MCP
+- **Gemini**: MCP настраивается через `mcpServers` в `settings.json` или `gemini mcp add`. Контроль через `includeTools`/`excludeTools` на уровне сервера, `mcp.allowed`/`mcp.excluded` глобально
 
 ### Ключевые наблюдения
 
@@ -83,8 +83,8 @@
 2. WHEN `capabilities.mcp_tools: true` в Claude, THE Adapter SHALL НЕ ограничивать доступ к MCP-инструментам через `--tools`
 3. WHEN `capabilities.mcp_tools: ["tool1"]` в Claude, THE Adapter SHALL добавить инструменты в `--allowedTools`
 4. WHEN `capabilities.mcp_tools: true` в Codex, THE Adapter SHALL логировать что MCP доступен (настроенные через `codex mcp` серверы используются автоматически)
-5. WHEN MCP-инструменты разрешены, THE Adapter SHALL логировать какие инструменты были использованы (из response)
-6. IF CLI-утилита не поддерживает контроль MCP, THE Adapter SHALL логировать предупреждение
+5. WHEN `capabilities.mcp_tools: true` в Gemini, THE Adapter SHALL использовать настроенные MCP-серверы (контроль через `includeTools`/`excludeTools` в `settings.json`)
+6. WHEN MCP-инструменты разрешены, THE Adapter SHALL логировать какие инструменты были использованы (из response)
 
 ### Requirement 4: Поддержка интеграции с браузером
 
@@ -122,11 +122,11 @@
    | `browser` | Не поддерживается |
 
    **Gemini CLI:**
-   | Capability | Флаги |
-   |------------|-------|
+   | Capability | Флаги/Настройки |
+   |------------|-----------------|
    | `web_search` | `--allowed-tools google_web_search` |
    | `web_fetch` | `--allowed-tools web_fetch` |
-   | `mcp_tools` | Нет данных о поддержке MCP |
+   | `mcp_tools` | `mcpServers` в settings.json, `includeTools`/`excludeTools`, `mcp.allowed`/`mcp.excluded` |
    | `browser` | Не поддерживается |
 
 2. WHEN capability не поддерживается CLI, THE Adapter SHALL логировать предупреждение и продолжить

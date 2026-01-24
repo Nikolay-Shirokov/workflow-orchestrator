@@ -136,7 +136,7 @@ export interface CapabilityAwareAdapter extends CLIAdapter {
 ### Задача 5.1: Реализовать getCapabilitySupport для Gemini
 - [ ] `web_search`: supported: true (инструмент `google_web_search`)
 - [ ] `web_fetch`: supported: true (инструмент `web_fetch`)
-- [ ] `mcp_tools`: supported: false
+- [ ] `mcp_tools`: supported: true (через `settings.json`, `includeTools`/`excludeTools`)
 - [ ] `browser`: supported: false
 
 **Файл:** `src/adapters/gemini-cli-adapter.ts`

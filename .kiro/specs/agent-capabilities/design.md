@@ -329,8 +329,13 @@ class CodexCLIAdapter {
 **Поддерживаемые capabilities:**
 - `web_search` ✓ (инструмент `google_web_search`)
 - `web_fetch` ✓ (инструмент `web_fetch`)
-- `mcp_tools` ✗
+- `mcp_tools` ✓ (через `settings.json`)
 - `browser` ✗
+
+**Особенность MCP в Gemini:** MCP настраивается через `mcpServers` в `settings.json` или `gemini mcp add`. Контроль инструментов осуществляется через:
+- `includeTools` / `excludeTools` на уровне сервера
+- `mcp.allowed` / `mcp.excluded` глобально
+- `trust: true` для автоматического подтверждения
 
 ```typescript
 class GeminiCLIAdapter {
@@ -347,8 +352,8 @@ class GeminiCLIAdapter {
         note: 'Получение и обработка содержимого URL (до 20 URL)'
       },
       mcp_tools: {
-        supported: false,
-        note: 'Gemini CLI не поддерживает MCP'
+        supported: true,
+        note: 'MCP настраивается через settings.json. Контроль через includeTools/excludeTools'
       },
       browser: {
         supported: false,
@@ -368,7 +373,11 @@ class GeminiCLIAdapter {
       webTools.push('web_fetch');
     }
 
-    // Инструменты будут объединены с permissions tools в prepareArguments
+    if (capabilities.mcp_tools) {
+      // MCP настроен через settings.json - просто логируем
+      console.log('[GeminiAdapter] MCP-инструменты доступны если настроены в settings.json');
+    }
+
     return webTools.length > 0
       ? ['--allowed-tools', webTools.join(',')]
       : [];
