@@ -27,7 +27,7 @@
 | Capability | Claude CLI | Codex CLI | Gemini CLI |
 |------------|------------|-----------|------------|
 | **Web Search** | `WebSearch` (инструмент) | `--search` | `google_web_search` (инструмент) |
-| **Web Fetch** | `WebFetch` (инструмент) | - | - |
+| **Web Fetch** | `WebFetch` (инструмент) | - | `web_fetch` (инструмент) |
 | **MCP Tools** | `--mcp-config`, `--tools`, `--allowedTools` | `codex mcp` (настройка) | - |
 | **Browser** | `--chrome` | - | - |
 | **Codebase Read** | `Read`, `Glob`, `Grep` (по умолчанию) | По умолчанию | По умолчанию |
@@ -64,7 +64,8 @@
 2. WHEN `capabilities.web_search: true` в Codex, THE Adapter SHALL добавить флаг `--search`
 3. WHEN `capabilities.web_search: true` в Gemini, THE Adapter SHALL разрешить инструмент `google_web_search`
 4. WHEN `capabilities.web_fetch: true` в Claude, THE Adapter SHALL добавить `WebFetch` в `--tools` и `--allowedTools`
-5. WHEN веб-поиск/fetch разрешен, THE Adapter SHALL логировать это для аудита
+5. WHEN `capabilities.web_fetch: true` в Gemini, THE Adapter SHALL разрешить инструмент `web_fetch`
+6. WHEN веб-поиск/fetch разрешен, THE Adapter SHALL логировать это для аудита
 
 ### Requirement 3: Поддержка MCP-инструментов
 
@@ -117,6 +118,7 @@
    | Capability | Флаги |
    |------------|-------|
    | `web_search` | `--allowed-tools google_web_search` |
+   | `web_fetch` | `--allowed-tools web_fetch` |
    | `mcp_tools` | Не поддерживается |
    | `browser` | Не поддерживается |
 

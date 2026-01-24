@@ -133,8 +133,8 @@ export interface CapabilityAwareAdapter extends CLIAdapter {
 ## Фаза 5: Gemini CLI адаптер
 
 ### Задача 5.1: Реализовать getCapabilitySupport для Gemini
-- [ ] `web_search`: supported: true, flags: ['--allowed-tools', 'google_web_search']
-- [ ] `web_fetch`: supported: false
+- [ ] `web_search`: supported: true (инструмент `google_web_search`)
+- [ ] `web_fetch`: supported: true (инструмент `web_fetch`)
 - [ ] `mcp_tools`: supported: false
 - [ ] `browser`: supported: false
 
@@ -142,13 +142,15 @@ export interface CapabilityAwareAdapter extends CLIAdapter {
 
 ### Задача 5.2: Рефакторинг mapPermissionsToArgs для объединения tools
 - [ ] Собирать все --allowed-tools в один список
-- [ ] Источники: permissions.write → write_file, permissions.execute → shell, capabilities.web_search → google_web_search
+- [ ] Источники: permissions.write → write_file, permissions.execute → shell
+- [ ] Capabilities: web_search → google_web_search, web_fetch → web_fetch
 - [ ] `--yolo` добавлять только если список непустой
 
 **Файл:** `src/adapters/gemini-cli-adapter.ts`
 
 ### Задача 5.3: Реализовать mapCapabilitiesToArgs для Gemini
-- [ ] `web_search: true` → добавить google_web_search в общий список tools
+- [ ] `web_search: true` → добавить google_web_search в список tools
+- [ ] `web_fetch: true` → добавить web_fetch в список tools
 - [ ] Логировать warning для mcp_tools и browser
 
 **Файл:** `src/adapters/gemini-cli-adapter.ts`

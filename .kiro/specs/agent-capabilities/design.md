@@ -87,7 +87,8 @@ export interface StepCapabilities {
   /**
    * Разрешить получение веб-страниц по URL
    * - Claude: --tools "...,WebFetch" --allowedTools WebFetch
-   * - Codex/Gemini: не поддерживается
+   * - Gemini: --allowed-tools web_fetch
+   * - Codex: не поддерживается
    */
   web_fetch?: boolean;
 
@@ -321,8 +322,8 @@ class CodexCLIAdapter {
 ### Gemini CLI
 
 **Поддерживаемые capabilities:**
-- `web_search` ✓
-- `web_fetch` ✗
+- `web_search` ✓ (инструмент `google_web_search`)
+- `web_fetch` ✓ (инструмент `web_fetch`)
 - `mcp_tools` ✗
 - `browser` ✗
 
@@ -333,11 +334,12 @@ class GeminiCLIAdapter {
       web_search: {
         supported: true,
         flags: ['--allowed-tools', 'google_web_search'],
-        note: 'Требует --yolo для автоподтверждения'
+        note: 'Поиск через Google, возвращает summary с citations'
       },
       web_fetch: {
-        supported: false,
-        note: 'Gemini CLI не поддерживает WebFetch'
+        supported: true,
+        flags: ['--allowed-tools', 'web_fetch'],
+        note: 'Получение и обработка содержимого URL (до 20 URL)'
       },
       mcp_tools: {
         supported: false,
@@ -351,15 +353,20 @@ class GeminiCLIAdapter {
   }
 
   mapCapabilitiesToArgs(capabilities: StepCapabilities): string[] {
-    const args: string[] = [];
+    const webTools: string[] = [];
 
     if (capabilities.web_search) {
-      // Добавляем google_web_search к списку разрешенных инструментов
-      args.push('--allowed-tools', 'google_web_search');
-      // --yolo добавляется автоматически при наличии инструментов
+      webTools.push('google_web_search');
     }
 
-    return args;
+    if (capabilities.web_fetch) {
+      webTools.push('web_fetch');
+    }
+
+    // Инструменты будут объединены с permissions tools в prepareArguments
+    return webTools.length > 0
+      ? ['--allowed-tools', webTools.join(',')]
+      : [];
   }
 }
 ```
