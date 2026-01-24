@@ -2000,4 +2000,187 @@ describe('Codex CLI Adapter Property Tests', () => {
       );
     });
   });
+
+  /**
+   * Feature: codex-cli-adapter, Property 14: Маппинг permissions на sandbox режимы
+   * Validates: Requirements 1.2, 1.3, 1.6, 9.1
+   *
+   * Проверяем что permissions корректно маппятся на флаги --sandbox
+   */
+  describe('Property 14: Маппинг permissions на sandbox режимы', () => {
+    test('должен использовать --sandbox read-only по умолчанию без permissions', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 100 }), // Промпт
+          (prompt) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { prompt };
+
+            const args = adapter.testPrepareArguments(request);
+
+            // Без permissions должен быть --sandbox read-only
+            expect(args).toContain('--sandbox');
+            const sandboxIndex = args.indexOf('--sandbox');
+            expect(args[sandboxIndex + 1]).toBe('read-only');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен использовать --sandbox workspace-write при permissions.write', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 100 }), // Промпт
+          fc.array(fc.string({ minLength: 1, maxLength: 50 }), { minLength: 1, maxLength: 5 }), // write паттерны
+          (prompt, writePatterns) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = {
+              prompt,
+              permissions: { write: writePatterns }
+            };
+
+            const args = adapter.testPrepareArguments(request);
+
+            // С permissions.write должен быть --sandbox workspace-write
+            expect(args).toContain('--sandbox');
+            const sandboxIndex = args.indexOf('--sandbox');
+            expect(args[sandboxIndex + 1]).toBe('workspace-write');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('должен добавлять --full-auto при permissions.execute', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 100 }), // Промпт
+          (prompt) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = {
+              prompt,
+              permissions: { execute: true }
+            };
+
+            const args = adapter.testPrepareArguments(request);
+
+            // С permissions.execute должен быть --full-auto
+            expect(args).toContain('--full-auto');
+            // И --sandbox workspace-write
+            expect(args).toContain('--sandbox');
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('НЕ должен использовать опасные флаги без fullAccess', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 100 }), // Промпт
+          fc.record({
+            read: fc.option(fc.array(fc.string({ minLength: 1, maxLength: 30 }), { minLength: 0, maxLength: 3 }), { nil: undefined }),
+            write: fc.option(fc.array(fc.string({ minLength: 1, maxLength: 30 }), { minLength: 0, maxLength: 3 }), { nil: undefined }),
+            execute: fc.option(fc.boolean(), { nil: undefined })
+            // fullAccess намеренно НЕ включен
+          }),
+          (prompt, permissions) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { prompt, permissions };
+
+            const args = adapter.testPrepareArguments(request);
+
+            // БЕЗ fullAccess не должно быть опасных режимов
+            // Не должно быть --yolo или danger-full-access
+            expect(args).not.toContain('--yolo');
+
+            const sandboxIndex = args.indexOf('--sandbox');
+            if (sandboxIndex !== -1) {
+              expect(args[sandboxIndex + 1]).not.toBe('danger-full-access');
+            }
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('явный sandbox должен иметь приоритет над permissions', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 100 }), // Промпт
+          fc.oneof(
+            fc.constant('read-only' as const),
+            fc.constant('workspace-write' as const)
+          ),
+          (prompt, explicitSandbox) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = {
+              prompt,
+              sandbox: explicitSandbox,
+              permissions: { write: ['*.md'], execute: true }
+            };
+
+            const args = adapter.testPrepareArguments(request);
+
+            // Явный sandbox имеет приоритет
+            expect(args).toContain('--sandbox');
+            const sandboxIndex = args.indexOf('--sandbox');
+            expect(args[sandboxIndex + 1]).toBe(explicitSandbox);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
+
+  /**
+   * Feature: codex-cli-adapter, Property 15: Поддержка outputFile
+   * Validates: Requirements 1.1, 1.4
+   *
+   * Проверяем что outputFile корректно добавляется как --output-last-message
+   */
+  describe('Property 15: Поддержка outputFile', () => {
+    test('должен добавлять --output-last-message при указании outputFile', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 100 }), // Промпт
+          fc.string({ minLength: 1, maxLength: 100 }), // outputFile
+          (prompt, outputFile) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { prompt, outputFile };
+
+            const args = adapter.testPrepareArguments(request);
+
+            // Должен быть --output-last-message с путем к файлу
+            expect(args).toContain('--output-last-message');
+            const outputIndex = args.indexOf('--output-last-message');
+            expect(args[outputIndex + 1]).toBe(outputFile);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+
+    test('outputFile должен быть перед флагом "-"', () => {
+      fc.assert(
+        fc.property(
+          fc.string({ minLength: 1, maxLength: 100 }), // Промпт
+          fc.string({ minLength: 1, maxLength: 100 }), // outputFile
+          (prompt, outputFile) => {
+            const adapter = new TestableCodexCLIAdapter();
+            const request: CodexAdapterRequest = { prompt, outputFile };
+
+            const args = adapter.testPrepareArguments(request);
+
+            const outputIndex = args.indexOf('--output-last-message');
+            const stdinIndex = args.indexOf('-');
+
+            expect(outputIndex).toBeLessThan(stdinIndex);
+          }
+        ),
+        { numRuns: 100 }
+      );
+    });
+  });
 });
