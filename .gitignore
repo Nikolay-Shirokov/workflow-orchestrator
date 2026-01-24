@@ -2,8 +2,6 @@ old/
 
 # Зависимости
 node_modules/
-package-lock.json
-yarn.lock
 
 # Скомпилированный код
 dist/
