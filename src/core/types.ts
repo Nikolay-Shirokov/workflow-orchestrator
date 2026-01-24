@@ -48,22 +48,63 @@ export interface WorkflowSettings {
 
 /**
  * Конфигурация MCP-инструмента
+ * @deprecated Используйте StepCapabilities.mcp_tools вместо этого.
+ * MCP-серверы теперь настраиваются на уровне CLI-утилиты, а не workflow.
  */
 export interface MCPToolConfig {
   /** Имя инструмента */
   name: string;
-  
+
   /** Команда для проверки доступности */
   checkCommand?: string;
-  
+
   /** Ожидаемый код выхода при успехе */
   expectedExitCode?: number;
-  
+
   /** Таймаут проверки в миллисекундах */
   timeout?: number;
-  
+
   /** Обязателен ли инструмент */
   required?: boolean;
+}
+
+/**
+ * Информация о MCP-инструменте
+ * @deprecated Используйте StepCapabilities.mcp_tools вместо этого.
+ */
+export interface MCPToolInfo {
+  /** Имя инструмента */
+  name: string;
+
+  /** Описание инструмента */
+  description: string;
+
+  /** Доступен ли инструмент */
+  available: boolean;
+
+  /** Версия инструмента (если доступна) */
+  version?: string;
+
+  /** Дополнительные метаданные */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Контекст MCP для передачи в модель
+ * @deprecated Используйте StepCapabilities вместо этого.
+ */
+export interface MCPContext {
+  /** Доступные инструменты */
+  available_tools: string[];
+
+  /** Недоступные инструменты */
+  unavailable_tools: string[];
+
+  /** Детальная информация об инструментах */
+  tools: Record<string, MCPToolInfo>;
+
+  /** Флаги доступности для условного выполнения */
+  flags: Record<string, boolean>;
 }
 
 /**
@@ -167,6 +208,13 @@ export interface WorkflowStep {
   timeout?: number;
   retries?: number;
   continue_on_error?: boolean;
+
+  /**
+   * Разрешения для данного шага
+   * Позволяет указать права доступа к файлам, shell и capabilities
+   * @see StepPermissions
+   */
+  permissions?: StepPermissions;
 }
 
 /**
