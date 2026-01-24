@@ -432,19 +432,11 @@ function mergeCapabilities(
 }
 ```
 
-## Рефакторинг MCPManager
+## Удаление MCPManager
 
-### Текущий MCPManager (удалить)
+Текущий `MCPManager` — заглушка, которая только проверяет наличие CLI через `which` и добавляет текст в промпт. Его нужно удалить.
 
-```typescript
-// src/core/mcp-manager.ts - УДАЛИТЬ
-class MCPManager {
-  // Проверяет which команды - бесполезно
-  // Добавляет текст в промпт - некорректно
-}
-```
-
-### Новый CapabilityChecker (опционально)
+### CapabilityChecker (опционально)
 
 ```typescript
 // src/core/capability-checker.ts
@@ -585,7 +577,7 @@ workflow:
         analysis: "artifacts/analysis.md"
 ```
 
-## План миграции
+## План реализации
 
 ### Фаза 1: Типы и интерфейсы
 - Добавить `StepCapabilities` в types.ts
@@ -607,7 +599,7 @@ workflow:
 
 ### Фаза 5: Gemini CLI адаптер
 - Реализовать `getCapabilitySupport()`
-- Рефакторинг для объединения allowed-tools из permissions и capabilities
+- Объединение allowed-tools из permissions и capabilities
 
 ### Фаза 6: StepExecutor
 - Добавить merge capabilities (step + role)
@@ -615,14 +607,13 @@ workflow:
 
 ### Фаза 7: Удаление MCPManager
 - Удалить src/core/mcp-manager.ts
-- Удалить mcp_tools из WorkflowSettings (deprecated)
+- Удалить mcp_tools из WorkflowSettings
 - Обновить тесты
 
 ### Фаза 8: Документация и тесты
 - Property-based тесты для маппинга capabilities
-- Обновить README адаптеров
-- Обновить FAQ и SECURITY docs
-- Добавить миграционное руководство
+- Обновить README адаптеров, FAQ, SECURITY docs
+- Обновить примеры workflow
 
 ## Свойства корректности (Properties)
 

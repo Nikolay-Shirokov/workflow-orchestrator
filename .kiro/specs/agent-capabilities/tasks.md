@@ -190,11 +190,10 @@ export interface CapabilityAwareAdapter extends CLIAdapter {
 **Файлы:** `src/core/mcp-manager.ts`, `src/core/index.ts`, тесты
 
 ### Задача 7.3: Обновить WorkflowSettings
-- [ ] Пометить `mcp_tools` в settings как deprecated
-- [ ] Добавить warning при использовании старого формата
-- [ ] Документировать миграцию
+- [ ] Удалить `mcp_tools` из settings (устаревший формат)
+- [ ] Обновить примеры workflow без mcp_tools в settings
 
-**Файл:** `src/core/types.ts`, парсер конфигурации
+**Файл:** `src/core/types.ts`, примеры workflow
 
 ### Задача 7.4: Создать CapabilityChecker (опционально)
 - [ ] Создать `src/core/capability-checker.ts`
@@ -265,13 +264,6 @@ export interface CapabilityAwareAdapter extends CLIAdapter {
 - [ ] Рекомендации по использованию
 
 **Файл:** `docs/SECURITY.md`
-
-### Задача 9.4: Создать миграционное руководство
-- [ ] Описать изменения в формате конфигурации
-- [ ] Примеры миграции от MCPManager
-- [ ] FAQ по миграции
-
-**Файл:** `docs/MIGRATION_CAPABILITIES.md`
 
 ### Задача 9.5: Обновить примеры workflow
 - [ ] Обновить существующие примеры с capabilities

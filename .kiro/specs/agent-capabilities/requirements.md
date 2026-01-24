@@ -131,16 +131,15 @@
 3. THE System SHALL НЕ добавлять информацию о "MCP-инструментах" в промпт (текущее поведение)
 4. THE System SHALL обновить документацию чтобы объяснить что MCP настраивается вне workflow
 
-### Requirement 7: Обратная совместимость
+### Requirement 7: Безопасность по умолчанию
 
-**User Story:** Как пользователь существующих workflow, я хочу чтобы изменения не нарушили работу моих конфигураций.
+**User Story:** Как пользователь workflow, я хочу чтобы без явного указания capabilities система работала безопасно.
 
 #### Acceptance Criteria
 
-1. WHEN workflow не указывает capabilities, THE System SHALL работать как раньше
-2. WHEN workflow использует старый формат permissions, THE System SHALL обработать его корректно
-3. IF mcp_tools секция существует в settings, THE System SHALL логировать предупреждение о deprecated формате
-4. THE System SHALL предоставить миграционное руководство
+1. WHEN workflow не указывает capabilities, THE System SHALL НЕ включать дополнительные возможности
+2. WHEN capabilities указаны частично, THE System SHALL включать только указанные возможности
+3. IF mcp_tools секция существует в settings, THE System SHALL удалить её при обработке (устаревший формат)
 
 ### Requirement 8: Безопасность capabilities
 
@@ -181,7 +180,7 @@
 
 1. Все capabilities должны быть документированы с примерами использования
 2. Должно быть чёткое указание какие capabilities поддерживаются каким адаптером
-3. Миграционное руководство должно описывать переход от MCPManager
+3. Примеры workflow должны демонстрировать использование capabilities
 
 ### NFR 4: Тестируемость
 
