@@ -116,6 +116,7 @@ describe('Main Output Property Tests', () => {
    * если в истории нет подходящих артефактов.
    */
   test('Property 15.1: Fallback uses latest timestamp', async () => {
+    jest.setTimeout(30000); // Увеличиваем таймаут для property теста с файловыми операциями
     await fc.assert(
       fc.asyncProperty(
         fc.array(fc.boolean(), { minLength: 1, maxLength: 8 }),

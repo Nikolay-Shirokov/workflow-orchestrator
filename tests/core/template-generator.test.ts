@@ -249,7 +249,8 @@ c) Зеленый
       const template = generator.generate('markdown', step, mockContext);
 
       expect(template).toContain('# Тестовый шаг');
-      expect(template).toContain('> Описание');
+      // Описание теперь внутри HTML-комментария (чтобы не попадало в контекст модели)
+      expect(template).toContain('<!-- Описание шага: Описание -->');
       // Инструкции теперь внутри HTML-комментария
       expect(template).toContain('📝 Инструкции:');
       // Задание выводится как prompt_message, без отдельного заголовка

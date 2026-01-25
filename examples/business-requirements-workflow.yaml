@@ -12,19 +12,19 @@ workflow:
     default_adapter: "claude-cli"
     default_input_mode: "file"  # Использовать файловый ввод
     default_file_format: "markdown"
-    log_level: "info"
+    log_level: "warn"
     
     # Конфигурация редактора
     default_editor:
       command: "code"
-      args: ["--wait"]
-      wait: true
+      args: []
+      wait: false 
   
   # Определение ролей
   roles:
     researcher:
-      adapter: "codex-cli"
-      model: "gpt-5.1-codex-mini"
+      adapter: "gemini-cli"
+      model: "gemini-2.5-pro"
       role_definition: |
         Вы - ИССЛЕДОВАТЕЛЬ, который собирает информацию из интернета.
         Ваша роль - найти релевантные данные, примеры, best practices
@@ -40,7 +40,7 @@ workflow:
 
     architect:
       adapter: "claude-cli"
-      model: "claude-sonnet-4.5"
+      model: "sonnet"
       role_definition: |
         Вы - ГЛАВНЫЙ АРХИТЕКТОР в процессе разработки требований.
         Ваша роль - задавать глубокие вопросы, анализировать потребности
@@ -54,8 +54,8 @@ workflow:
         write: ["artifacts/**/*.md"]
 
     copilot:
-      adapter: "gemini-cli"
-      model: "gemini-2.5-pro"
+      adapter: "codex-cli"
+      model: "gpt-5.2"
       role_definition: |
         Вы - ВТОРОЙ ПИЛОТ, предоставляющий критический анализ и альтернативные перспективы.
         Ваша роль - выявлять пробелы, предлагать улучшения и задавать вопросы,
@@ -459,37 +459,23 @@ workflow:
     - id: "step9_user_answers"
       name: "Ответы пользователя"
       type: "user_input"
-      description: "Пользователь отвечает на финальные вопросы через файловый ввод"
       depends_on: ["step8_final_questions"]
       input_mode: "file"
       file_format: "markdown"
-      include_questions: false  # Не включать вопросы в контекст (оптимизация)
-      editor:
-        command: "code"
-        args: ["--wait", "--new-window"]
-        wait: true
-      prompt_template: |
+      # Для сложных анкет (много ## заголовков) весь документ передаётся целиком,
+      # вопросы и ответы остаются вместе - так модели проще анализировать
+      prompt_message: |
         # Ответы на вопросы по требованиям
-        
+
         Ниже представлены вопросы для формирования требований к вашему проекту.
         Пожалуйста, ответьте на них максимально подробно.
-        
+
         ${final_questions}
-        
+
         ---
-        
-        ## ИНСТРУКЦИЯ ПО ЗАПОЛНЕНИЮ
-        
-        1. Отвечайте под каждым вопросом
-        2. Используйте конкретные примеры где возможно
-        3. Если вопрос не применим, напишите "Не применимо" и объясните почему
-        4. Можете добавлять дополнительную информацию
-        5. Сохраните файл (Ctrl+S / Cmd+S) перед выбором "Продолжить"
-        
-        ---
-        
+
         # ВАШИ ОТВЕТЫ
-        
+
         [Начните отвечать здесь]
       inputs:
         final_questions: "${final_questions}"

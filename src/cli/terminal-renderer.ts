@@ -89,21 +89,24 @@ export class TerminalRenderer {
    */
   private detectCapabilities(): TerminalCapabilities {
     const isInteractive = this.output.isTTY === true;
-    
+
     // Проверка поддержки ANSI через переменные окружения
     const term = process.env.TERM || '';
     const colorTerm = process.env.COLORTERM || '';
     const ci = process.env.CI === 'true';
-    
+    const isWindows = process.platform === 'win32';
+
     // Терминалы, которые точно поддерживают ANSI
-    const supportsAnsi = isInteractive && (
+    // Windows 10+ поддерживает ANSI нативно, даже если TERM не установлен
+    const supportsAnsi = isInteractive && !ci && (
+      isWindows ||  // Windows 10+ поддерживает ANSI нативно
       term.includes('color') ||
       term.includes('ansi') ||
       term.includes('xterm') ||
       term.includes('screen') ||
       term.includes('vt100') ||
       colorTerm.length > 0
-    ) && !ci;
+    );
 
     const supportsColors = supportsAnsi;
 

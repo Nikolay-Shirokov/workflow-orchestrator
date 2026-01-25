@@ -237,9 +237,13 @@ describe('Security Property Tests - Claude Adapter', () => {
    */
   describe('Property 3: Базовые инструменты чтения', () => {
     test('должен включать Read, Grep, Glob при permissions.write', () => {
+      // Генерируем только валидные паттерны (без path traversal ..)
+      const validPatternArb = fc.string({ minLength: 1, maxLength: 30 })
+        .filter(s => !s.includes('..'));
+
       fc.assert(
         fc.property(
-          fc.array(fc.string({ minLength: 1, maxLength: 30 }), { minLength: 1, maxLength: 3 }),
+          fc.array(validPatternArb, { minLength: 1, maxLength: 3 }),
           (writePatterns) => {
             const adapter = new TestableClaudeCLIAdapter();
             const permissions: StepPermissions = { write: writePatterns };

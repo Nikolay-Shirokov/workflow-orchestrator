@@ -49,7 +49,31 @@ export class RoleManager {
     for (const [roleName, roleConfig] of Object.entries(rolesConfig)) {
       this.validateRoleConfig(roleName, roleConfig);
       this.roles.set(roleName, roleConfig);
-      this.permissions.set(roleName, this.parsePermissions(roleConfig.permissions || []));
+
+      // Парсим permissions из массива строк
+      const permissions = this.parsePermissions(roleConfig.permissions || []);
+
+      // Также обрабатываем default_permissions (формат с read/write)
+      if (roleConfig.default_permissions) {
+        const defaultPerms = roleConfig.default_permissions;
+
+        // Обрабатываем read
+        if (defaultPerms.read) {
+          permissions.read = true;
+        }
+
+        // Обрабатываем write как edit
+        if (defaultPerms.write && Array.isArray(defaultPerms.write)) {
+          permissions.edit = true;
+          // Конвертируем все glob паттерны в один regex
+          const regexPatterns = defaultPerms.write.map(pattern => this.globToRegex(pattern));
+          // Убираем якоря и объединяем через |
+          const combinedPattern = regexPatterns.map(r => r.slice(1, -1)).join('|');
+          permissions.editFileRegex = `^(${combinedPattern})$`;
+        }
+      }
+
+      this.permissions.set(roleName, permissions);
     }
   }
   

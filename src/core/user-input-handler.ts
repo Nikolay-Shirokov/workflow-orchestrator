@@ -162,53 +162,69 @@ export class UserInputHandler {
   private parseMarkdown(input: string): Record<string, string> | string {
     // Удаляем HTML-комментарии из входных данных
     let cleanedInput = this.removeHtmlComments(input);
-    
+
     // Удаляем заголовки первого уровня (# Заголовок), оставляя только контент
     // Это нужно для очистки от служебных заголовков шаблона
     cleanedInput = this.removeTopLevelHeaders(cleanedInput);
-    
-    // Проверяем наличие разделителя ---
-    // Если есть, извлекаем только текст после него (это ответы пользователя)
+
+    // Определяем, является ли контент сложной структурированной формой
+    // (много разделителей --- или много заголовков ##)
+    // В таком случае НЕ пытаемся отделить ответы от вопросов,
+    // а возвращаем весь документ целиком - модели проще анализировать
+    // ответы в контексте вопросов
+    const separatorCount = (cleanedInput.match(/^---$/gm) || []).length;
+    const headerCount = (cleanedInput.match(/^##\s+/gm) || []).length;
+    const isComplexForm = separatorCount > 3 || headerCount > 5;
+
+    if (isComplexForm) {
+      // Для сложных форм возвращаем весь очищенный контент
+      // Удаляем только плейсхолдеры в [квадратных скобках]
+      return cleanedInput
+        .replace(/\[(?:Начните отвечать здесь|Ваш текст|Напишите ваш ответ здесь)\]/g, '')
+        .trim();
+    }
+
+    // Для простых форм: извлекаем ответы после последнего разделителя ---
     if (cleanedInput.includes('---')) {
       const parts = cleanedInput.split('---');
       if (parts.length >= 2) {
         // Берем все после последнего разделителя
         const afterSeparator = parts[parts.length - 1].trim();
-        
+
         // Удаляем служебные подсказки в [квадратных скобках]
         const cleanedAnswers = afterSeparator
           .replace(/\[[^\]]+\]/g, '')    // Удаляем текст в [скобках]
           .trim();
-        
+
         if (cleanedAnswers) {
           cleanedInput = cleanedAnswers;
         }
       }
     }
-    
+
     const result: Record<string, string> = {};
     const sections = cleanedInput.split(/^##\s+/m).filter(s => s.trim());
-    
+
     // Если нет секций с ##, возвращаем весь текст
     if (sections.length === 0 || (sections.length === 1 && !cleanedInput.includes('##'))) {
       return cleanedInput.trim();
     }
-    
+
     for (const section of sections) {
       const lines = section.split('\n');
       const question = lines[0].trim();
       const answer = lines.slice(1).join('\n').trim();
-      
+
       if (question && answer) {
         result[question] = answer;
       }
     }
-    
+
     // Если не нашли ни одной пары вопрос-ответ, возвращаем весь текст
     if (Object.keys(result).length === 0) {
       return cleanedInput.trim();
     }
-    
+
     return result;
   }
   

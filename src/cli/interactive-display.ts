@@ -832,7 +832,14 @@ export class InteractiveDisplay implements IProgressDisplay {
     } finally {
       // Скрываем курсор после выбора
       this.renderer.hideCursor();
-      
+
+      // Сбрасываем кэш для полной перерисовки после меню
+      this.lastRenderedLines = [];
+
+      // Очищаем экран и перемещаем курсор в начало перед полной перерисовкой
+      this.renderer.clearScreen();
+      this.renderer.moveCursor(1, 1);
+
       // Возобновляем обновление интерфейса
       this.resumeRendering();
     }

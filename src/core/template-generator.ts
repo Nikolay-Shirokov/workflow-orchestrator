@@ -73,13 +73,14 @@ export class TemplateGenerator {
     // Заголовок
     lines.push(`# ${step.name || 'Ввод пользователя'}`);
     lines.push('');
-    
-    // Описание
+
+    // Описание шага (техническое) - добавляем в HTML-комментарий,
+    // чтобы оно не попало в контекст модели
     if (step.description) {
-      lines.push(`> ${step.description}`);
+      lines.push(`<!-- Описание шага: ${step.description} -->`);
       lines.push('');
     }
-    
+
     // Инструкции (используем HTML комментарий, чтобы не передавать их в контекст модели)
     lines.push('<!--');
     lines.push('📝 Инструкции:');
@@ -96,34 +97,42 @@ export class TemplateGenerator {
     if (step.prompt_message) {
       lines.push(step.prompt_message);
       lines.push('');
-    }
-    
-    // Извлечение и добавление вопросов
-    const questions = this.extractQuestions(step.prompt_message || '');
-    if (questions.length > 0) {
-      lines.push('## Вопросы');
-      lines.push('');
-      
-      for (const question of questions) {
-        lines.push(`### ${question.number}. ${question.text}`);
-        lines.push('');
-        
-        if (question.options && question.options.length > 0) {
-          lines.push('**Варианты ответов:**');
-          for (const option of question.options) {
-            lines.push(`- ${option}`);
-          }
+
+      // Если prompt_message содержит структурированный контент (markdown заголовки или длинный текст),
+      // не пытаемся извлекать вопросы - они уже в тексте
+      // Проверяем наличие markdown заголовков (## в начале строки с текстом после)
+      const hasMarkdownHeaders = /^##\s+\S/m.test(step.prompt_message);
+      const isStructuredContent = hasMarkdownHeaders || step.prompt_message.length > 500;
+
+      if (!isStructuredContent) {
+        // Извлечение и добавление вопросов только для коротких простых промптов
+        const questions = this.extractQuestions(step.prompt_message);
+        if (questions.length > 0) {
+          lines.push('## Вопросы');
           lines.push('');
+
+          for (const question of questions) {
+            lines.push(`### ${question.number}. ${question.text}`);
+            lines.push('');
+
+            if (question.options && question.options.length > 0) {
+              lines.push('**Варианты ответов:**');
+              for (const option of question.options) {
+                lines.push(`- ${option}`);
+              }
+              lines.push('');
+            }
+
+            lines.push('**Ваш ответ:**');
+            lines.push('');
+            lines.push('<!-- Напишите ваш ответ здесь -->');
+            lines.push('');
+            lines.push('---');
+            lines.push('');
+          }
         }
-        
-        lines.push('**Ваш ответ:**');
-        lines.push('');
-        lines.push('<!-- Напишите ваш ответ здесь -->');
-        lines.push('');
-        lines.push('---');
-        lines.push('');
       }
-    } else if (!step.prompt_message) {
+    } else {
       // Только если нет prompt_message, добавляем секцию для свободного ответа
       lines.push('## Ваш ответ');
       lines.push('');

@@ -605,8 +605,11 @@ export class FileInputHandler {
       return 'postpone';
     }
 
+    this.logger.debug(`waitForUserConfirmation: menuHandler=${this.menuHandler ? 'есть' : 'нет'}`);
+
     if (this.menuHandler) {
       try {
+        this.logger.debug('Вызов menuHandler для отображения меню выбора');
         return await this.menuHandler(
           [
             { label: 'Продолжить', value: 'continue' },
@@ -614,8 +617,10 @@ export class FileInputHandler {
           ],
           { title: 'Файл готов к заполнению', defaultIndex: 0 }
         );
-      } catch {
-        // Переходим к консольному меню
+      } catch (error) {
+        // Логируем ошибку и переходим к консольному меню
+        const errMsg = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Ошибка в menuHandler: ${errMsg}`);
       }
     }
 
