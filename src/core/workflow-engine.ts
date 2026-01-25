@@ -528,7 +528,8 @@ export class DefaultWorkflowEngine implements WorkflowEngine {
       
       // Если все зависимости уже выполнены, убираем depends_on
       if (validDependencies.length === 0) {
-        const { depends_on, ...stepWithoutDeps } = step;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { depends_on: _, ...stepWithoutDeps } = step;
         return stepWithoutDeps as WorkflowStep;
       }
       

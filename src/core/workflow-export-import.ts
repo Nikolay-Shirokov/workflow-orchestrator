@@ -10,7 +10,7 @@
 
 import { readFile, writeFile, stat } from 'fs/promises';
 import { dirname, resolve } from 'path';
-import { stringify as stringifyYAML } from 'yaml';
+import { stringify as stringifyYAML, parse as parseYAML } from 'yaml';
 import { WorkflowConfig } from './types.js';
 import { WorkflowConfigParser } from './workflow-config-parser.js';
 
@@ -378,8 +378,7 @@ export class WorkflowExportImportManager {
     } catch {
       // Пробуем YAML
       try {
-        const { parse } = require('yaml');
-        return parse(content);
+        return parseYAML(content);
       } catch (error) {
         throw new Error(`Не удалось распарсить данные экспорта: ${(error as Error).message}`);
       }

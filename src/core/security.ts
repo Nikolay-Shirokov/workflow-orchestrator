@@ -47,8 +47,9 @@ export class SecurityManager {
   private config: Required<SecurityConfig>;
   private auditLogStream?: fs.FileHandle;
   
+  /* eslint-disable no-control-regex */
   private readonly DANGEROUS_PATTERNS = [
-    /\.\.[\/\\]/g,
+    /\.\.[/\\]/g,
     /\.\.\\/g,
     /\.\.%2[fF]/g,
     /\.\.%5[cC]/g,
@@ -56,6 +57,7 @@ export class SecurityManager {
     /\x00/g,
     /[\x00-\x1F\x7F]/g,
   ];
+  /* eslint-enable no-control-regex */
   
   private readonly DEFAULT_FORBIDDEN_ENV_VARS = [
     'LD_PRELOAD',

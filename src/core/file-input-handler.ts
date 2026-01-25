@@ -279,7 +279,7 @@ export class FileInputHandler {
     
     // Определяем имя файла
     // Если в step.outputs есть путь, используем его директорию
-    let fileName = `${step.id}_input${extension}`;
+    const fileName = `${step.id}_input${extension}`;
     let fileDir = '';
     
     if (step.outputs) {

@@ -310,7 +310,7 @@ export class DefaultArtifactManager implements ArtifactManager {
       }
       
       // Очищаем имя от невалидных символов
-      let cleanPart = this.sanitizeFileName(part);
+      const cleanPart = this.sanitizeFileName(part);
       
       if (cleanPart.length === 0) {
         throw new WorkflowErrorClass({
@@ -361,7 +361,8 @@ export class DefaultArtifactManager implements ArtifactManager {
     // Удаляем невалидные символы для Windows и Unix
     // Разрешены: буквы, цифры, дефис, подчеркивание, точка
     // Добавлены дополнительные проблемные символы для Windows: $, [, ], (, ), {, }, `, ', @, #, %, ^, &, +, =
-    let sanitized = fileName.replace(/[<>:"|?*\x00-\x1F$\[\](){}`;'@#%^&+=]/g, '_');
+    // eslint-disable-next-line no-control-regex
+    let sanitized = fileName.replace(/[<>:"|?*\x00-\x1F$[\](){}`;'@#%^&+=]/g, '_');
     
     // Удаляем начальные и конечные точки и пробелы (проблемы Windows)
     sanitized = sanitized.replace(/^[.\s]+|[.\s]+$/g, '');

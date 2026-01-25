@@ -356,7 +356,7 @@ export class RoleManager {
     }
     
     // Экранируем специальные символы regex, кроме * и ?
-    let regex = glob
+    const regex = glob
       .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // Экранируем спецсимволы
       .replace(/\*/g, '.*')                   // * -> .*
       .replace(/\?/g, '.');                   // ? -> .

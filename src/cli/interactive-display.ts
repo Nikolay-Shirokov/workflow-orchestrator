@@ -645,7 +645,9 @@ export class InteractiveDisplay implements IProgressDisplay {
       try {
         this.renderer.showCursor();
         this.renderer.exitAlternateBuffer();
-      } catch {}
+      } catch {
+        // Intentionally empty - best effort terminal recovery
+      }
       this.isInitialized = false;
       return;
     }
@@ -725,7 +727,9 @@ export class InteractiveDisplay implements IProgressDisplay {
       try {
         this.renderer.exitAlternateBuffer();
         process.stdout.write('\n\n');
-      } catch {}
+      } catch {
+        // Intentionally empty - best effort terminal recovery
+      }
     }
 
     this.isInitialized = false;
@@ -910,7 +914,9 @@ export class InteractiveDisplay implements IProgressDisplay {
         clearInterval(this.renderInterval);
         this.renderInterval = null;
       }
-    } catch {}
+    } catch {
+      // Intentionally empty - cleanup should not throw
+    }
 
     // КРИТИЧНО: Восстановление терминала должно выполниться
     try {
@@ -920,12 +926,16 @@ export class InteractiveDisplay implements IProgressDisplay {
       // Последняя попытка хотя бы показать курсор
       try {
         this.renderer.showCursor();
-      } catch {}
+      } catch {
+        // Intentionally empty - last resort attempt
+      }
     }
 
     try {
       this.renderer.dispose();
-    } catch {}
+    } catch {
+      // Intentionally empty - dispose should not throw
+    }
 
     this.isInitialized = false;
     this.state = null;

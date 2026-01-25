@@ -640,10 +640,10 @@ export class UserInputHandler {
         });
         
       case 'text':
-      default:
+      default: {
         // Текстовый формат - самый компактный
         const lines: string[] = [];
-        
+
         for (const [key, value] of Object.entries(data)) {
           if (includeQuestions && typeof value === 'object' && value !== null) {
             // Если включены вопросы, форматируем как "Q: вопрос\nA: ответ"
@@ -663,6 +663,7 @@ export class UserInputHandler {
         }
         
         return lines.join('\n');
+      }
     }
   }
 }
