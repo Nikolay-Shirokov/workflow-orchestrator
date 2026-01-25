@@ -1165,7 +1165,7 @@ describe('Step Executor Property Tests', () => {
               name: 'Test Script Step',
               type: 'script',
               script: 'echo Test Output',
-              shell: 'cmd',
+              shell: process.platform === 'win32' ? 'cmd' : 'bash',
               outputs: {
                 [outputName]: fileName
               }

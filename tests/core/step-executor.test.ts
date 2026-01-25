@@ -127,7 +127,7 @@ describe('StepExecutor Unit Tests', () => {
         name: 'Test Script Step',
         type: 'script',
         script: 'echo Hello World',
-        shell: 'cmd'
+        shell: process.platform === 'win32' ? 'cmd' : 'bash'
       };
       
       const result = await executor.executeStep(step, context);
@@ -145,7 +145,7 @@ describe('StepExecutor Unit Tests', () => {
         name: 'Failing Script Step',
         type: 'script',
         script: 'exit 1',
-        shell: 'cmd'
+        shell: process.platform === 'win32' ? 'cmd' : 'bash'
       };
       
       await expect(executor.executeStep(step, context)).rejects.toThrow();
@@ -382,7 +382,7 @@ describe('StepExecutor Unit Tests', () => {
         name: 'Script Output Step',
         type: 'script',
         script: 'echo Test Script Output',
-        shell: 'cmd',
+        shell: process.platform === 'win32' ? 'cmd' : 'bash',
         outputs: {
           script_result: 'script_result.txt'
         }
@@ -404,7 +404,7 @@ describe('StepExecutor Unit Tests', () => {
         name: 'Script File Step',
         type: 'script',
         script: 'echo Test Script Output',
-        shell: 'cmd',
+        shell: process.platform === 'win32' ? 'cmd' : 'bash',
         outputs: {
           script_result: 'script_result.txt'
         }
@@ -427,7 +427,7 @@ describe('StepExecutor Unit Tests', () => {
         name: 'Script Both Step',
         type: 'script',
         script: 'echo Script Output',
-        shell: 'cmd',
+        shell: process.platform === 'win32' ? 'cmd' : 'bash',
         outputs: {
           output: 'output.txt'
         }
