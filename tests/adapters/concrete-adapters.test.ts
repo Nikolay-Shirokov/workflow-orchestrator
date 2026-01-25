@@ -79,25 +79,33 @@ describe('ClaudeCLIAdapter', () => {
 
   it('должен добавлять флаг --model если модель указана', () => {
     const adapter = new ClaudeCLIAdapter();
-    
+
     // Используем приватный метод через any для тестирования
     const argsWithModel = (adapter as any).prepareArguments({
       prompt: 'test prompt',
       model: 'claude-sonnet-3.5'
     });
-    
-    expect(argsWithModel).toEqual(['-p', '--model', 'claude-sonnet-3.5', 'test prompt']);
+
+    // Адаптер использует --print вместо -p и добавляет --tools
+    expect(argsWithModel).toContain('--print');
+    expect(argsWithModel).toContain('--model');
+    expect(argsWithModel).toContain('claude-sonnet-3.5');
+    // Промпт передается через stdin, не в аргументах
+    expect(argsWithModel).not.toContain('test prompt');
   });
 
   it('не должен добавлять флаг --model если модель не указана', () => {
     const adapter = new ClaudeCLIAdapter();
-    
+
     // Используем приватный метод через any для тестирования
     const argsWithoutModel = (adapter as any).prepareArguments({
       prompt: 'test prompt'
     });
-    
-    expect(argsWithoutModel).toEqual(['-p', 'test prompt']);
+
+    expect(argsWithoutModel).toContain('--print');
+    expect(argsWithoutModel).not.toContain('--model');
+    // Промпт передается через stdin, не в аргументах
+    expect(argsWithoutModel).not.toContain('test prompt');
   });
 });
 

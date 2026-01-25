@@ -303,7 +303,7 @@ describe('Codex CLI Adapter Property Tests', () => {
       );
     });
 
-    test('должен добавлять флаг --search когда указан enableSearch', () => {
+    test('НЕ должен добавлять флаг --search (не работает в exec режиме)', () => {
       fc.assert(
         fc.property(
           fc.string({ minLength: 1, maxLength: 100 }), // Промпт
@@ -311,14 +311,11 @@ describe('Codex CLI Adapter Property Tests', () => {
           (prompt, enableSearch) => {
             const adapter = new TestableCodexCLIAdapter();
             const request: CodexAdapterRequest = { prompt, enableSearch };
-            
+
             const args = adapter.testPrepareArguments(request);
-            
-            if (enableSearch) {
-              expect(args).toContain('--search');
-            } else {
-              expect(args).not.toContain('--search');
-            }
+
+            // --search не добавляется потому что работает только в интерактивном режиме
+            expect(args).not.toContain('--search');
           }
         ),
         { numRuns: 100 }
@@ -436,10 +433,10 @@ describe('Codex CLI Adapter Property Tests', () => {
               expect(args[colorIndex + 1]).toBe(options.colorMode);
             }
             
-            if (options.enableSearch) {
-              expect(args).toContain('--search');
-            }
-            
+            // enableSearch игнорируется - не работает в exec режиме
+            // --search НЕ добавляется
+            expect(args).not.toContain('--search');
+
             if (options.jsonOutput) {
               expect(args).toContain('--json');
             }

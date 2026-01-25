@@ -14,6 +14,10 @@ class TestableClaudeCLIAdapter extends ClaudeCLIAdapter {
     return this.prepareArguments(request);
   }
 
+  public testPreparePrompt(request: AdapterRequest): string {
+    return this.preparePrompt(request);
+  }
+
   public testMapPermissionsToArgs(
     permissions?: StepPermissions,
     claudeRequest?: ClaudeAdapterRequest
@@ -30,16 +34,21 @@ describe('ClaudeCLIAdapter - mapPermissionsToArgs', () => {
   });
 
   describe('без permissions', () => {
-    test('должен возвращать пустой массив без permissions', () => {
+    test('должен возвращать базовые инструменты чтения без permissions', () => {
       const result = adapter.testMapPermissionsToArgs();
 
-      expect(result).toEqual([]);
+      // Базовые инструменты чтения всегда включены
+      expect(result).toContain('--tools');
+      expect(result.join(' ')).toContain('Read');
+      expect(result.join(' ')).toContain('Grep');
+      expect(result.join(' ')).toContain('Glob');
     });
 
-    test('должен возвращать пустой массив с undefined permissions', () => {
+    test('должен возвращать базовые инструменты с undefined permissions', () => {
       const result = adapter.testMapPermissionsToArgs(undefined);
 
-      expect(result).toEqual([]);
+      // Базовые инструменты чтения всегда включены
+      expect(result).toContain('--tools');
     });
   });
 
@@ -201,12 +210,12 @@ describe('ClaudeCLIAdapter - prepareArguments', () => {
     adapter = new TestableClaudeCLIAdapter();
   });
 
-  test('должен начинаться с -p флага', () => {
+  test('должен начинаться с --print флага', () => {
     const request: AdapterRequest = { prompt: 'test prompt' };
 
     const args = adapter.testPrepareArguments(request);
 
-    expect(args[0]).toBe('-p');
+    expect(args[0]).toBe('--print');
   });
 
   test('должен добавлять --model если модель указана', () => {
@@ -241,13 +250,13 @@ describe('ClaudeCLIAdapter - prepareArguments', () => {
       permissions: { write: ['docs/*.md'] }
     };
 
-    const args = adapter.testPrepareArguments(request);
+    // Промпт готовится отдельно от аргументов (передается через stdin)
+    const prompt = adapter.testPreparePrompt(request);
 
     // Промпт должен содержать инструкцию записи
-    const promptArg = args[args.length - 1];
-    expect(promptArg).toContain('docs/output.md');
-    expect(promptArg).toContain('Write');
-    expect(promptArg).toContain('CRITICAL');
+    expect(prompt).toContain('docs/output.md');
+    expect(prompt).toContain('Write');
+    expect(prompt).toContain('CRITICAL');
   });
 
   test('НЕ должен добавлять инструкцию записи без permissions.write', () => {
@@ -257,12 +266,12 @@ describe('ClaudeCLIAdapter - prepareArguments', () => {
       // Нет permissions.write
     };
 
-    const args = adapter.testPrepareArguments(request);
+    // Промпт готовится отдельно от аргументов (передается через stdin)
+    const prompt = adapter.testPreparePrompt(request);
 
     // Промпт НЕ должен содержать инструкцию записи
-    const promptArg = args[args.length - 1];
-    expect(promptArg).not.toContain('CRITICAL');
-    expect(promptArg).not.toContain('Save your complete response');
+    expect(prompt).not.toContain('CRITICAL');
+    expect(prompt).not.toContain('Save your complete response');
   });
 
   test('должен добавлять --output-format если указан', () => {
@@ -278,7 +287,7 @@ describe('ClaudeCLIAdapter - prepareArguments', () => {
     expect(args[formatIndex + 1]).toBe('json');
   });
 
-  test('промпт должен быть последним аргументом', () => {
+  test('промпт передается через stdin, не в аргументах', () => {
     const request: AdapterRequest = {
       prompt: 'my test prompt',
       model: 'claude-3-opus',
@@ -286,10 +295,13 @@ describe('ClaudeCLIAdapter - prepareArguments', () => {
     };
 
     const args = adapter.testPrepareArguments(request);
+    const prompt = adapter.testPreparePrompt(request);
 
-    // Последний аргумент должен содержать промпт
-    const lastArg = args[args.length - 1];
-    expect(lastArg).toContain('my test prompt');
+    // Промпт НЕ должен быть в аргументах
+    expect(args.join(' ')).not.toContain('my test prompt');
+
+    // Промпт должен быть подготовлен отдельно
+    expect(prompt).toContain('my test prompt');
   });
 });
 

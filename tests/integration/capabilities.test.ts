@@ -160,11 +160,12 @@ describe('Capabilities Integration Tests', () => {
       expect(support.browser.supported).toBe(true);
     });
 
-    it('Codex должен поддерживать только web_search и mcp_tools', () => {
+    it('Codex должен поддерживать только mcp_tools (web_search только в интерактивном режиме)', () => {
       const codexAdapter = new CodexCLIAdapter();
       const support = codexAdapter.getCapabilitySupport();
 
-      expect(support.web_search.supported).toBe(true);
+      // web_search не поддерживается в exec режиме (только интерактивный)
+      expect(support.web_search.supported).toBe(false);
       expect(support.web_fetch.supported).toBe(false);
       expect(support.mcp_tools.supported).toBe(true);
       expect(support.browser.supported).toBe(false);
@@ -189,11 +190,13 @@ describe('Capabilities Integration Tests', () => {
       expect(support.browser.flags).toContain('--chrome');
     });
 
-    it('Codex: web_search → --search', () => {
+    it('Codex: web_search не поддерживается в exec режиме', () => {
       const codexAdapter = new CodexCLIAdapter();
       const support = codexAdapter.getCapabilitySupport();
 
-      expect(support.web_search.flags).toContain('--search');
+      // web_search работает только в интерактивном режиме, не в exec
+      expect(support.web_search.supported).toBe(false);
+      expect(support.web_search.flags).toEqual([]);
     });
 
     it('Gemini: web_search → google_web_search в --allowed-tools', () => {

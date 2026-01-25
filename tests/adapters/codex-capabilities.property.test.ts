@@ -44,10 +44,10 @@ describe('Codex CLI Adapter Capabilities Property Tests', () => {
   });
 
   /**
-   * Property 1: web_search: true должен добавлять флаг --search
+   * Property 1: web_search НЕ добавляет --search (не работает в exec режиме)
    */
-  describe('Property 1: web_search → --search', () => {
-    it('при web_search: true должен добавлять --search', () => {
+  describe('Property 1: web_search не поддерживается в exec режиме', () => {
+    it('при web_search: true НЕ должен добавлять --search (только интерактивный режим)', () => {
       fc.assert(
         fc.property(
           fc.record({
@@ -59,7 +59,8 @@ describe('Codex CLI Adapter Capabilities Property Tests', () => {
           (capabilities) => {
             const args = adapter.testMapCapabilitiesToArgs(capabilities);
 
-            expect(args).toContain('--search');
+            // --search не добавляется в exec режиме
+            expect(args).not.toContain('--search');
           }
         ),
         { numRuns: 50 }
@@ -199,9 +200,9 @@ describe('Codex CLI Adapter Capabilities Property Tests', () => {
     it('должен корректно описывать поддерживаемые capabilities', () => {
       const support = adapter.testGetCapabilitySupport();
 
-      // web_search поддерживается
-      expect(support.web_search.supported).toBe(true);
-      expect(support.web_search.flags).toContain('--search');
+      // web_search НЕ поддерживается в exec режиме (только интерактивный)
+      expect(support.web_search.supported).toBe(false);
+      expect(support.web_search.flags).toEqual([]);
 
       // mcp_tools поддерживается (через codex mcp)
       expect(support.mcp_tools.supported).toBe(true);
@@ -216,9 +217,10 @@ describe('Codex CLI Adapter Capabilities Property Tests', () => {
 
   /**
    * Property 6: Интеграция capabilities с prepareArguments
+   * web_search не поддерживается в exec режиме, поэтому --search никогда не добавляется
    */
   describe('Property 6: Интеграция с prepareArguments', () => {
-    it('capabilities должны интегрироваться с permissions', () => {
+    it('web_search capability игнорируется (не работает в exec режиме)', () => {
       fc.assert(
         fc.property(
           fc.boolean(),
@@ -238,11 +240,8 @@ describe('Codex CLI Adapter Capabilities Property Tests', () => {
             const args = adapter.testPrepareArguments(request);
             const argsStr = args.join(' ');
 
-            if (webSearch) {
-              expect(argsStr).toContain('--search');
-            } else {
-              expect(argsStr).not.toContain('--search');
-            }
+            // --search никогда не добавляется в exec режиме
+            expect(argsStr).not.toContain('--search');
           }
         ),
         { numRuns: 30 }
@@ -251,10 +250,10 @@ describe('Codex CLI Adapter Capabilities Property Tests', () => {
   });
 
   /**
-   * Property 7: --search не должен дублироваться
+   * Property 7: --search не должен присутствовать (не поддерживается в exec режиме)
    */
-  describe('Property 7: Нет дубликатов флагов', () => {
-    it('--search не должен дублироваться при множественных вызовах', () => {
+  describe('Property 7: Нет флага --search', () => {
+    it('--search никогда не добавляется в exec режиме', () => {
       const capabilities: StepCapabilities = {
         web_search: true
       };
@@ -271,9 +270,9 @@ describe('Codex CLI Adapter Capabilities Property Tests', () => {
 
       const args = adapter.testPrepareArguments(request);
 
-      // Считаем количество --search
+      // --search никогда не добавляется в exec режиме
       const searchCount = args.filter(arg => arg === '--search').length;
-      expect(searchCount).toBeLessThanOrEqual(1);
+      expect(searchCount).toBe(0);
     });
   });
 });
