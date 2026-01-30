@@ -7,12 +7,12 @@ workflow:
   settings:
     artifacts_dir: "artifacts/parallel-test-${timestamp}"
     default_adapter: "claude-cli"
-    log_level: "info"
+    log_level: "warn"
 
   roles:
     analyst:
       adapter: "claude-cli"
-      model: "sonnet"
+      model: "haiku"
       role_definition: |
         Вы аналитик, который анализирует данные.
       temperature: 0.7

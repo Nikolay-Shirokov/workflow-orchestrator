@@ -8,12 +8,12 @@ workflow:
   settings:
     artifacts_dir: "artifacts/loop-condition-test-${timestamp}"
     default_adapter: "claude-cli"
-    log_level: "info"
+    log_level: "warn"
 
   roles:
     writer:
       adapter: "claude-cli"
-      model: "sonnet"
+      model: "haiku"
       role_definition: |
         Вы писатель, который создаёт и улучшает тексты.
       temperature: 0.7

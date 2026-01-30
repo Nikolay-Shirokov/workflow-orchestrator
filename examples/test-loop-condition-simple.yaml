@@ -8,12 +8,12 @@ workflow:
   settings:
     artifacts_dir: "artifacts/loop-condition-simple-${timestamp}"
     default_adapter: "claude-cli"
-    log_level: "info"
+    log_level: "warn"
 
   roles:
     counter:
       adapter: "claude-cli"
-      model: "sonnet"
+      model: "haiku"
       role_definition: "Вы считаете до целевого числа."
       temperature: 0.5
       max_tokens: 500

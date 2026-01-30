@@ -13,7 +13,7 @@ workflow:
   roles:
     writer:
       adapter: "claude-cli"
-      model: "sonnet"
+      model: "haiku"
       role_definition: |
         Вы писатель, который создаёт и улучшает тексты.
         На каждой итерации анализируйте предыдущую версию и улучшайте её.
