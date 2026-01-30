@@ -303,14 +303,24 @@ export abstract class BaseCLIAdapter implements CLIAdapter {
         }, 5000);
       }, timeout);
 
-      // Захват stdout
+      // Захват stdout с фильтрацией отладочных сообщений CLI
       child.stdout?.on('data', (data: string) => {
-        stdout += data;
+        // Фильтруем отладочные сообщения от CLI (claude-cli, gemini-cli и т.д.)
+        const filtered = data
+          .split('\n')
+          .filter(line => !line.match(/^\[(claude-cli|gemini-cli|DEBUG)\]/))
+          .join('\n');
+        stdout += filtered;
       });
 
-      // Захват stderr
+      // Захват stderr с фильтрацией отладочных сообщений CLI
       child.stderr?.on('data', (data: string) => {
-        stderr += data;
+        // Фильтруем отладочные сообщения от CLI
+        const filtered = data
+          .split('\n')
+          .filter(line => !line.match(/^\[(claude-cli|gemini-cli|DEBUG)\]/))
+          .join('\n');
+        stderr += filtered;
       });
 
       // Обработка завершения процесса
