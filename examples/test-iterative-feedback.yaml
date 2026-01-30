@@ -37,11 +37,21 @@ workflow:
       outputs:
         task: "${artifacts_dir}/step1_task.md"
 
+    # Шаг 1.5: Инициализация current_text (пустое значение для первой итерации)
+    - id: "step1_5_init"
+      name: "Инициализация"
+      type: "script"
+      depends_on: ["step1_task"]
+      script: echo "(Первая итерация - предыдущей версии нет)"
+      shell: "bash"
+      outputs:
+        current_text: "${artifacts_dir}/init.txt"
+
     # Шаг 2: Цикл улучшения (3 итерации)
     - id: "step2_improvement_loop"
       name: "Цикл улучшения"
       type: "loop"
-      depends_on: ["step1_task"]
+      depends_on: ["step1_5_init"]
       loop_iterations: 3
       loop_variable: "iteration"
       loop_body:
