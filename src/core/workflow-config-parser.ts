@@ -280,19 +280,46 @@ export class WorkflowConfigParser {
               code: 'LOOP_NO_BODY'
             });
           }
-          
-          if (step.loop_iterations === undefined && step.loop_items === undefined) {
+
+          const hasCondition = step.loop_condition !== undefined;
+          const hasIterations = step.loop_iterations !== undefined;
+          const hasItems = step.loop_items !== undefined;
+
+          // Должен быть указан хотя бы один способ определения итераций
+          if (!hasCondition && !hasIterations && !hasItems) {
             errors.push({
-              message: `${stepPrefix}: Шаг типа "loop" должен содержать loop_iterations или loop_items`,
+              message: `${stepPrefix}: Шаг типа "loop" должен содержать loop_condition, loop_iterations или loop_items`,
               code: 'LOOP_NO_CONFIGURATION'
             });
           }
-          
-          if (step.loop_iterations !== undefined && step.loop_iterations < 0) {
+
+          // Валидация loop_iterations
+          if (hasIterations && step.loop_iterations! < 0) {
             errors.push({
               message: `${stepPrefix}: loop_iterations должно быть неотрицательным числом`,
               code: 'LOOP_INVALID_ITERATIONS'
             });
+          }
+
+          // Валидация loop_condition и loop_max_iterations
+          if (hasCondition) {
+            if (typeof step.loop_condition !== 'string' || step.loop_condition.trim() === '') {
+              errors.push({
+                message: `${stepPrefix}: loop_condition должно быть непустой строкой`,
+                code: 'LOOP_INVALID_CONDITION'
+              });
+            }
+
+            // Проверка loop_max_iterations
+            if (step.loop_max_iterations !== undefined) {
+              if (typeof step.loop_max_iterations !== 'number' || step.loop_max_iterations <= 0) {
+                errors.push({
+                  message: `${stepPrefix}: loop_max_iterations должно быть положительным числом`,
+                  code: 'LOOP_INVALID_MAX_ITERATIONS'
+                });
+              }
+            }
+            // loop_max_iterations необязателен, будет использовано значение по умолчанию (10)
           }
         }
       }

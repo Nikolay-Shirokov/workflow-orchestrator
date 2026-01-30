@@ -196,6 +196,8 @@ export interface WorkflowStep {
   loop_variable?: string;
   loop_items?: unknown[];
   loop_body?: WorkflowStep;
+  loop_condition?: string;       // Условие продолжения цикла
+  loop_max_iterations?: number;  // Максимальное число итераций (лимит безопасности)
   
   // Для type: 'user_input'
   input_format?: string;

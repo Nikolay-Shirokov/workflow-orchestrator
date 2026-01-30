@@ -1,0 +1,130 @@
+# Тестовый workflow для параллельных шагов
+workflow:
+  name: "test-parallel-steps"
+  version: "1.0"
+  description: "Проверка параллельного выполнения шагов"
+
+  settings:
+    artifacts_dir: "artifacts/parallel-test-${timestamp}"
+    default_adapter: "claude-cli"
+    log_level: "info"
+
+  roles:
+    analyst:
+      adapter: "claude-cli"
+      model: "sonnet"
+      role_definition: |
+        Вы аналитик, который анализирует данные.
+      temperature: 0.7
+      max_tokens: 1000
+
+    critic:
+      adapter: "gemini-cli"
+      model: "gemini-2.5-pro"
+      role_definition: |
+        Вы критик, который оценивает качество анализа.
+      temperature: 0.7
+      max_tokens: 1000
+
+  steps:
+    # Шаг 1: Пользовательский ввод
+    - id: "step1_input"
+      name: "Ввод темы"
+      type: "user_input"
+      input_mode: "file"
+      file_format: "markdown"
+      prompt_message: |
+        # Введите тему для анализа
+
+        Напишите тему, которую нужно проанализировать с разных точек зрения.
+      outputs:
+        topic: "${artifacts_dir}/step1_input.md"
+
+    # Шаг 2: Параллельный анализ разными ролями
+    - id: "step2_parallel_analysis"
+      name: "Параллельный анализ"
+      type: "parallel"
+      depends_on: ["step1_input"]
+      steps:
+        # Подшаг 2.1: Технический анализ
+        - id: "step2_1_technical"
+          name: "Технический анализ"
+          type: "model"
+          role: "analyst"
+          prompt_template: |
+            Проведи технический анализ следующей темы:
+
+            ${topic}
+
+            Сфокусируйся на:
+            - Технической реализуемости
+            - Технологических решениях
+            - Архитектурных аспектах
+          inputs:
+            topic: "${topic}"
+          outputs:
+            technical_analysis: "${artifacts_dir}/step2_1_technical.md"
+
+        # Подшаг 2.2: Бизнес-анализ
+        - id: "step2_2_business"
+          name: "Бизнес-анализ"
+          type: "model"
+          role: "analyst"
+          prompt_template: |
+            Проведи бизнес-анализ следующей темы:
+
+            ${topic}
+
+            Сфокусируйся на:
+            - Бизнес-ценности
+            - ROI и метриках
+            - Рыночных возможностях
+          inputs:
+            topic: "${topic}"
+          outputs:
+            business_analysis: "${artifacts_dir}/step2_2_business.md"
+
+        # Подшаг 2.3: UX-анализ
+        - id: "step2_3_ux"
+          name: "UX-анализ"
+          type: "model"
+          role: "critic"
+          prompt_template: |
+            Проведи UX-анализ следующей темы:
+
+            ${topic}
+
+            Сфокусируйся на:
+            - Пользовательском опыте
+            - Удобстве использования
+            - Доступности
+          inputs:
+            topic: "${topic}"
+          outputs:
+            ux_analysis: "${artifacts_dir}/step2_3_ux.md"
+
+    # Шаг 3: Сводный отчет
+    - id: "step3_summary"
+      name: "Сводный отчет"
+      type: "model"
+      role: "analyst"
+      depends_on: ["step2_parallel_analysis"]
+      prompt_template: |
+        Создай сводный отчет на основе трёх анализов:
+
+        ## Технический анализ
+        ${technical_analysis}
+
+        ## Бизнес-анализ
+        ${business_analysis}
+
+        ## UX-анализ
+        ${ux_analysis}
+
+        Объедини результаты, выдели ключевые выводы и рекомендации.
+      inputs:
+        technical_analysis: "${technical_analysis}"
+        business_analysis: "${business_analysis}"
+        ux_analysis: "${ux_analysis}"
+      outputs:
+        summary: "${artifacts_dir}/step3_summary.md"

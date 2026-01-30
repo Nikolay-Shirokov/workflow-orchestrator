@@ -1,0 +1,149 @@
+# Тест цикла с условием выхода
+# Цикл продолжается пока условие истинно
+workflow:
+  name: "test-loop-with-condition"
+  version: "1.0"
+  description: "Проверка цикла с loop_condition и досрочным выходом"
+
+  settings:
+    artifacts_dir: "artifacts/loop-condition-test-${timestamp}"
+    default_adapter: "claude-cli"
+    log_level: "info"
+
+  roles:
+    writer:
+      adapter: "claude-cli"
+      model: "sonnet"
+      role_definition: |
+        Вы писатель, который создаёт и улучшает тексты.
+      temperature: 0.7
+      max_tokens: 2000
+
+    reviewer:
+      adapter: "gemini-cli"
+      model: "gemini-2.5-pro"
+      role_definition: |
+        Вы строгий рецензент. Оценивайте тексты критично.
+        В конце ОБЯЗАТЕЛЬНО напишите одну строку:
+        STATUS: APPROVED или STATUS: NEEDS_IMPROVEMENT
+      temperature: 0.5
+      max_tokens: 1000
+
+  steps:
+    # Шаг 1: Пользователь задаёт тему
+    - id: "step1_topic"
+      name: "Тема для текста"
+      type: "user_input"
+      input_mode: "file"
+      file_format: "markdown"
+      prompt_message: |
+        # Тема для текста
+
+        Опишите тему, на которую нужно написать короткий текст (2-3 абзаца).
+      outputs:
+        topic: "${artifacts_dir}/step1_topic.md"
+
+    # Инициализация статуса (для первой проверки условия)
+    - id: "step2_init"
+      name: "Инициализация"
+      type: "script"
+      depends_on: ["step1_topic"]
+      script: |
+        echo "NEEDS_IMPROVEMENT" > status.txt
+        echo "Начинаем цикл улучшения"
+      shell: "bash"
+      outputs:
+        review_status: "${artifacts_dir}/status.txt"
+
+    # Шаг 3: Цикл с условием - повторять пока НЕ одобрено
+    - id: "step3_improvement_loop"
+      name: "Цикл улучшения с условием"
+      type: "loop"
+      depends_on: ["step2_init"]
+      # УСЛОВИЕ: продолжать пока статус НЕ равен "APPROVED"
+      loop_condition: "review_status != 'APPROVED'"
+      loop_max_iterations: 5
+      loop_variable: "iteration"
+      loop_body:
+        id: "iteration_step"
+        name: "Итерация улучшения"
+        type: "model"
+        role: "writer"
+        prompt_template: |
+          ${if(loop_index == 0, "ПЕРВАЯ ИТЕРАЦИЯ: Создай текст", "ИТЕРАЦИЯ " + loop_iteration + ": Улучши текст")}
+
+          ## Тема
+          ${topic}
+
+          ${if(loop_index > 0, "## Предыдущая версия\n\n" + current_text + "\n", "")}
+          ${if(loop_index > 0, "## Замечания рецензента\n\n" + feedback + "\n", "")}
+
+          ${if(loop_index == 0, "Напиши короткий текст (2-3 абзаца) на эту тему.", "Исправь текст с учётом ВСЕХ замечаний рецензента.")}
+
+          После текста рецензент его проверит.
+        inputs:
+          topic: "${topic}"
+          current_text: "${current_text}"
+          feedback: "${feedback}"
+        outputs:
+          current_text: "${artifacts_dir}/iteration_${loop_iteration}_text.md"
+
+    # Шаг 4: Проверка после каждой итерации цикла
+    # (выполняется внутри цикла, но как отдельный шаг в зависимости)
+    - id: "step4_review"
+      name: "Рецензия"
+      type: "model"
+      role: "reviewer"
+      depends_on: ["step3_improvement_loop"]
+      prompt_template: |
+        Проверь текст на качество:
+
+        ## Тема
+        ${topic}
+
+        ## Текст (после ${loop_iteration} итераций)
+        ${current_text}
+
+        Оцени:
+        1. Соответствие теме
+        2. Качество изложения
+        3. Грамматика
+
+        Дай конкретные замечания.
+
+        ВАЖНО: В самом конце ОБЯЗАТЕЛЬНО напиши одну из строк:
+        STATUS: APPROVED (если текст отличный)
+        STATUS: NEEDS_IMPROVEMENT (если нужны доработки)
+      inputs:
+        topic: "${topic}"
+        current_text: "${current_text}"
+      outputs:
+        feedback: "${artifacts_dir}/final_review.md"
+        review_status: "${artifacts_dir}/final_status.txt"
+
+    # Шаг 5: Финальная версия
+    - id: "step5_final"
+      name: "Финальная версия"
+      type: "model"
+      role: "writer"
+      depends_on: ["step4_review"]
+      prompt_template: |
+        Подготовь финальную отполированную версию текста:
+
+        ## Текст
+        ${current_text}
+
+        ## Статус проверки
+        ${review_status}
+
+        ## Отзыв рецензента
+        ${feedback}
+
+        Если есть минимальные правки - внеси их. Иначе оставь как есть.
+        Добавь краткое резюме: "Текст создан за ${loop_iteration} итераций. Статус: ${review_status}".
+      inputs:
+        current_text: "${current_text}"
+        review_status: "${review_status}"
+        feedback: "${feedback}"
+      outputs:
+        final_text: "${artifacts_dir}/step5_final.md"

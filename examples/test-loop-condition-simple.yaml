@@ -1,0 +1,80 @@
+# Простой тест цикла с условием
+# Демонстрация досрочного выхода из цикла
+workflow:
+  name: "test-loop-condition-simple"
+  version: "1.0"
+  description: "Простая проверка loop_condition с досрочным выходом"
+
+  settings:
+    artifacts_dir: "artifacts/loop-condition-simple-${timestamp}"
+    default_adapter: "claude-cli"
+    log_level: "info"
+
+  roles:
+    counter:
+      adapter: "claude-cli"
+      model: "sonnet"
+      role_definition: "Вы считаете до целевого числа."
+      temperature: 0.5
+      max_tokens: 500
+      default_permissions:
+        read: ["*.md", "*.txt", "artifacts/**/*"]
+        write: ["artifacts/**/*"]
+
+  steps:
+    # Шаг 1: Задаём целевое число
+    - id: "set_target"
+      name: "Установка целевого числа"
+      type: "script"
+      script: |
+        echo "5" > target.txt
+        echo "0" > current.txt
+        echo "Целевое число: 5, текущее: 0"
+      shell: "bash"
+      outputs:
+        target: "${artifacts_dir}/target.txt"
+        current_count: "${artifacts_dir}/current.txt"
+
+    # Шаг 2: Цикл с условием - считаем пока не достигли цели
+    - id: "count_loop"
+      name: "Цикл подсчёта"
+      type: "loop"
+      depends_on: ["set_target"]
+      # УСЛОВИЕ: продолжать пока current_count < target
+      loop_condition: "current_count != '5'"
+      loop_max_iterations: 10
+      loop_body:
+        id: "increment"
+        name: "Увеличение счётчика"
+        type: "script"
+        script: |
+          # Читаем текущее значение
+          CURRENT=$(cat ${artifacts_dir}/current.txt)
+          # Увеличиваем
+          NEW=$((CURRENT + 1))
+          # Записываем
+          echo "$NEW" > ${artifacts_dir}/current.txt
+          echo "Итерация ${loop_iteration}: счётчик = $NEW"
+        shell: "bash"
+        outputs:
+          current_count: "${artifacts_dir}/current.txt"
+
+    # Шаг 3: Итоговый отчёт
+    - id: "summary"
+      name: "Итоги"
+      type: "model"
+      role: "counter"
+      depends_on: ["count_loop"]
+      prompt_template: |
+        Цикл завершён!
+
+        Целевое число: ${target}
+        Достигнутое значение: ${current_count}
+        Выполнено итераций: ${loop_iteration}
+
+        Напиши короткое резюме.
+      inputs:
+        target: "${target}"
+        current_count: "${current_count}"
+      outputs:
+        summary: "${artifacts_dir}/summary.md"

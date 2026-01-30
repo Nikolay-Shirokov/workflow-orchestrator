@@ -884,27 +884,56 @@ export class DefaultStepExecutor implements StepExecutor {
       });
     }
 
-    let iterations: number;
-    let items: unknown[] | undefined;
+    // Определяем режим цикла и параметры
+    const hasCondition = step.loop_condition !== undefined;
+    const hasIterations = step.loop_iterations !== undefined;
+    const hasItems = step.loop_items !== undefined;
 
-    // Определяем количество итераций
-    if (step.loop_iterations !== undefined) {
+    let maxIterations: number;
+    let items: unknown[] | undefined;
+    let useCondition = false;
+
+    // Определяем максимальное количество итераций и режим
+    if (hasCondition) {
+      // Цикл с условием
+      useCondition = true;
+      maxIterations = step.loop_max_iterations || 10; // По умолчанию 10
+
+      if (maxIterations <= 0) {
+        throw new WorkflowErrorClass({
+          code: 'INVALID_MAX_ITERATIONS',
+          category: 'execution',
+          severity: 'error',
+          message: `loop_max_iterations должен быть положительным: ${maxIterations}`,
+          context: { stepId: step.id, maxIterations },
+          recoverable: false,
+          suggestions: [
+            'Укажите положительное значение для loop_max_iterations'
+          ]
+        });
+      }
+
+      context.logger.info(
+        `Начало выполнения цикла ${step.id} с условием: "${step.loop_condition}" (макс. ${maxIterations} итераций)`
+      );
+    } else if (hasIterations) {
       // Цикл с фиксированным количеством итераций
-      iterations = step.loop_iterations;
-      if (iterations < 0) {
+      maxIterations = step.loop_iterations!;
+      if (maxIterations < 0) {
         throw new WorkflowErrorClass({
           code: 'INVALID_LOOP_ITERATIONS',
           category: 'execution',
           severity: 'error',
-          message: `Количество итераций цикла должно быть неотрицательным: ${iterations}`,
-          context: { stepId: step.id, iterations },
+          message: `Количество итераций цикла должно быть неотрицательным: ${maxIterations}`,
+          context: { stepId: step.id, iterations: maxIterations },
           recoverable: false,
           suggestions: [
             'Укажите неотрицательное значение для loop_iterations'
           ]
         });
       }
-    } else if (step.loop_items !== undefined) {
+      context.logger.info(`Начало выполнения цикла ${step.id}: ${maxIterations} итераций`);
+    } else if (hasItems) {
       // Цикл по элементам массива
       items = step.loop_items;
       if (!Array.isArray(items)) {
@@ -920,69 +949,135 @@ export class DefaultStepExecutor implements StepExecutor {
           ]
         });
       }
-      iterations = items.length;
+      maxIterations = items.length;
+      context.logger.info(`Начало выполнения цикла ${step.id}: ${maxIterations} элементов`);
     } else {
       throw new WorkflowErrorClass({
         code: 'NO_LOOP_CONFIGURATION',
         category: 'execution',
         severity: 'error',
-        message: `Не указано ни loop_iterations, ни loop_items для шага ${step.id}`,
+        message: `Не указано ни loop_condition, ни loop_iterations, ни loop_items для шага ${step.id}`,
         context: { stepId: step.id },
         recoverable: false,
         suggestions: [
+          'Укажите loop_condition для цикла с условием',
           'Укажите loop_iterations для фиксированного количества итераций',
           'Укажите loop_items для цикла по элементам массива'
         ]
       });
     }
 
-    context.logger.info(`Начало выполнения цикла ${step.id}: ${iterations} итераций`);
-
     // Массив для сбора результатов всех итераций
     const allResults: StepResult[] = [];
     const allArtifacts: string[] = [];
     const allOutputs: Record<string, unknown>[] = [];
 
+    let continueLoop = true;
+    let i = 0;
+
     // Выполнение итераций
-    for (let i = 0; i < iterations; i++) {
-      context.logger.debug(`Итерация ${i + 1}/${iterations} цикла ${step.id}`);
+    while (continueLoop && i < maxIterations) {
+      const iterationNum = i + 1;
+
+      if (useCondition) {
+        context.logger.debug(`Итерация ${iterationNum}/${maxIterations} цикла ${step.id}`);
+      } else {
+        context.logger.debug(`Итерация ${iterationNum}/${maxIterations} цикла ${step.id}`);
+      }
 
       // Обновление контекста для текущей итерации
       const iterationContext = { ...context };
-      
+
       // Добавляем переменную итерации в контекст
       if (step.loop_variable) {
         if (items !== undefined) {
           // Для цикла по элементам - текущий элемент
           iterationContext.state.context[step.loop_variable] = items[i];
         } else {
-          // Для фиксированного цикла - индекс итерации
+          // Для фиксированного цикла или цикла с условием - индекс итерации
           iterationContext.state.context[step.loop_variable] = i;
         }
       }
 
-      // Добавляем индекс итерации
+      // Добавляем метаданные итерации
       iterationContext.state.context['loop_index'] = i;
-      iterationContext.state.context['loop_iteration'] = i + 1;
+      iterationContext.state.context['loop_iteration'] = iterationNum;
+      iterationContext.state.context['loop_max_iterations'] = maxIterations;
 
       // Выполнение тела цикла
       const result = await this.executeStep(step.loop_body, iterationContext);
+
+      // Обновляем основной контекст результатами итерации
+      // Это важно для проверки условия и следующей итерации
+      Object.assign(context.state.context, result.outputs);
 
       // Сбор результатов
       allResults.push(result);
       allArtifacts.push(...result.artifacts);
       allOutputs.push(result.outputs);
+
+      i++;
+
+      // Проверка условия продолжения (ПОСЛЕ выполнения итерации)
+      if (useCondition && step.loop_condition) {
+        try {
+          continueLoop = this.evaluateCondition(step.loop_condition, context);
+          context.logger.debug(
+            `Условие "${step.loop_condition}" = ${continueLoop} после итерации ${iterationNum}`
+          );
+
+          if (!continueLoop) {
+            context.logger.info(
+              `Цикл ${step.id} завершён по условию после ${iterationNum} итераций`
+            );
+          }
+        } catch (error) {
+          context.logger.error(
+            `Ошибка при вычислении условия "${step.loop_condition}": ${(error as Error).message}`
+          );
+          throw new WorkflowErrorClass({
+            code: 'CONDITION_EVALUATION_ERROR',
+            category: 'execution',
+            severity: 'error',
+            message: `Ошибка при вычислении условия цикла: ${(error as Error).message}`,
+            context: { stepId: step.id, condition: step.loop_condition, iteration: iterationNum },
+            recoverable: false,
+            suggestions: [
+              'Проверьте синтаксис условия',
+              'Убедитесь, что используемые переменные существуют в контексте'
+            ]
+          });
+        }
+
+        // Предупреждение при приближении к лимиту
+        if (continueLoop && i >= maxIterations * 0.8) {
+          context.logger.warn(
+            `Цикл ${step.id} близок к лимиту: ${i}/${maxIterations} итераций`
+          );
+        }
+      } else if (!useCondition) {
+        // Для фиксированных циклов - просто продолжаем до maxIterations
+        continueLoop = i < maxIterations;
+      }
     }
 
-    context.logger.info(`Цикл ${step.id} завершен: выполнено ${iterations} итераций`);
+    // Проверка достижения лимита
+    if (useCondition && i >= maxIterations && continueLoop) {
+      context.logger.warn(
+        `Цикл ${step.id} прерван: достигнут лимит ${maxIterations} итераций`
+      );
+    } else if (!useCondition) {
+      context.logger.info(`Цикл ${step.id} завершен: выполнено ${i} итераций`);
+    }
 
     // Возвращаем агрегированный результат
     return {
       stepId: step.id,
       status: 'success',
       outputs: {
-        iterations,
-        results: allOutputs
+        iterations: i,
+        results: allOutputs,
+        condition_met: useCondition ? !continueLoop : undefined
       },
       artifacts: allArtifacts,
       executionTime: allResults.reduce((sum, r) => sum + r.executionTime, 0)
@@ -1426,16 +1521,228 @@ export class DefaultStepExecutor implements StepExecutor {
 
   /**
    * Вычисление условия
+   *
+   * Поддерживает:
+   * - Простые переменные: "my_var"
+   * - Точечную нотацию: "object.property"
+   * - Операторы сравнения: ==, !=, >, <, >=, <=
+   * - Строковые операции: contains, startsWith, endsWith
+   * - Логические операторы: &&, ||, !
+   *
+   * Примеры:
+   * - "status == 'APPROVED'"
+   * - "quality_score >= 80"
+   * - "feedback contains 'APPROVED'"
+   * - "status == 'DONE' && score > 50"
    */
   private evaluateCondition(
     condition: string,
     context: ExecutionContext
   ): boolean {
-    // Простая реализация: проверяем значение переменной в контексте
-    // Поддерживаем точечную нотацию: object.property
+    const trimmed = condition.trim();
+
+    // 1. Обработка логического ИЛИ (||)
+    if (trimmed.includes('||')) {
+      const parts = this.splitByLogicalOperator(trimmed, '||');
+      return parts.some(part => this.evaluateCondition(part, context));
+    }
+
+    // 2. Обработка логического И (&&)
+    if (trimmed.includes('&&')) {
+      const parts = this.splitByLogicalOperator(trimmed, '&&');
+      return parts.every(part => this.evaluateCondition(part, context));
+    }
+
+    // 3. Обработка отрицания (!)
+    if (trimmed.startsWith('!')) {
+      const innerCondition = trimmed.slice(1).trim();
+      // Убираем внешние скобки если есть: !(expr) -> expr
+      if (innerCondition.startsWith('(') && innerCondition.endsWith(')')) {
+        return !this.evaluateCondition(innerCondition.slice(1, -1), context);
+      }
+      return !this.evaluateCondition(innerCondition, context);
+    }
+
+    // 4. Обработка скобок
+    if (trimmed.startsWith('(') && trimmed.endsWith(')')) {
+      return this.evaluateCondition(trimmed.slice(1, -1), context);
+    }
+
+    // 5. Парсинг выражения с операторами: variable operator value
+    const comparisonMatch = trimmed.match(
+      /^([a-zA-Z_][a-zA-Z0-9_.]*)\s*(==|!=|>=|<=|>|<|contains|startsWith|endsWith)\s*(.+)$/
+    );
+
+    if (comparisonMatch) {
+      const [, varPath, operator, valueStr] = comparisonMatch;
+      const varValue = this.getContextValue(varPath, context);
+      const literal = this.parseLiteral(valueStr.trim());
+      return this.applyOperator(varValue, operator, literal);
+    }
+
+    // 6. Простое условие: проверка переменной как boolean (обратная совместимость)
+    return this.evaluateSimpleCondition(trimmed, context);
+  }
+
+  /**
+   * Разделение условия по логическому оператору (&&, ||)
+   * с учётом вложенных скобок и кавычек
+   */
+  private splitByLogicalOperator(condition: string, operator: string): string[] {
+    const parts: string[] = [];
+    let current = '';
+    let depth = 0;
+    let inQuotes = false;
+    let quoteChar = '';
+
+    for (let i = 0; i < condition.length; i++) {
+      const char = condition[i];
+      const next = condition[i + 1];
+
+      // Обработка кавычек
+      if ((char === '"' || char === "'") && (i === 0 || condition[i - 1] !== '\\')) {
+        if (!inQuotes) {
+          inQuotes = true;
+          quoteChar = char;
+        } else if (char === quoteChar) {
+          inQuotes = false;
+        }
+        current += char;
+        continue;
+      }
+
+      // Внутри кавычек - просто добавляем символ
+      if (inQuotes) {
+        current += char;
+        continue;
+      }
+
+      // Отслеживание скобок
+      if (char === '(') {
+        depth++;
+        current += char;
+        continue;
+      }
+      if (char === ')') {
+        depth--;
+        current += char;
+        continue;
+      }
+
+      // Проверка на логический оператор (только вне скобок и кавычек)
+      if (depth === 0 && char === operator[0] && next === operator[1]) {
+        parts.push(current.trim());
+        current = '';
+        i++; // Пропускаем второй символ оператора
+        continue;
+      }
+
+      current += char;
+    }
+
+    if (current.trim()) {
+      parts.push(current.trim());
+    }
+
+    return parts;
+  }
+
+  /**
+   * Получение значения из контекста по пути (с поддержкой точечной нотации)
+   */
+  private getContextValue(path: string, context: ExecutionContext): unknown {
+    const parts = path.split('.');
+    let value: unknown = context.state.context;
+
+    for (const part of parts) {
+      if (value && typeof value === 'object' && part in value) {
+        value = (value as Record<string, unknown>)[part];
+      } else {
+        return undefined;
+      }
+    }
+
+    return value;
+  }
+
+  /**
+   * Парсинг литерала (строка, число, булево)
+   */
+  private parseLiteral(str: string): unknown {
+    // Строка в кавычках
+    if ((str.startsWith('"') && str.endsWith('"')) ||
+        (str.startsWith("'") && str.endsWith("'"))) {
+      return str.slice(1, -1);
+    }
+
+    // Булево
+    if (str === 'true') return true;
+    if (str === 'false') return false;
+
+    // Число
+    const num = Number(str);
+    if (!isNaN(num)) return num;
+
+    // Иначе - строка без кавычек
+    return str;
+  }
+
+  /**
+   * Применение оператора к двум значениям
+   */
+  private applyOperator(left: unknown, operator: string, right: unknown): boolean {
+    switch (operator) {
+      case '==':
+        // Нестрогое равенство (с приведением типов)
+        return left == right;
+
+      case '!=':
+        return left != right;
+
+      case '>':
+        return Number(left) > Number(right);
+
+      case '<':
+        return Number(left) < Number(right);
+
+      case '>=':
+        return Number(left) >= Number(right);
+
+      case '<=':
+        return Number(left) <= Number(right);
+
+      case 'contains':
+        return String(left).includes(String(right));
+
+      case 'startsWith':
+        return String(left).startsWith(String(right));
+
+      case 'endsWith':
+        return String(left).endsWith(String(right));
+
+      default:
+        throw new WorkflowErrorClass({
+          code: 'UNKNOWN_OPERATOR',
+          category: 'execution',
+          severity: 'error',
+          message: `Неизвестный оператор: ${operator}`,
+          context: { operator },
+          recoverable: false,
+          suggestions: [
+            'Используйте один из поддерживаемых операторов: ==, !=, >, <, >=, <=, contains, startsWith, endsWith'
+          ]
+        });
+    }
+  }
+
+  /**
+   * Простое вычисление условия (обратная совместимость)
+   * Проверяет переменную как boolean значение
+   */
+  private evaluateSimpleCondition(condition: string, context: ExecutionContext): boolean {
     const parts = condition.split('.');
     let value: unknown = context.state.context;
-    
+
     for (const part of parts) {
       if (value && typeof value === 'object' && part in value) {
         value = (value as Record<string, unknown>)[part];
@@ -1443,12 +1750,12 @@ export class DefaultStepExecutor implements StepExecutor {
         return false;
       }
     }
-    
+
     // Преобразуем в boolean
     if (typeof value === 'boolean') {
       return value;
     }
-    
+
     if (typeof value === 'string') {
       // Специальная обработка строк "false", "0", "" как ложных значений
       const lowerValue = value.toLowerCase();
@@ -1457,11 +1764,11 @@ export class DefaultStepExecutor implements StepExecutor {
       }
       return true;
     }
-    
+
     if (typeof value === 'number') {
       return value !== 0;
     }
-    
+
     return value != null;
   }
 

@@ -1,0 +1,54 @@
+# Простой тест цикла
+workflow:
+  name: "test-loop-simple"
+  version: "1.0"
+  description: "Проверка работы цикла с фиксированным числом итераций"
+
+  settings:
+    artifacts_dir: "artifacts/loop-test-${timestamp}"
+    default_adapter: "claude-cli"
+    log_level: "info"
+
+  roles:
+    counter:
+      adapter: "claude-cli"
+      model: "sonnet"
+      role_definition: "Вы считаете итерации."
+      temperature: 0.5
+      max_tokens: 500
+      default_permissions:
+        read: ["*.md", "artifacts/**/*"]
+        write: ["artifacts/**/*.md"]
+
+  steps:
+    # Простой цикл - 3 итерации
+    - id: "count_loop"
+      name: "Цикл подсчёта"
+      type: "loop"
+      loop_iterations: 3
+      loop_variable: "count"
+      loop_body:
+        id: "count_step"
+        name: "Шаг подсчёта"
+        type: "model"
+        role: "counter"
+        prompt_template: |
+          Это итерация номер ${loop_iteration} из 3.
+          Индекс: ${loop_index}
+          Значение переменной: ${count}
+
+          Напиши короткое сообщение об этой итерации.
+        outputs:
+          iteration_result: "${artifacts_dir}/iteration_${loop_iteration}.md"
+
+    # Финальный шаг
+    - id: "summary"
+      name: "Итоги"
+      type: "model"
+      role: "counter"
+      depends_on: ["count_loop"]
+      prompt_template: |
+        Цикл завершён. Было выполнено 3 итерации.
+        Напиши краткое резюме.
+      outputs:
+        summary: "${artifacts_dir}/summary.md"
