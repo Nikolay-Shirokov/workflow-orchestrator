@@ -782,20 +782,35 @@ steps:
 
 ```yaml
 steps:
-  - id: "conditional_step"
-    name: "Условное выполнение"
+  # Шаг 1: Проверка критериев моделью
+  - id: "review"
+    name: "Проверка качества"
+    type: "model"
+    role: "reviewer"
+    prompt_template: |
+      Проверь текст: ${text}
+
+      Соответствует ли он критериям качества?
+      Ответь: APPROVED или NEEDS_WORK
+    outputs:
+      review_result: "${artifacts_dir}/review.txt"  # Записывается в контекст
+
+  # Шаг 2: Условное выполнение на основе проверки
+  - id: "conditional_action"
+    name: "Условное действие"
     type: "conditional"
-    condition: "user_confirmed == true"  # Условие выполнения
+    depends_on: ["review"]
+    condition: "review_result == 'APPROVED'"  # Читается из контекста
     thenStep:
-      id: "approved_action"
+      id: "publish"
       type: "model"
-      role: "executor"
-      prompt_template: "Выполняем действие после подтверждения"
+      role: "publisher"
+      prompt_template: "Публикуем одобренный текст"
     elseStep:
-      id: "rejected_action"
+      id: "rework"
       type: "model"
-      role: "executor"
-      prompt_template: "Пользователь отклонил действие"
+      role: "editor"
+      prompt_template: "Дорабатываем текст по замечаниям"
 ```
 
 #### Сложные сценарии
