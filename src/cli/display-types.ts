@@ -36,6 +36,9 @@ export interface IProgressDisplay {
   /** Обработчик завершения параллельного выполнения */
   onParallelComplete?(results: Array<{ stepId: string; status: string }>): void;
 
+  /** Обработчик итерации цикла */
+  onLoopIteration?(stepId: string, iteration: number, maxIterations: number): void;
+
   /** Синхронизация с загруженным состоянием (для resume) */
   syncWithState?(state: WorkflowState): void;
 
@@ -54,33 +57,36 @@ export type DisplayStepStatus = 'pending' | 'running' | 'completed' | 'failed' |
 export interface StepDisplayInfo {
   /** Номер шага */
   number: number;
-  
+
   /** ID шага */
   id: string;
-  
+
   /** Название шага */
   name: string;
-  
+
   /** Тип шага */
   type?: string;
-  
+
   /** Статус выполнения */
   status: DisplayStepStatus;
-  
+
   /** Длительность выполнения в миллисекундах */
   duration?: number;
-  
+
   /** Список созданных артефактов */
   artifacts?: string[];
-  
+
   /** Сообщение об ошибке */
   error?: string;
-  
+
   /** Используемая роль */
   role?: string;
-  
+
   /** Используемый адаптер */
   adapter?: string;
+
+  /** Метаданные для специфичной информации (например, итерации цикла) */
+  metadata?: Record<string, unknown>;
   
   /** Используемая модель */
   model?: string;

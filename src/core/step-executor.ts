@@ -1017,6 +1017,14 @@ export class DefaultStepExecutor implements StepExecutor {
         context.logger.debug(`Итерация ${iterationNum}/${maxIterations} цикла ${step.id}`);
       }
 
+      // Уведомляем progress display о новой итерации
+      if (context.progress) {
+        const progressDisplay = context.progress as { onLoopIteration?: (stepId: string, iteration: number, maxIterations: number) => void };
+        if (progressDisplay.onLoopIteration) {
+          progressDisplay.onLoopIteration(step.id, iterationNum, maxIterations);
+        }
+      }
+
       // Обновление контекста для текущей итерации
       const iterationContext = { ...context };
 

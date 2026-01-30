@@ -359,6 +359,16 @@ export class InteractiveDisplay implements IProgressDisplay {
       content.push(`  Type: ${currentStep.type}`);
     }
 
+    // Отображение прогресса цикла
+    if (currentStep.type === 'loop' && currentStep.metadata) {
+      const iteration = currentStep.metadata.currentIteration as number;
+      const maxIter = currentStep.metadata.maxIterations as number;
+      if (iteration !== undefined && maxIter !== undefined) {
+        const percentage = ((iteration / maxIter) * 100).toFixed(1);
+        content.push(`  Progress: Iteration ${iteration}/${maxIter} (${percentage}%)`);
+      }
+    }
+
     if (currentStep.role) {
       content.push(`  Role: ${currentStep.role}`);
     }
@@ -902,6 +912,40 @@ export class InteractiveDisplay implements IProgressDisplay {
         this.render();
       }
     }, 1000);
+  }
+
+  /**
+   * Обработчик итерации цикла
+   * Обновляет метаданные текущего шага с информацией о прогрессе цикла
+   */
+  public onLoopIteration(stepId: string, iteration: number, maxIterations: number): void {
+    if (!this.state) {
+      return;
+    }
+
+    // Находим шаг по ID
+    const stepIndex = this.state.steps.findIndex(s => s.id === stepId);
+    if (stepIndex === -1) {
+      return;
+    }
+
+    // Обновляем metadata шага
+    const updatedSteps = [...this.state.steps];
+    updatedSteps[stepIndex] = {
+      ...updatedSteps[stepIndex],
+      metadata: {
+        ...updatedSteps[stepIndex].metadata,
+        currentIteration: iteration,
+        maxIterations: maxIterations
+      }
+    };
+
+    this.state = {
+      ...this.state,
+      steps: updatedSteps
+    };
+
+    this.render();
   }
 
   /**
