@@ -729,36 +729,68 @@ export class DefaultStepExecutor implements StepExecutor {
     
     // Сохранение артефактов (если есть выходы)
     const artifacts: string[] = [];
-    
+
     if (step.outputs) {
       for (const [outputName, outputPath] of Object.entries(step.outputs)) {
         const renderedPath = context.templateEngine.render(
           outputPath,
           this.createTemplateContext(context)
         );
-        
-        // Для скриптов, выход - это stdout
-        const artifactPath = await context.artifactManager.save(
-          context.state.sessionId,
-          step.id,
-          renderedPath,
-          result.stdout
-        );
-        
+
+        let outputValue: string;
+        let artifactPath: string;
+
+        // Новая логика: сначала проверяем существует ли файл
+        try {
+          const { readFileSync, existsSync } = await import('fs');
+
+          if (existsSync(renderedPath)) {
+            // Файл существует - читаем из него
+            const rawValue = readFileSync(renderedPath, 'utf-8');
+            // Trim убирает лишние пробелы и \n
+            outputValue = rawValue.trim();
+            artifactPath = renderedPath;
+
+            context.logger.debug(
+              `Прочитано ${rawValue.length} символов (${outputValue.length} после trim) из файла ${renderedPath}`
+            );
+          } else {
+            // Файл не существует - используем stdout и сохраняем
+            outputValue = result.stdout;
+            artifactPath = await context.artifactManager.save(
+              context.state.sessionId,
+              step.id,
+              renderedPath,
+              result.stdout
+            );
+
+            context.logger.debug(
+              `Сохранён stdout (${result.stdout.length} символов) в файл ${artifactPath}`
+            );
+          }
+        } catch (error) {
+          // Ошибка чтения файла - fallback на stdout
+          context.logger.debug(
+            `Не удалось прочитать файл ${renderedPath}, используется stdout: ${(error as Error).message}`
+          );
+          outputValue = result.stdout;
+          artifactPath = await context.artifactManager.save(
+            context.state.sessionId,
+            step.id,
+            renderedPath,
+            result.stdout
+          );
+        }
+
         artifacts.push(artifactPath);
-        
-        // ДВОЙНАЯ ПЕРЕДАЧА КОНТЕКСТА:
-        // 1. Содержимое напрямую (для быстрого доступа)
-        context.state.context[outputName] = result.stdout;
-        
-        // 2. Путь к файлу (для явной загрузки)
+
+        // Записываем в контекст
+        context.state.context[outputName] = outputValue;
         context.state.context[`${outputName}_file`] = artifactPath;
-        
-        // 3. Сохраняем в artifacts для отслеживания
         context.state.artifacts[outputName] = artifactPath;
-        
+
         context.logger.debug(
-          `Добавлено в контекст: ${outputName} (${result.stdout.length} символов), ` +
+          `Добавлено в контекст: ${outputName} (${outputValue.length} символов), ` +
           `${outputName}_file (${artifactPath})`
         );
       }

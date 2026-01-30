@@ -26,7 +26,9 @@ workflow:
     - id: "set_target"
       name: "Установка целевого числа"
       type: "script"
-      script: echo -n "5"
+      script: |
+        mkdir -p "${artifacts_dir}"
+        echo "5" > "${artifacts_dir}/target.txt"
       shell: "bash"
       outputs:
         target: "${artifacts_dir}/target.txt"
@@ -36,7 +38,7 @@ workflow:
       name: "Инициализация счётчика"
       type: "script"
       depends_on: ["set_target"]
-      script: echo -n "0"
+      script: echo "0" > "${artifacts_dir}/current.txt"
       shell: "bash"
       outputs:
         current_count: "${artifacts_dir}/current.txt"
@@ -46,7 +48,7 @@ workflow:
       name: "Цикл подсчёта"
       type: "loop"
       depends_on: ["init_counter"]
-      # УСЛОВИЕ: продолжать пока current_count < target
+      # УСЛОВИЕ: продолжать пока current_count не равен 5
       loop_condition: "current_count != '5'"
       loop_max_iterations: 10
       loop_body:
@@ -57,8 +59,9 @@ workflow:
           # Читаем текущее значение и увеличиваем
           CURRENT="${current_count}"
           NEW=$((CURRENT + 1))
-          # Выводим только новое значение без \n (оно сохранится в outputs)
-          echo -n "$NEW"
+          # Записываем новое значение в файл
+          echo "$NEW" > "${artifacts_dir}/current.txt"
+          echo "Итерация ${loop_iteration}: счётчик = $NEW"
         shell: "bash"
         outputs:
           current_count: "${artifacts_dir}/current.txt"
