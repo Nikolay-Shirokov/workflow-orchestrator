@@ -744,9 +744,19 @@ steps:
 
 ```yaml
 steps:
+  # Инициализация статуса
+  - id: "init_status"
+    type: "script"
+    script: echo "IN_PROGRESS" > status.txt
+    shell: "bash"
+    outputs:
+      review_status: "${artifacts_dir}/status.txt"
+
+  # Цикл с условием
   - id: "improve_until_approved"
     name: "Улучшение до одобрения"
     type: "loop"
+    depends_on: ["init_status"]
     loop_condition: "review_status != 'APPROVED'"  # Продолжать пока не одобрено
     loop_max_iterations: 5  # Максимум 5 попыток (защита от бесконечности)
     loop_body:
@@ -754,10 +764,9 @@ steps:
       type: "model"
       role: "writer"
       prompt_template: |
-        ${if(loop_index == 0, "Создай текст", "Улучши текст с учётом замечаний")}
+        Итерация ${loop_iteration} из ${loop_max_iterations}
 
-        ${if(loop_index > 0, "Предыдущая версия:\n" + current_text, "")}
-        ${if(loop_index > 0, "Замечания:\n" + feedback, "")}
+        Создай или улучши текст. В конце укажи STATUS: APPROVED или STATUS: IN_PROGRESS
       outputs:
         current_text: "${artifacts_dir}/iteration_${loop_iteration}.md"
         review_status: "${artifacts_dir}/status_${loop_iteration}.txt"
@@ -782,20 +791,32 @@ steps:
 
 ```yaml
 steps:
-  # Шаг 1: Проверка критериев моделью
+  # Шаг 1: Создание текста
+  - id: "create_text"
+    name: "Создание текста"
+    type: "model"
+    role: "writer"
+    prompt_template: "Напиши короткий текст о важности тестирования"
+    outputs:
+      draft_text: "${artifacts_dir}/draft.md"
+
+  # Шаг 2: Проверка критериев моделью
   - id: "review"
     name: "Проверка качества"
     type: "model"
     role: "reviewer"
+    depends_on: ["create_text"]
     prompt_template: |
-      Проверь текст: ${text}
+      Проверь текст: ${draft_text}
 
       Соответствует ли он критериям качества?
-      Ответь: APPROVED или NEEDS_WORK
+      Ответь одним словом: APPROVED или NEEDS_WORK
+    inputs:
+      draft_text: "${draft_text}"
     outputs:
       review_result: "${artifacts_dir}/review.txt"  # Записывается в контекст
 
-  # Шаг 2: Условное выполнение на основе проверки
+  # Шаг 3: Условное выполнение на основе проверки
   - id: "conditional_action"
     name: "Условное действие"
     type: "conditional"
@@ -805,12 +826,12 @@ steps:
       id: "publish"
       type: "model"
       role: "publisher"
-      prompt_template: "Публикуем одобренный текст"
+      prompt_template: "Текст одобрен. Публикуем."
     elseStep:
       id: "rework"
       type: "model"
       role: "editor"
-      prompt_template: "Дорабатываем текст по замечаниям"
+      prompt_template: "Текст требует доработки. Отправляем на переделку."
 ```
 
 #### Сложные сценарии
@@ -819,20 +840,28 @@ steps:
 
 ```yaml
 steps:
-  # Инициализация статуса
-  - id: "init"
+  # Задаём тему для текста
+  - id: "set_topic"
     type: "script"
-    script: |
-      echo "NEEDS_IMPROVEMENT" > status.txt
+    script: echo "Важность автоматизации тестирования" > topic.txt
+    shell: "bash"
+    outputs:
+      topic: "${artifacts_dir}/topic.txt"
+
+  # Инициализация статуса
+  - id: "init_status"
+    type: "script"
+    script: echo "NEEDS_IMPROVEMENT" > status.txt
+    shell: "bash"
     outputs:
       review_status: "${artifacts_dir}/status.txt"
 
   # Цикл улучшения
   - id: "improvement_loop"
     type: "loop"
-    depends_on: ["init"]
+    depends_on: ["set_topic", "init_status"]
     loop_condition: "review_status != 'APPROVED'"
-    loop_max_iterations: 5
+    loop_max_iterations: 3
     loop_body:
       id: "write_and_review"
       type: "model"
@@ -840,16 +869,12 @@ steps:
       prompt_template: |
         Итерация ${loop_iteration}/${loop_max_iterations}
 
-        ${if(loop_index == 0,
-          "Создай текст на тему: " + topic,
-          "Улучши текст:\n" + current_text + "\n\nЗамечания:\n" + feedback
-        )}
+        Тема: ${topic}
 
-        После текста напиши строку: STATUS: APPROVED или STATUS: NEEDS_IMPROVEMENT
+        Создай или улучши текст. В конце добавь строку:
+        STATUS: APPROVED (если текст хорош) или STATUS: NEEDS_IMPROVEMENT (если нужна ещё итерация)
       inputs:
         topic: "${topic}"
-        current_text: "${current_text}"
-        feedback: "${feedback}"
       outputs:
         current_text: "${artifacts_dir}/text_v${loop_iteration}.md"
         review_status: "${artifacts_dir}/status_v${loop_iteration}.txt"

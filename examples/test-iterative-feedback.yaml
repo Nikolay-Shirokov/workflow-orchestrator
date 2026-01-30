@@ -1,9 +1,9 @@
 # Тестовый workflow для итеративной обратной связи
-# Один агент создаёт, другой проверяет (с фиксированным числом итераций)
+# Писатель создаёт текст, улучшая его на каждой итерации
 workflow:
   name: "test-iterative-feedback"
   version: "1.0"
-  description: "Итеративная проверка и улучшение через цикл"
+  description: "Итеративное улучшение текста через цикл"
 
   settings:
     artifacts_dir: "artifacts/feedback-test-${timestamp}"
@@ -16,28 +16,24 @@ workflow:
       model: "sonnet"
       role_definition: |
         Вы писатель, который создаёт и улучшает тексты.
+        На каждой итерации анализируйте предыдущую версию и улучшайте её.
       temperature: 0.7
       max_tokens: 2000
-
-    reviewer:
-      adapter: "gemini-cli"
-      model: "gemini-2.5-pro"
-      role_definition: |
-        Вы строгий рецензент, который проверяет тексты на качество.
-      temperature: 0.5
-      max_tokens: 1000
+      default_permissions:
+        read: ["*.md", "*.txt", "artifacts/**/*"]
+        write: ["artifacts/**/*"]
 
   steps:
-    # Шаг 1: Пользователь задаёт задание
+    # Шаг 1: Пользователь задаёт тему
     - id: "step1_task"
-      name: "Задание для текста"
+      name: "Задание темы"
       type: "user_input"
       input_mode: "file"
       file_format: "markdown"
       prompt_message: |
-        # Задание для создания текста
+        # Тема для текста
 
-        Опишите, какой текст нужно создать (тему, стиль, объём).
+        Опишите тему и требования к тексту (стиль, объём, ключевые моменты).
       outputs:
         task: "${artifacts_dir}/step1_task.md"
 
@@ -49,28 +45,31 @@ workflow:
       loop_iterations: 3
       loop_variable: "iteration"
       loop_body:
-        # Внутри итерации - последовательное выполнение
-        # Сначала писатель, потом рецензент
         id: "write_text"
-        name: "Написание текста"
+        name: "Написание/улучшение текста"
         type: "model"
         role: "writer"
         prompt_template: |
           Итерация ${loop_iteration} из 3.
 
-          ${if(loop_index == 0, "Создай текст согласно заданию:", "Улучши текст с учётом замечаний:")}
-
           ## Задание
           ${task}
 
-          ${if(loop_index > 0, "## Предыдущая версия\n\n" + prev_text + "\n", "")}
-          ${if(loop_index > 0, "## Замечания рецензента\n\n" + prev_feedback + "\n", "")}
+          ## Инструкция
+          Это итерация номер ${loop_iteration}.
 
-          ${if(loop_index == 0, "Напиши первую версию текста.", "Исправь текст с учётом всех замечаний.")}
+          - Если это первая итерация: создай первоначальную версию текста.
+          - Если это не первая итерация: прочитай предыдущую версию и улучши её,
+            исправив недостатки и добавив деталей.
+
+          ## Предыдущая версия (если есть)
+          ${current_text}
+
+          ---
+          Напиши текст и кратко опиши, что было улучшено на этой итерации.
         inputs:
           task: "${task}"
-          prev_text: "${current_text}"
-          prev_feedback: "${current_feedback}"
+          current_text: "${current_text}"
         outputs:
           current_text: "${artifacts_dir}/iteration_${loop_iteration}_text.md"
 
@@ -81,17 +80,14 @@ workflow:
       role: "writer"
       depends_on: ["step2_improvement_loop"]
       prompt_template: |
-        Подготовь финальную версию текста после всех итераций улучшения:
+        Процесс итеративного улучшения завершён.
 
-        ## Последняя версия
+        ## Последняя версия текста
         ${current_text}
 
-        ## Последний отзыв
-        ${current_feedback}
-
-        Если нужны минимальные правки - внеси их. Иначе оставь как есть.
+        Проверь текст на финальные мелкие правки (орфография, пунктуация).
+        Если нужны - внеси их. Иначе оставь как есть.
       inputs:
         current_text: "${current_text}"
-        current_feedback: "${current_feedback}"
       outputs:
         final_text: "${artifacts_dir}/step3_final.md"
