@@ -22,24 +22,30 @@ workflow:
         write: ["artifacts/**/*"]
 
   steps:
-    # Шаг 1: Задаём целевое число
+    # Шаг 1: Инициализация целевого числа
     - id: "set_target"
       name: "Установка целевого числа"
       type: "script"
-      script: |
-        echo "5" > target.txt
-        echo "0" > current.txt
-        echo "Целевое число: 5, текущее: 0"
+      script: echo -n "5"
       shell: "bash"
       outputs:
         target: "${artifacts_dir}/target.txt"
+
+    # Шаг 2: Инициализация счётчика
+    - id: "init_counter"
+      name: "Инициализация счётчика"
+      type: "script"
+      depends_on: ["set_target"]
+      script: echo -n "0"
+      shell: "bash"
+      outputs:
         current_count: "${artifacts_dir}/current.txt"
 
-    # Шаг 2: Цикл с условием - считаем пока не достигли цели
+    # Шаг 3: Цикл с условием - считаем пока не достигли цели
     - id: "count_loop"
       name: "Цикл подсчёта"
       type: "loop"
-      depends_on: ["set_target"]
+      depends_on: ["init_counter"]
       # УСЛОВИЕ: продолжать пока current_count < target
       loop_condition: "current_count != '5'"
       loop_max_iterations: 10
@@ -48,18 +54,16 @@ workflow:
         name: "Увеличение счётчика"
         type: "script"
         script: |
-          # Читаем текущее значение
-          CURRENT=$(cat ${artifacts_dir}/current.txt)
-          # Увеличиваем
+          # Читаем текущее значение и увеличиваем
+          CURRENT="${current_count}"
           NEW=$((CURRENT + 1))
-          # Записываем
-          echo "$NEW" > ${artifacts_dir}/current.txt
-          echo "Итерация ${loop_iteration}: счётчик = $NEW"
+          # Выводим только новое значение без \n (оно сохранится в outputs)
+          echo -n "$NEW"
         shell: "bash"
         outputs:
           current_count: "${artifacts_dir}/current.txt"
 
-    # Шаг 3: Итоговый отчёт
+    # Шаг 4: Итоговый отчёт
     - id: "summary"
       name: "Итоги"
       type: "model"
