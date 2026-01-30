@@ -59,10 +59,10 @@ node dist/cli/cli.js run my-workflow.yaml
 
 ```bash
 # Полная версия с двумя AI-моделями
-workflow-orchestrator run examples/business-requirements-workflow.yaml
+node dist/cli/cli.js run examples/business-requirements-workflow.yaml
 
 # Или упрощенная версия
-workflow-orchestrator run examples/business-requirements-simple.yaml
+node dist/cli/cli.js run examples/business-requirements-simple.yaml
 ```
 
 **Что вы получите:**
@@ -168,37 +168,43 @@ npm run test:watch
 
 ## Использование
 
+> **Примечание:** Пакет пока не опубликован на npm. Используйте `node dist/cli/cli.js` вместо `workflow-orchestrator`:
+> ```bash
+> node dist/cli/cli.js run config.yaml
+> ```
+
 ### Основные команды
 
 ```bash
 # Запуск рабочего процесса
-workflow-orchestrator run config.yaml
+workflow-orchestrator run config.yaml  # После публикации на npm
+node dist/cli/cli.js run config.yaml   # Текущая версия
 
 # Запуск в интерактивном режиме (по умолчанию в TTY)
-workflow-orchestrator run config.yaml
+node dist/cli/cli.js run config.yaml
 
 # Запуск в логовом режиме (для CI/CD или pipe)
-workflow-orchestrator run config.yaml --log-mode
+node dist/cli/cli.js run config.yaml --log-mode
 
 # Возобновление процесса
-workflow-orchestrator resume <session-id> config.yaml
+node dist/cli/cli.js resume <session-id> config.yaml
 
 # Проверка статуса
-workflow-orchestrator status <session-id>
+node dist/cli/cli.js status <session-id>
 
 # Валидация конфигурации (dry-run)
-workflow-orchestrator dry-run config.yaml
+node dist/cli/cli.js dry-run config.yaml
 
 # Экспорт конфигурации
-workflow-orchestrator export config.yaml export.yaml --include-files
+node dist/cli/cli.js export config.yaml export.yaml --include-files
 
 # Импорт конфигурации
-workflow-orchestrator import export.yaml imported-config.yaml
+node dist/cli/cli.js import export.yaml imported-config.yaml
 
 # Работа с DSL
-workflow-orchestrator parse workflow.dsl --output workflow.yaml
-workflow-orchestrator validate workflow.dsl
-workflow-orchestrator run workflow.dsl
+node dist/cli/cli.js parse workflow.dsl --output workflow.yaml
+node dist/cli/cli.js validate workflow.dsl
+node dist/cli/cli.js run workflow.dsl
 ```
 
 ### Интерактивный режим
@@ -244,18 +250,34 @@ workflow:
         analysis: "${artifacts_dir}/analysis.md"
 ```
 
-2. **Настройте переменные окружения**:
+2. **Настройте CLI-адаптеры**:
+
+CLI-утилиты (claude-cli, gemini-cli) используют собственную систему авторизации:
 
 ```bash
-export ANTHROPIC_API_KEY="your-api-key"
-# или
-export OPENAI_API_KEY="your-api-key"
+# Claude CLI - авторизация через команду
+claude auth login
+
+# Gemini CLI - авторизация через API ключ
+gcloud auth application-default login
+# или через переменную окружения
+export GOOGLE_API_KEY="your-api-key"
+```
+
+Для OpenAI-compatible адаптеров (прямое HTTP подключение) укажите API ключ в конфигурации:
+
+```yaml
+adapters:
+  - name: "my-api"
+    type: "openai-compatible"
+    baseUrl: "https://api.openai.com/v1"
+    apiKey: "${OPENAI_API_KEY}"  # Или напрямую
 ```
 
 3. **Запустите процесс**:
 
 ```bash
-workflow-orchestrator run my-workflow.yaml
+node dist/cli/cli.js run my-workflow.yaml
 ```
 
 4. **Проверьте результаты** в директории `artifacts/`
@@ -267,7 +289,7 @@ workflow-orchestrator run my-workflow.yaml
 Совместная разработка требований с двумя AI-моделями:
 
 ```bash
-workflow-orchestrator run examples/dual-design-workflow.yaml
+node dist/cli/cli.js run examples/dual-design-workflow.yaml
 ```
 
 См. полную конфигурацию в [examples/dual-design-workflow.yaml](examples/dual-design-workflow.yaml)
@@ -277,7 +299,7 @@ workflow-orchestrator run examples/dual-design-workflow.yaml
 Рабочий процесс с веб-исследованием и анализом файлов:
 
 ```bash
-workflow-orchestrator run examples/mcp-workflow-example.yaml
+node dist/cli/cli.js run examples/mcp-workflow-example.yaml
 ```
 
 См. [examples/mcp-workflow-example.yaml](examples/mcp-workflow-example.yaml)
@@ -288,10 +310,10 @@ workflow-orchestrator run examples/mcp-workflow-example.yaml
 
 ```bash
 # Полная версия с двумя AI-моделями
-workflow-orchestrator run examples/business-requirements-workflow.yaml
+node dist/cli/cli.js run examples/business-requirements-workflow.yaml
 
 # Упрощенная версия для быстрого результата
-workflow-orchestrator run examples/business-requirements-simple.yaml
+node dist/cli/cli.js run examples/business-requirements-simple.yaml
 ```
 
 **Особенности:**
@@ -309,7 +331,7 @@ workflow-orchestrator run examples/business-requirements-simple.yaml
 
 ```bash
 # Экспорт с включением внешних файлов
-workflow-orchestrator export \
+node dist/cli/cli.js export \
   my-workflow.yaml \
   exports/my-workflow-v1.0.yaml \
   --include-files \
@@ -318,7 +340,7 @@ workflow-orchestrator export \
   --tags "production,v1.0"
 
 # Импорт конфигурации
-workflow-orchestrator import \
+node dist/cli/cli.js import \
   exports/my-workflow-v1.0.yaml \
   imported/workflow.yaml \
   --base-dir ./imported \
@@ -535,7 +557,7 @@ steps:
 Если вы выбрали "Отложить", процесс можно возобновить позже:
 
 ```bash
-workflow-orchestrator resume session_20260113_120000 workflow.yaml
+node dist/cli/cli.js resume session_20260113_120000 workflow.yaml
 ```
 
 Система автоматически найдет заполненный файл и продолжит выполнение.

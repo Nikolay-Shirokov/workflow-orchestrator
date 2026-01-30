@@ -66,43 +66,51 @@ workflow-orchestrator run config.yaml
 npm install -g @anthropic-ai/claude-cli
 ```
 
-2. **Настройка API ключа**:
+2. **Авторизация**:
+
+Claude CLI использует собственную систему авторизации:
 
 ```bash
-export ANTHROPIC_API_KEY="your-api-key-here"
+claude auth login
 ```
 
-Или добавьте в `~/.bashrc` / `~/.zshrc`:
-
-```bash
-echo 'export ANTHROPIC_API_KEY="your-api-key-here"' >> ~/.bashrc
-source ~/.bashrc
-```
+Следуйте инструкциям в терминале для входа в ваш аккаунт Anthropic.
 
 3. **Проверка установки**:
 
 ```bash
 claude --version
+claude auth status  # Проверка статуса авторизации
 ```
 
-### OpenAI CLI
+### OpenAI (через openai-compatible адаптер)
 
-1. **Установка openai-cli**:
+> **Примечание:** Для OpenAI рекомендуется использовать встроенный `openai-compatible` адаптер вместо CLI-утилит.
 
-```bash
-pip install openai-cli
+**Настройка через конфигурацию workflow**:
+
+```yaml
+adapters:
+  - name: "openai"
+    type: "openai-compatible"
+    baseUrl: "https://api.openai.com/v1"
+    apiKey: "${OPENAI_API_KEY}"
+
+roles:
+  assistant:
+    adapter: "openai"
+    model: "gpt-4"
 ```
 
-2. **Настройка API ключа**:
+**Установка API ключа**:
 
 ```bash
 export OPENAI_API_KEY="your-api-key-here"
 ```
 
-3. **Проверка установки**:
-
+Или добавьте в `.env` файл:
 ```bash
-openai --version
+OPENAI_API_KEY=your-api-key-here
 ```
 
 ### Google Gemini CLI
@@ -113,8 +121,16 @@ openai --version
 npm install -g @google/generative-ai-cli
 ```
 
-2. **Настройка API ключа**:
+2. **Авторизация**:
 
+Gemini CLI может использовать несколько методов авторизации:
+
+**Вариант 1: Google Cloud SDK (рекомендуется)**
+```bash
+gcloud auth application-default login
+```
+
+**Вариант 2: API ключ**
 ```bash
 export GOOGLE_API_KEY="your-api-key-here"
 ```
@@ -217,8 +233,13 @@ npm install -g @mcp/file-access
 ### Проверка Workflow Orchestrator
 
 ```bash
+# Если делали npm link
 workflow-orchestrator --version
 workflow-orchestrator --help
+
+# Или без npm link
+node dist/cli/cli.js --version
+node dist/cli/cli.js --help
 ```
 
 ### Проверка адаптеров
@@ -251,7 +272,11 @@ workflow:
 Запустите dry-run:
 
 ```bash
+# С npm link
 workflow-orchestrator dry-run test-config.yaml
+
+# Или без npm link
+node dist/cli/cli.js dry-run test-config.yaml
 ```
 
 Если все настроено правильно, вы увидите:
@@ -265,21 +290,29 @@ workflow-orchestrator dry-run test-config.yaml
 
 ## Настройка переменных окружения
 
+### Важно: CLI-утилиты vs API ключи
+
+**CLI-утилиты** (claude-cli, gemini-cli) используют собственную авторизацию и **НЕ требуют** переменных окружения с API ключами.
+
+**API ключи нужны только** для:
+- OpenAI-compatible адаптеров (прямое HTTP подключение)
+- Azure OpenAI
+- MCP инструментов (если требуется)
+
 ### Создание файла .env
 
-Создайте файл `.env` в корне проекта:
+Создайте файл `.env` в корне проекта **только если** используете прямое API подключение:
 
 ```bash
-# API ключи для AI-моделей
-ANTHROPIC_API_KEY=your-anthropic-key
-OPENAI_API_KEY=your-openai-key
-GOOGLE_API_KEY=your-google-key
+# API ключи (только для openai-compatible адаптеров)
+OPENAI_API_KEY=your-openai-key           # Для OpenAI API
+GOOGLE_API_KEY=your-google-key           # Для Gemini API (если не через gcloud)
 
-# Azure OpenAI
+# Azure OpenAI (если используется)
 AZURE_OPENAI_KEY=your-azure-key
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 
-# MCP инструменты
+# MCP инструменты (если требуется)
 SEARCH_API_KEY=your-search-key
 
 # Настройки оркестратора
@@ -322,7 +355,11 @@ settings:
 ### Логирование в файл
 
 ```bash
+# С npm link
 workflow-orchestrator run config.yaml 2>&1 | tee workflow.log
+
+# Или без npm link
+node dist/cli/cli.js run config.yaml 2>&1 | tee workflow.log
 ```
 
 ## Настройка директорий
@@ -387,18 +424,28 @@ npm link
 export PATH="$PATH:$(pwd)/dist"
 ```
 
-### Проблема: "API key not found"
+### Проблема: "API key not found" или "Authentication failed"
 
-**Решение**:
-Убедитесь, что переменные окружения установлены:
+**Для CLI-утилит** (claude-cli, gemini-cli):
+Проверьте авторизацию CLI:
 ```bash
-echo $ANTHROPIC_API_KEY
+# Claude CLI
+claude auth status
+claude auth login  # Если не авторизованы
+
+# Gemini CLI (через gcloud)
+gcloud auth application-default login
+```
+
+**Для OpenAI-compatible адаптеров**:
+Убедитесь, что переменная окружения установлена:
+```bash
 echo $OPENAI_API_KEY
 ```
 
 Если пусто, установите:
 ```bash
-export ANTHROPIC_API_KEY="your-key"
+export OPENAI_API_KEY="your-key"
 ```
 
 ### Проблема: "Adapter not available"
@@ -491,8 +538,9 @@ User=your-user
 WorkingDirectory=/path/to/workflow-orchestrator
 ExecStart=/usr/bin/node /path/to/workflow-orchestrator/dist/index.js
 Restart=on-failure
-Environment="ANTHROPIC_API_KEY=your-key"
+# API ключи только для openai-compatible адаптеров
 Environment="OPENAI_API_KEY=your-key"
+# CLI-утилиты используют собственную авторизацию (~/.config/claude, gcloud auth)
 
 [Install]
 WantedBy=multi-user.target
@@ -530,7 +578,12 @@ CMD ["node", "dist/index.js"]
 
 ```bash
 docker build -t workflow-orchestrator .
-docker run -e ANTHROPIC_API_KEY=your-key workflow-orchestrator
+
+# Для OpenAI-compatible адаптеров
+docker run -e OPENAI_API_KEY=your-key workflow-orchestrator
+
+# Для CLI-утилит - монтируйте директории с конфигурацией
+docker run -v ~/.config/claude:/root/.config/claude workflow-orchestrator
 ```
 
 ## Дополнительные ресурсы
