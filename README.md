@@ -96,6 +96,8 @@ Workflow Orchestrator - это инструмент для автоматиза�
 - **Артефакты** для полной прозрачности процесса
 - **Роли и специализация** моделей для разных задач
 - **Параллельное выполнение** независимых шагов
+- **Циклы с условиями** для итеративных процессов и обратной связи
+- **Сложные условия** с операторами сравнения и логикой
 - **Интеграция с MCP** для расширенных возможностей
 - **Экспорт и импорт** конфигураций для совместной работы и версионирования
 - **Файловый ввод пользователя** для удобной работы с большими промптами и структурированными данными
@@ -699,7 +701,7 @@ steps:
         prompt_template: "prompts/security_check.txt"
         outputs:
           security_report: "${artifacts_dir}/security.md"
-      
+
       - id: "performance_check"
         name: "Проверка производительности"
         type: "model"
@@ -708,6 +710,164 @@ steps:
         outputs:
           performance_report: "${artifacts_dir}/performance.md"
 ```
+
+### Циклы и условия
+
+#### Цикл с фиксированным числом итераций
+
+```yaml
+steps:
+  - id: "process_items"
+    name: "Обработка элементов"
+    type: "loop"
+    loop_iterations: 3  # Выполнить 3 раза
+    loop_variable: "index"  # Переменная с текущим индексом
+    loop_body:
+      id: "process_item"
+      type: "model"
+      role: "processor"
+      prompt_template: |
+        Обработка итерации ${loop_iteration} из 3
+        Индекс: ${loop_index}
+        Значение: ${index}
+      outputs:
+        result: "${artifacts_dir}/iteration_${loop_iteration}.md"
+```
+
+**Доступные переменные в цикле:**
+- `${loop_iteration}` - номер итерации (1, 2, 3, ...)
+- `${loop_index}` - индекс (0, 1, 2, ...)
+- `${loop_variable}` - значение переменной цикла
+- `${loop_max_iterations}` - максимальное количество итераций
+
+#### Цикл с условием выхода
+
+```yaml
+steps:
+  - id: "improve_until_approved"
+    name: "Улучшение до одобрения"
+    type: "loop"
+    loop_condition: "review_status != 'APPROVED'"  # Продолжать пока не одобрено
+    loop_max_iterations: 5  # Максимум 5 попыток (защита от бесконечности)
+    loop_body:
+      id: "improve_and_review"
+      type: "model"
+      role: "writer"
+      prompt_template: |
+        ${if(loop_index == 0, "Создай текст", "Улучши текст с учётом замечаний")}
+
+        ${if(loop_index > 0, "Предыдущая версия:\n" + current_text, "")}
+        ${if(loop_index > 0, "Замечания:\n" + feedback, "")}
+      outputs:
+        current_text: "${artifacts_dir}/iteration_${loop_iteration}.md"
+        review_status: "${artifacts_dir}/status_${loop_iteration}.txt"
+```
+
+**Поддерживаемые операторы в условиях:**
+
+| Оператор | Описание | Пример |
+|----------|----------|--------|
+| `==` | Равно | `status == 'DONE'` |
+| `!=` | Не равно | `status != 'PENDING'` |
+| `>`, `<` | Больше, меньше | `score > 80` |
+| `>=`, `<=` | Больше/меньше или равно | `attempts <= 3` |
+| `contains` | Содержит подстроку | `text contains 'ERROR'` |
+| `startsWith` | Начинается с | `filename startsWith 'test_'` |
+| `endsWith` | Заканчивается на | `filename endsWith '.md'` |
+| `&&` | Логическое И | `score > 80 && status == 'DONE'` |
+| `\|\|` | Логическое ИЛИ | `status == 'DONE' \|\| status == 'APPROVED'` |
+| `!` | Логическое НЕ | `!(status == 'FAILED')` |
+
+#### Условный шаг
+
+```yaml
+steps:
+  - id: "conditional_step"
+    name: "Условное выполнение"
+    type: "conditional"
+    condition: "user_confirmed == true"  # Условие выполнения
+    thenStep:
+      id: "approved_action"
+      type: "model"
+      role: "executor"
+      prompt_template: "Выполняем действие после подтверждения"
+    elseStep:
+      id: "rejected_action"
+      type: "model"
+      role: "executor"
+      prompt_template: "Пользователь отклонил действие"
+```
+
+#### Сложные сценарии
+
+**Пример: Итеративная обратная связь**
+
+```yaml
+steps:
+  # Инициализация статуса
+  - id: "init"
+    type: "script"
+    script: |
+      echo "NEEDS_IMPROVEMENT" > status.txt
+    outputs:
+      review_status: "${artifacts_dir}/status.txt"
+
+  # Цикл улучшения
+  - id: "improvement_loop"
+    type: "loop"
+    depends_on: ["init"]
+    loop_condition: "review_status != 'APPROVED'"
+    loop_max_iterations: 5
+    loop_body:
+      id: "write_and_review"
+      type: "model"
+      role: "writer"
+      prompt_template: |
+        Итерация ${loop_iteration}/${loop_max_iterations}
+
+        ${if(loop_index == 0,
+          "Создай текст на тему: " + topic,
+          "Улучши текст:\n" + current_text + "\n\nЗамечания:\n" + feedback
+        )}
+
+        После текста напиши строку: STATUS: APPROVED или STATUS: NEEDS_IMPROVEMENT
+      inputs:
+        topic: "${topic}"
+        current_text: "${current_text}"
+        feedback: "${feedback}"
+      outputs:
+        current_text: "${artifacts_dir}/text_v${loop_iteration}.md"
+        review_status: "${artifacts_dir}/status_v${loop_iteration}.txt"
+```
+
+**Пример: Параллельная обработка в цикле**
+
+```yaml
+steps:
+  - id: "batch_processing"
+    type: "loop"
+    loop_items: ["file1.txt", "file2.txt", "file3.txt"]
+    loop_variable: "filename"
+    loop_body:
+      id: "parallel_analysis"
+      type: "parallel"
+      steps:
+        - id: "technical_analysis"
+          type: "model"
+          role: "tech_analyst"
+          prompt_template: "Технический анализ файла ${filename}"
+
+        - id: "business_analysis"
+          type: "model"
+          role: "biz_analyst"
+          prompt_template: "Бизнес-анализ файла ${filename}"
+```
+
+📖 **Примеры workflows с циклами:**
+- `examples/test-loop-simple.yaml` - простой цикл с фиксированными итерациями
+- `examples/test-loop-condition-simple.yaml` - цикл со счётчиком и условием
+- `examples/test-iterative-feedback.yaml` - итеративная обратная связь
+- `examples/test-parallel-steps.yaml` - параллельное выполнение шагов
 
 ## Разработка
 
@@ -728,6 +888,8 @@ steps:
 - ✅ DSL для упрощенного описания процессов
 - ✅ Экспорт/импорт конфигураций
 - ✅ Параллельное выполнение шагов
+- ✅ Циклы с условиями выхода (loop_condition)
+- ✅ Сложные условия с операторами ==, !=, >, <, contains, &&, ||
 - ✅ Управление состоянием с возможностью возобновления
 - ✅ Поддержка ролей и специализации моделей
 
