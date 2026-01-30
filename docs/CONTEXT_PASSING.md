@@ -4,6 +4,53 @@
 
 Workflow Orchestrator поддерживает несколько способов передачи данных между шагами workflow. Этот документ поможет выбрать оптимальный подход для вашего случая.
 
+## Специальные переменные
+
+### Переменные цикла
+
+При выполнении шагов внутри цикла (`type: loop`) автоматически доступны следующие переменные:
+
+| Переменная | Описание | Пример значения |
+|-----------|----------|-----------------|
+| `${loop_iteration}` | Номер текущей итерации (начинается с 1) | 1, 2, 3, ... |
+| `${loop_index}` | Индекс итерации (начинается с 0) | 0, 1, 2, ... |
+| `${loop_max_iterations}` | Максимальное количество итераций | 5, 10, ... |
+| `${loop_variable}` | Значение переменной цикла (если указана) | элемент массива или индекс |
+
+**Пример использования:**
+```yaml
+- id: "process_loop"
+  type: "loop"
+  loop_iterations: 3
+  loop_variable: "count"
+  loop_body:
+    id: "process"
+    type: "model"
+    prompt_template: |
+      Итерация ${loop_iteration} из ${loop_max_iterations}
+      Индекс: ${loop_index}
+      Счётчик: ${count}
+    outputs:
+      result: "${artifacts_dir}/iteration_${loop_iteration}.md"
+```
+
+### Глобальные переменные
+
+- `${timestamp}` - метка времени запуска workflow (ISO формат)
+- `${artifacts_dir}` - директория для артефактов
+
+### Переменные из outputs
+
+Каждый outputs шага автоматически становится переменной в контексте:
+```yaml
+- id: "step1"
+  outputs:
+    my_result: "${artifacts_dir}/result.md"
+
+- id: "step2"
+  prompt_template: "Результат: ${my_result}"  # ← автоматически доступна
+```
+
 ## Три способа передачи контекста
 
 ### 1. Прямое содержимое (рекомендуется по умолчанию)
@@ -184,6 +231,75 @@ steps:
 - ✅ Структурированные данные (JSON, YAML, XML, код)
 - ✅ Нужны четкие границы для AI-модели
 - ✅ Вложенные уровни данных
+
+## Обработка outputs для script шагов
+
+Для шагов типа `script` существует специальная логика обработки outputs:
+
+### Порядок обработки
+
+1. **Проверяется существование файла** по пути из outputs
+2. **Если файл существует** → его содержимое читается и используется
+3. **Если файл не существует** → используется stdout скрипта (fallback)
+4. **Автоматически применяется trim()** → убираются лишние пробелы и переводы строк
+
+### Преимущества
+
+- ✅ Скрипты могут создавать файлы напрямую
+- ✅ Не нужно использовать `echo -n` (trim() убирает `\n`)
+- ✅ Stdout можно использовать для отладочной информации
+- ✅ Обратная совместимость (если файл не создан → stdout)
+
+### Пример 1: Скрипт создаёт файл
+
+```yaml
+- id: "calculate"
+  type: "script"
+  script: |
+    # Скрипт создаёт файл напрямую
+    echo "42" > ${artifacts_dir}/result.txt
+
+    # Stdout для отладки (игнорируется)
+    echo "Вычисление завершено"
+  shell: "bash"
+  outputs:
+    result: "${artifacts_dir}/result.txt"
+
+# Результат: result = "42" (прочитано из файла, с автоматическим trim)
+```
+
+### Пример 2: Скрипт использует stdout (fallback)
+
+```yaml
+- id: "simple"
+  type: "script"
+  script: echo "Hello World"
+  shell: "bash"
+  outputs:
+    greeting: "${artifacts_dir}/greeting.txt"
+
+# Результат: greeting = "Hello World"
+# (из stdout, так как файл не существовал, сохраняется в artifacts_dir/greeting.txt)
+```
+
+### Пример 3: Работа с циклами
+
+```yaml
+- id: "counter_loop"
+  type: "loop"
+  loop_iterations: 3
+  loop_body:
+    id: "count"
+    type: "script"
+    script: |
+      CURRENT="${counter}"
+      NEW=$((CURRENT + 1))
+      echo "$NEW" > ${artifacts_dir}/counter.txt
+    outputs:
+      counter: "${artifacts_dir}/counter.txt"
+
+# В каждой итерации counter читается из файла (trim применяется автоматически)
+```
 
 ## Примеры из практики
 

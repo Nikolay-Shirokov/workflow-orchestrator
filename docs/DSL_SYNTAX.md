@@ -155,6 +155,44 @@ step init {
 }
 ```
 
+**Обработка outputs для script шагов:**
+
+Для script шагов существует специальная логика обработки outputs:
+
+1. **Если файл по указанному пути существует** → значение читается из файла
+2. **Иначе** → используется stdout скрипта (fallback)
+3. **Автоматически применяется trim()** → убираются лишние пробелы и переводы строк
+
+Это позволяет скриптам самостоятельно создавать файлы без необходимости использовать `echo -n`:
+
+```
+step calculate {
+  type script
+  script """
+    # Скрипт создаёт файл напрямую
+    echo "42" > ${artifacts_dir}/result.txt
+
+    # Stdout игнорируется (можно выводить отладочную информацию)
+    echo "Вычисление завершено"
+  """
+  output result = "${artifacts_dir}/result.txt"
+}
+# Результат: result = "42" (из файла, с автоматическим trim)
+```
+
+Если файл не создан, используется stdout:
+
+```
+step simple_calc {
+  type script
+  script """
+    echo "42"
+  """
+  output result = "${artifacts_dir}/result.txt"
+}
+# Результат: result = "42" (из stdout, сохраняется в файл)
+```
+
 ##### User Input (ввод пользователя)
 
 ```
@@ -239,6 +277,101 @@ parallel questions {
     prompt from "prompts/copilot_questions.txt"
     input user_request
     output copilot_questions = "${artifacts_dir}/copilot_q.md"
+  }
+}
+```
+
+##### Loop (циклы)
+
+**Цикл с фиксированным числом итераций:**
+```
+loop <id> {
+  iterations <число>
+  variable <имя_переменной>
+
+  step <body_id> {
+    // тело цикла
+  }
+}
+```
+
+**Цикл с условием выхода:**
+```
+loop <id> {
+  condition "<условие>"
+  max_iterations <число>  // защита от бесконечных циклов
+
+  step <body_id> {
+    // тело цикла
+  }
+}
+```
+
+**Поддерживаемые операторы в условиях:**
+
+| Оператор | Описание | Пример |
+|----------|----------|--------|
+| `==` | Равно | `status == 'DONE'` |
+| `!=` | Не равно | `status != 'PENDING'` |
+| `>`, `<` | Больше, меньше | `score > 80` |
+| `>=`, `<=` | Больше/меньше или равно | `attempts <= 3` |
+| `contains` | Содержит подстроку | `text contains 'ERROR'` |
+| `startsWith` | Начинается с | `filename startsWith 'test_'` |
+| `endsWith` | Заканчивается на | `filename endsWith '.md'` |
+| `&&` | Логическое И | `score > 80 && status == 'DONE'` |
+| `\|\|` | Логическое ИЛИ | `status == 'DONE' \|\| status == 'APPROVED'` |
+| `!` | Логическое НЕ | `!(status == 'FAILED')` |
+
+**Доступные переменные в теле цикла:**
+- `${loop_iteration}` - номер итерации (1, 2, 3, ...)
+- `${loop_index}` - индекс (0, 1, 2, ...)
+- `${loop_variable}` - значение переменной цикла
+- `${loop_max_iterations}` - максимальное количество итераций
+
+**Пример с фиксированным числом итераций:**
+```
+loop process_items {
+  iterations 3
+  variable count
+
+  step process {
+    type model
+    role processor
+    prompt "Обработка итерации ${loop_iteration} из 3, индекс: ${count}"
+    output result = "${artifacts_dir}/iteration_${loop_iteration}.md"
+  }
+}
+```
+
+**Пример с условием выхода:**
+```
+loop improve_until_approved {
+  condition "review_status != 'APPROVED'"
+  max_iterations 5
+
+  step improve {
+    type model
+    role writer
+    prompt "Итерация ${loop_iteration}. Улучши текст."
+    output review_status = "${artifacts_dir}/status_${loop_iteration}.txt"
+  }
+}
+```
+
+**Пример со сложным условием:**
+```
+loop optimize {
+  condition "score < 80 && attempts < 3"
+  max_iterations 10
+
+  step improve {
+    type script
+    shell bash
+    script "
+      # Вычисление нового score
+      echo $((score + 10)) > score.txt
+    "
+    output score = "${artifacts_dir}/score.txt"
   }
 }
 ```

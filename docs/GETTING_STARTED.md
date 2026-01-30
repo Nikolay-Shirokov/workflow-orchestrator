@@ -500,7 +500,86 @@ workflow:
         final: "${artifacts_dir}/final.md"
 ```
 
-## Шаг 10: Экспорт и совместное использование
+## Шаг 10: Циклы с условиями
+
+Создайте процесс с циклом, который выполняется до достижения условия `loop-condition-workflow.yaml`:
+
+```yaml
+workflow:
+  name: "iterative-improvement"
+  version: "1.0"
+
+  settings:
+    artifacts_dir: "artifacts/improvement-${timestamp}"
+
+  roles:
+    writer:
+      adapter: "claude-cli"
+      model: "claude-sonnet-3.5"
+      role_definition: "Вы создаёте и улучшаете тексты"
+
+  steps:
+    # Инициализация статуса
+    - id: "init"
+      name: "Инициализация"
+      type: "script"
+      script: echo "IN_PROGRESS"
+      shell: "bash"
+      outputs:
+        status: "${artifacts_dir}/status.txt"
+
+    # Цикл улучшения с условием
+    - id: "improve_loop"
+      name: "Цикл улучшения"
+      type: "loop"
+      depends_on: ["init"]
+      loop_condition: "status != 'APPROVED'"  # Продолжать пока не одобрено
+      loop_max_iterations: 3  # Максимум 3 итерации
+      loop_body:
+        id: "write"
+        name: "Написание/улучшение"
+        type: "model"
+        role: "writer"
+        prompt_template: |
+          Итерация ${loop_iteration} из ${loop_max_iterations}
+
+          Создай или улучши текст о важности тестирования.
+          В конце напиши: STATUS: APPROVED или STATUS: IN_PROGRESS
+        outputs:
+          text: "${artifacts_dir}/text_v${loop_iteration}.md"
+          status: "${artifacts_dir}/status_v${loop_iteration}.txt"
+
+    # Финальный результат
+    - id: "final"
+      name: "Финальная версия"
+      type: "model"
+      role: "writer"
+      depends_on: ["improve_loop"]
+      prompt_template: |
+        Финальная проверка текста: ${text}
+      inputs:
+        text: "${text}"
+      outputs:
+        final: "${artifacts_dir}/final.md"
+```
+
+**Поддерживаемые операторы в условиях:**
+- Сравнение: `==`, `!=`, `>`, `<`, `>=`, `<=`
+- Строковые: `contains`, `startsWith`, `endsWith`
+- Логические: `&&`, `||`, `!`
+
+**Пример со сложным условием:**
+```yaml
+loop_condition: "score < 80 && attempts < 3"
+loop_max_iterations: 10
+```
+
+**Доступные переменные в цикле:**
+- `${loop_iteration}` - номер итерации (1, 2, 3, ...)
+- `${loop_index}` - индекс (0, 1, 2, ...)
+- `${loop_max_iterations}` - максимальное количество итераций
+
+## Шаг 11: Экспорт и совместное использование
 
 Экспортируйте ваш процесс:
 
